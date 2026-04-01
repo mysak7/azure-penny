@@ -28,3 +28,12 @@ provider "azurerm" {
     }
   }
 }
+
+# Register required resource providers
+resource "azurerm_resource_provider_registration" "app" {
+  name = "Microsoft.App"
+}
+
+resource "azurerm_resource_provider_registration" "operational_insights" {
+  name = "Microsoft.OperationalInsights"
+}
