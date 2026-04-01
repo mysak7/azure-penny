@@ -1,6 +1,4 @@
 resource "azurerm_log_analytics_workspace" "main" {
-  depends_on = [azurerm_resource_provider_registration.operational_insights]
-
   name                = "${var.app_name}-${var.environment}-logs"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
