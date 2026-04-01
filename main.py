@@ -1,5 +1,5 @@
 """
-azure-penny — Azure Cost Management dashboard
+azure-penny — Azure Cost Management dashboard 
 FastAPI application that reads Cost Management Parquet exports from Azure Blob
 Storage and exposes aggregated cost data via a REST API.
 
