@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>azure-penny &mdash; Cost Dashboard</title>
+  <title>azure-penny &mdash; Manager</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
@@ -79,6 +79,12 @@
     .hbar-fill.purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
     .hbar-cost { font-size: 0.72rem; color: #e2e8f0; font-family: monospace; width: 68px; text-align: right; flex-shrink: 0; }
 
+    /* Nav */
+    .nav { display: flex; gap: .5rem; align-items: center; }
+    .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
+    .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
+    .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+
     /* Service table */
     .svc-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: .25rem; }
     .svc-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #334155; }
@@ -98,7 +104,7 @@
 
 <header>
   <div class="hdr-left">
-    <h1>azure-penny <span>Cost Dashboard</span></h1>
+    <h1>azure-penny <span>Manager</span></h1>
     <div class="hdr-refresh">
       <button class="rpill active" data-s="0"    onclick="hdrSet(0)">Off</button>
       <button class="rpill"        data-s="60"   onclick="hdrSet(60)">1m</button>
@@ -107,6 +113,10 @@
       <button class="rpill"        data-s="1800" onclick="hdrSet(1800)">30m</button>
       <span id="hdr-cd"></span>
     </div>
+  </div>
+  <div class="nav">
+    <a href="/manager"    class="nav-link active">Manager</a>
+    <a href="/technician" class="nav-link">Technician</a>
   </div>
 </header>
 

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny &mdash; Technician</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    /* Header */
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: .75rem 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .hdr-left { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; letter-spacing: .02em; white-space: nowrap; }
+    header h1 span { color: #64748b; font-weight: 400; font-size: 0.85rem; margin-left: .5rem; }
+    .hdr-refresh { display: flex; align-items: center; gap: .2rem; }
+    .rpill { background: #0f172a; border: 1px solid #334155; color: #64748b; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .rpill:hover { border-color: #4ade80; color: #4ade80; }
+    .rpill.active { background: #052e16; border-color: #4ade80; color: #4ade80; }
+    #hdr-cd { font-size: 0.68rem; color: #4ade80; font-family: monospace; min-width: 36px; padding-left: .2rem; }
+    .nav { display: flex; gap: .5rem; align-items: center; }
+    .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
+    .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
+    .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+
+    /* Status bar */
+    .status-bar { background: #162032; border-bottom: 1px solid #1e3a5a; padding: .35rem 2rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
+    .status-item { font-size: 0.72rem; color: #64748b; }
+    .status-item strong { color: #38bdf8; }
+    .status-item.error { color: #f87171; }
+    .reload-btn { background: none; border: 1px solid #334155; color: #64748b; font-size: 0.7rem; padding: .15rem .5rem; border-radius: 4px; cursor: pointer; font-family: inherit; }
+    .reload-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    /* Layout */
+    .container { max-width: 1600px; margin: 0 auto; padding: 2rem; }
+
+    /* Controls */
+    .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: .25rem; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: .25rem; flex-wrap: wrap; }
+    .tab-btn { background: none; border: none; color: #94a3b8; font-size: 0.8rem; padding: .35rem .9rem; border-radius: 6px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .tab-btn:hover { color: #e2e8f0; background: #0f172a44; }
+    .tab-btn.active { background: #0369a1; color: #fff; }
+
+    /* Period pills */
+    .period-pills { display: flex; gap: .25rem; }
+    .pill { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.78rem; padding: .3rem .8rem; border-radius: 20px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .pill:hover { border-color: #38bdf8; color: #38bdf8; }
+    .pill.active { background: #0c4a6e; border-color: #38bdf8; color: #38bdf8; }
+
+    /* Cards */
+    .cards { display: grid; gap: 1.25rem; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: .5rem; }
+    .card h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .08em; color: #94a3b8; }
+    .card-badge { font-size: 0.72rem; background: #0f172a; border: 1px solid #334155; color: #64748b; padding: .15rem .5rem; border-radius: 4px; }
+    .az-badge { font-size: 0.72rem; background: #1e3a5f; border: 1px solid #0369a1; color: #38bdf8; padding: .15rem .55rem; border-radius: 4px; margin-left: .35rem; }
+
+    /* KPI grid */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; margin-bottom: 1.25rem; }
+    .kpi-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .85rem 1rem; }
+    .kpi-card.blue   { border-top: 2px solid #38bdf8; }
+    .kpi-card.green  { border-top: 2px solid #4ade80; }
+    .kpi-card.yellow { border-top: 2px solid #fbbf24; }
+    .kpi-card.orange { border-top: 2px solid #f97316; }
+    .kpi-card.purple { border-top: 2px solid #a78bfa; }
+    .kpi-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
+    .kpi-val { font-size: 1.2rem; font-weight: 700; color: #e2e8f0; font-family: monospace; }
+    .kpi-sub { font-size: 0.7rem; color: #475569; margin-top: .15rem; }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    .stat { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem; }
+    .stat-label { font-size: 0.72rem; color: #64748b; margin-bottom: .35rem; text-transform: uppercase; letter-spacing: .06em; }
+    .stat-value { font-size: 1.25rem; font-weight: 700; color: #e2e8f0; font-family: monospace; }
+    .stat-value.blue { color: #38bdf8; }
+    .stat-value.green { color: #4ade80; }
+    .stat-value.dim { font-size: 0.85rem; color: #64748b; }
+
+    /* Tables */
+    table { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+    td, th { border: 1px solid #334155; padding: .5rem .85rem; text-align: left; vertical-align: middle; }
+    th { background: #0f172a; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: .04em; }
+    tr:hover td { background: rgba(56,189,248,.04); }
+    .bar-cell { display: flex; align-items: center; gap: .6rem; }
+    .bar { height: 6px; border-radius: 3px; min-width: 2px; }
+    .bar.blue   { background: #38bdf8; }
+    .bar.green  { background: #4ade80; }
+    .bar.orange { background: #f97316; }
+    .bar.purple { background: #a78bfa; }
+    .scroll-table { overflow-x: auto; }
+
+    /* Chart */
+    .chart-wrap { overflow-x: auto; border: 1px solid #334155; border-radius: 8px; background: #0f172a; padding: .5rem; margin-top: .75rem; }
+    canvas { display: block; }
+
+    /* Two-col */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 780px) { .two-col { grid-template-columns: 1fr; } }
+
+    /* Insights */
+    .insight { font-size: 0.78rem; padding: .45rem .7rem; border-radius: 6px; margin-bottom: .4rem; line-height: 1.5; }
+    .insight.ok     { background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .insight.info   { background: #0c1a4a; border: 1px solid #1e3a8a; color: #93c5fd; }
+    .insight.warn   { background: #451a03; border: 1px solid #92400e; color: #fcd34d; }
+    .insight.danger { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
+    .insight-icon   { font-size: 0.8rem; margin-right: .3rem; }
+
+    /* Loading / error / empty */
+    .loading { color: #64748b; font-size: 0.82rem; padding: 1.5rem 0; text-align: center; }
+    .error { color: #f87171; font-size: 0.78rem; margin-top: .5rem; }
+    .empty { color: #475569; font-size: 0.78rem; text-align: center; padding: 1.25rem 0; font-style: italic; }
+
+    /* Section title */
+    .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 1.25rem 0 .6rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-left">
+    <h1>azure-penny <span>Technician</span></h1>
+    <div class="hdr-refresh">
+      <button class="rpill active" data-s="0"    onclick="hdrSet(0)">Off</button>
+      <button class="rpill"        data-s="60"   onclick="hdrSet(60)">1m</button>
+      <button class="rpill"        data-s="300"  onclick="hdrSet(300)">5m</button>
+      <button class="rpill"        data-s="600"  onclick="hdrSet(600)">10m</button>
+      <button class="rpill"        data-s="1800" onclick="hdrSet(1800)">30m</button>
+      <span id="hdr-cd"></span>
+    </div>
+  </div>
+  <div class="nav">
+    <a href="/manager"    class="nav-link">Manager</a>
+    <a href="/technician" class="nav-link active">Technician</a>
+  </div>
+</header>
+
+<div class="status-bar">
+  <span class="status-item">Source: <strong>Cost Management / Blob Storage</strong></span>
+  <span class="status-item" id="st-range">Date range: <strong>loading&hellip;</strong></span>
+  <span class="status-item" id="st-rows">Rows: <strong>&mdash;</strong></span>
+  <span class="status-item" id="st-age">Cache age: <strong>&mdash;</strong></span>
+  <button class="reload-btn" onclick="reloadData()">&#x21BB; Reload data</button>
+  <span id="st-error" class="status-item error"></span>
+</div>
+
+<div class="container">
+
+  <div class="controls">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="all-services"    onclick="setTab('all-services')">All Services</button>
+      <button class="tab-btn"        data-tab="resource-groups" onclick="setTab('resource-groups')">Resource Groups</button>
+      <button class="tab-btn"        data-tab="compute"         onclick="setTab('compute')">Compute</button>
+      <button class="tab-btn"        data-tab="database"        onclick="setTab('database')">Database</button>
+      <button class="tab-btn"        data-tab="insights"        onclick="setTab('insights')">Insights</button>
+    </div>
+    <div class="period-pills" id="period-pills-row">
+      <button class="pill"        data-period="day"   onclick="setPeriod('day')">Day</button>
+      <button class="pill active" data-period="week"  onclick="setPeriod('week')">Week</button>
+      <button class="pill"        data-period="month" onclick="setPeriod('month')">Month</button>
+    </div>
+  </div>
+
+  <!-- ── ALL SERVICES ──────────────────────────────────────────────────────── -->
+  <div id="section-all-services" class="cards">
+    <div class="card">
+      <div class="card-header">
+        <h2>Full Service Breakdown <span class="az-badge">Cost Management</span></h2>
+        <span id="svc-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="svc-kpi" class="stats-row"><div class="loading">Loading&hellip;</div></div>
+      <div id="svc-table"></div>
+      <div id="svc-error" class="error"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Daily Spend &mdash; Last 30 Days</h2></div>
+      <div class="chart-wrap"><canvas id="daily-chart" height="100"></canvas></div>
+      <div id="daily-error" class="error"></div>
+      <div id="daily-table" style="margin-top:1rem"></div>
+    </div>
+  </div>
+
+  <!-- ── RESOURCE GROUPS ──────────────────────────────────────────────────── -->
+  <div id="section-resource-groups" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Cost by Resource Group <span class="az-badge">Azure</span></h2>
+        <span id="rg-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="rg-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+      <div id="rg-table"></div>
+      <div id="rg-error" class="error"></div>
+    </div>
+  </div>
+
+  <!-- ── COMPUTE ───────────────────────────────────────────────────────────── -->
+  <div id="section-compute" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Compute Services <span class="az-badge">VMs &bull; App Service &bull; AKS</span></h2>
+        <span id="cp-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="cp-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+      <div id="cp-table"></div>
+      <div id="cp-error" class="error"></div>
+    </div>
+  </div>
+
+  <!-- ── DATABASE ──────────────────────────────────────────────────────────── -->
+  <div id="section-database" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Database Services <span class="az-badge">SQL &bull; Cosmos &bull; Redis</span></h2>
+        <span id="db-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="db-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+      <div id="db-table"></div>
+      <div id="db-error" class="error"></div>
+    </div>
+  </div>
+
+  <!-- ── INSIGHTS ──────────────────────────────────────────────────────────── -->
+  <div id="section-insights" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Cost Insights <span class="az-badge">Azure</span></h2>
+        <span id="ins-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="insights-body"><div class="loading">Loading&hellip;</div></div>
+      <div id="insights-error" class="error"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Category Breakdown <span class="az-badge" id="breakdown-badge">7 days</span></h2>
+      </div>
+      <div id="breakdown-body"><div class="loading">Loading&hellip;</div></div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+var currentTab    = 'all-services';
+var currentPeriod = 'week';
+var loaded = {};
+
+// ── Header auto-refresh ───────────────────────────────────────────────────────
+var _hS=0, _hT=null, _hL=0;
+function hdrSet(s) {
+  _hS=s; clearInterval(_hT);
+  document.querySelectorAll('.hdr-refresh .rpill').forEach(function(b){ b.classList.toggle('active', +b.dataset.s===s); });
+  var el=document.getElementById('hdr-cd'); el.textContent='';
+  if(s>0){ _hL=s; _hT=setInterval(function(){ _hL--; var m=Math.floor(_hL/60),r=_hL%60; el.textContent=(m?m+'m ':'')+r+'s'; if(_hL<=0){ _hL=s; doRefresh(); } },1000); }
+}
+function doRefresh() { loaded={}; loadCurrentTab(); }
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function setTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  ['all-services','resource-groups','compute','database','insights'].forEach(function(t) {
+    document.getElementById('section-' + t).style.display = t === tab ? '' : 'none';
+  });
+  currentTab = tab;
+  loadCurrentTab();
+}
+
+function setPeriod(p) {
+  document.querySelectorAll('.pill').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.period === p);
+  });
+  currentPeriod = p;
+  loaded = {};
+  loadCurrentTab();
+}
+
+function periodLabel() {
+  return { day: '24 hours', week: '7 days', month: '30 days' }[currentPeriod] || currentPeriod;
+}
+
+function loadCurrentTab() {
+  var key = currentTab + currentPeriod;
+  if (loaded[key]) return;
+  loaded[key] = true;
+  switch (currentTab) {
+    case 'all-services':    loadAllServices();    break;
+    case 'resource-groups': loadResourceGroups(); break;
+    case 'compute':         loadCategoryDetail('compute',  '/api/compute?period=',  'cp',  'blue');   break;
+    case 'database':        loadCategoryDetail('database', '/api/database?period=', 'db',  'purple'); break;
+    case 'insights':        loadInsights(); loadBreakdown(); break;
+  }
+}
+
+// ── ALL SERVICES ──────────────────────────────────────────────────────────────
+function loadAllServices() {
+  document.getElementById('svc-badge').textContent = periodLabel();
+  document.getElementById('svc-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('svc-table').innerHTML = '';
+  document.getElementById('svc-error').textContent = '';
+
+  fetch('/api/services?period=' + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var svcs  = data.services || [];
+      var total = data.total_usd || 0;
+
+      document.getElementById('svc-kpi').innerHTML =
+        stat('Total', fmtCost(total), 'blue') +
+        stat('Services', svcs.length, '') +
+        stat('Period', periodLabel(), 'dim') +
+        stat('Avg/Day', fmtCost(total / Math.max(periodDays(), 1)), '');
+
+      if (svcs.length) {
+        var max  = svcs[0].cost_usd || 1;
+        var rows = svcs.map(function(s) {
+          var pct   = Math.round(s.cost_usd / max * 100);
+          var share = ((s.cost_usd / total) * 100).toFixed(1);
+          return '<tr>' +
+            '<td>' + s.service + '</td>' +
+            '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+            '<span>' + fmtCost(s.cost_usd) + '</span></div></td>' +
+            '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+        }).join('');
+        document.getElementById('svc-table').innerHTML =
+          '<table><tr><th>Service (MeterCategory)</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+      } else {
+        document.getElementById('svc-table').innerHTML = '<p class="empty">No spend data for this period.</p>';
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('svc-kpi').innerHTML = '';
+      document.getElementById('svc-error').textContent = 'Error: ' + err.message;
+    });
+
+  fetch('/api/daily?days=30')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      drawDailyChart(data.points || []);
+      renderDailyTable(data.points || []);
+    })
+    .catch(function(err) {
+      document.getElementById('daily-error').textContent = 'Daily chart error: ' + err.message;
+    });
+}
+
+function drawDailyChart(pts) {
+  var canvas = document.getElementById('daily-chart');
+  if (!pts.length) { canvas.parentElement.innerHTML = '<p class="empty">No daily data available.</p>'; return; }
+  var W = (canvas.parentElement.clientWidth || 900) - 16;
+  canvas.width = W; canvas.height = 100;
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, 100);
+  var maxVal = Math.max.apply(null, pts.map(function(p) { return p.cost_usd; })) || 1;
+  var gap = 2, barW = Math.max(2, Math.floor((W - 20) / pts.length) - gap), baseY = 88;
+  pts.forEach(function(p, i) {
+    var h = Math.max(2, Math.round((p.cost_usd / maxVal) * 76));
+    var x = 10 + i * (barW + gap);
+    var d = new Date(p.date);
+    ctx.fillStyle = (d.getUTCDay() === 0 || d.getUTCDay() === 6) ? '#0284c7' : '#38bdf8';
+    ctx.fillRect(x, baseY - h, barW, h);
+  });
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(W, baseY); ctx.stroke();
+  ctx.fillStyle = '#475569'; ctx.font = '10px system-ui';
+  ctx.fillText('max: ' + fmtCost(maxVal), 10, 12);
+  if (pts.length >= 2) {
+    ctx.fillText(pts[0].date.slice(5), 10, baseY + 12);
+    var lastX = 10 + (pts.length - 1) * (barW + gap);
+    ctx.textAlign = 'right';
+    ctx.fillText(pts[pts.length - 1].date.slice(5), Math.min(lastX + barW, W - 4), baseY + 12);
+    ctx.textAlign = 'left';
+  }
+}
+
+function renderDailyTable(pts) {
+  if (!pts.length) return;
+  var recent = pts.slice(-10).reverse();
+  var rows = recent.map(function(p) {
+    return '<tr><td>' + p.date + '</td><td style="font-family:monospace">' + fmtCost(p.cost_usd) + '</td></tr>';
+  }).join('');
+  document.getElementById('daily-table').innerHTML =
+    '<p class="section-title">Last 10 Days (newest first)</p>' +
+    '<table style="max-width:340px"><tr><th>Date</th><th>Cost</th></tr>' + rows + '</table>';
+}
+
+// ── RESOURCE GROUPS ───────────────────────────────────────────────────────────
+function loadResourceGroups() {
+  document.getElementById('rg-badge').textContent = periodLabel();
+  document.getElementById('rg-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('rg-table').innerHTML = '';
+  document.getElementById('rg-error').textContent = '';
+
+  fetch('/api/resource-groups?period=' + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var rgs   = data.resource_groups || [];
+      var total = data.total_usd || 0;
+
+      document.getElementById('rg-kpi').innerHTML =
+        kpiCard('Total Cost', fmtCost(total), 'blue') +
+        kpiCard('Resource Groups', rgs.length, 'green') +
+        kpiCard('Top Group', rgs.length ? shortRg(rgs[0].name) : '—', 'orange') +
+        kpiCard('Top Cost', rgs.length ? fmtCost(rgs[0].cost_usd) : '—', 'orange');
+
+      if (!rgs.length) {
+        document.getElementById('rg-table').innerHTML = '<p class="empty">No resource group data for this period.</p>';
+        return;
+      }
+
+      var max  = rgs[0].cost_usd || 1;
+      var rows = rgs.map(function(rg) {
+        var pct   = Math.round(rg.cost_usd / max * 100);
+        var share = ((rg.cost_usd / total) * 100).toFixed(1);
+        return '<tr>' +
+          '<td title="' + (rg.name||'') + '">' + (rg.name || '<em style="color:#475569">untagged</em>') + '</td>' +
+          '<td><div class="bar-cell"><div class="bar green" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+          '<span style="font-family:monospace">' + fmtCost(rg.cost_usd) + '</span></div></td>' +
+          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+      }).join('');
+      document.getElementById('rg-table').innerHTML =
+        '<table><tr><th>Resource Group</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+    })
+    .catch(function(err) {
+      document.getElementById('rg-kpi').innerHTML = '';
+      document.getElementById('rg-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+// ── CATEGORY DETAIL (Compute / Database) ─────────────────────────────────────
+function loadCategoryDetail(name, urlBase, prefix, color) {
+  document.getElementById(prefix + '-badge').textContent = periodLabel();
+  document.getElementById(prefix + '-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById(prefix + '-table').innerHTML = '';
+  document.getElementById(prefix + '-error').textContent = '';
+
+  fetch(urlBase + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var svcs  = data.services || [];
+      var total = data.total_usd || 0;
+
+      if (data.data_as_of) {
+        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
+        document.getElementById(prefix + '-badge').textContent = badge;
+      }
+
+      document.getElementById(prefix + '-kpi').innerHTML =
+        kpiCard('Total', fmtCost(total), color) +
+        kpiCard('Services', svcs.length, '') +
+        kpiCard('Top Service', svcs.length ? shortName(svcs[0].service) : '—', color) +
+        kpiCard('Top Cost', svcs.length ? fmtCost(svcs[0].cost_usd) : '—', color);
+
+      if (!svcs.length) {
+        document.getElementById(prefix + '-table').innerHTML = '<p class="empty">No spend in this period.</p>';
+        return;
+      }
+
+      var max = svcs[0].cost_usd || 1;
+      var rows = svcs.map(function(s) {
+        var pct   = Math.round(s.cost_usd / max * 100);
+        var share = ((s.cost_usd / total) * 100).toFixed(1);
+        return '<tr>' +
+          '<td>' + s.service + '</td>' +
+          '<td><div class="bar-cell"><div class="bar ' + color + '" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+          '<span style="font-family:monospace">' + fmtCost(s.cost_usd) + '</span></div></td>' +
+          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+      }).join('');
+      document.getElementById(prefix + '-table').innerHTML =
+        '<table><tr><th>Service</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+    })
+    .catch(function(err) {
+      document.getElementById(prefix + '-kpi').innerHTML = '';
+      document.getElementById(prefix + '-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+// ── INSIGHTS ──────────────────────────────────────────────────────────────────
+function loadInsights() {
+  document.getElementById('ins-badge').textContent = periodLabel();
+  document.getElementById('insights-body').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('insights-error').textContent = '';
+
+  fetch('/api/services?period=' + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var svcs  = data.services || [];
+      var total = data.total_usd || 0;
+      var html  = '';
+
+      if (!svcs.length) {
+        html = '<div class="insight info"><span class="insight-icon">&#x2139;</span>No cost data available for this period.</div>';
+      } else {
+        // Top spender
+        var top = svcs[0];
+        var topShare = (top.cost_usd / total * 100).toFixed(1);
+        var level = topShare > 50 ? 'warn' : 'info';
+        html += '<div class="insight ' + level + '"><span class="insight-icon">' + (level==='warn'?'&#x26A0;':'&#x2139;') + '</span>' +
+          '<strong>' + top.service + '</strong> is your top spender at <strong>' + fmtCost(top.cost_usd) + '</strong> (' + topShare + '% of total).</div>';
+
+        // Services with >20% share
+        svcs.forEach(function(s) {
+          var sh = s.cost_usd / total * 100;
+          if (sh > 20 && s !== top) {
+            html += '<div class="insight info"><span class="insight-icon">&#x2139;</span>' +
+              '<strong>' + s.service + '</strong> accounts for ' + sh.toFixed(1) + '% of total cost (' + fmtCost(s.cost_usd) + ').</div>';
+          }
+        });
+
+        // Very low cost services (noise)
+        var lowCount = svcs.filter(function(s) { return s.cost_usd < 0.01; }).length;
+        if (lowCount > 0) {
+          html += '<div class="insight ok"><span class="insight-icon">&#x2713;</span>' +
+            lowCount + ' service' + (lowCount>1?'s':'') + ' with cost &lt; $0.01 (negligible spend).</div>';
+        }
+
+        // Total summary
+        html += '<div class="insight info"><span class="insight-icon">&#x2139;</span>' +
+          'Total ' + periodLabel() + ' spend: <strong>' + fmtCost(total) + '</strong> across ' + svcs.length + ' services.</div>';
+      }
+
+      document.getElementById('insights-body').innerHTML = html;
+    })
+    .catch(function(err) {
+      document.getElementById('insights-body').innerHTML = '';
+      document.getElementById('insights-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+function loadBreakdown() {
+  document.getElementById('breakdown-badge').textContent = periodLabel();
+  document.getElementById('breakdown-body').innerHTML = '<div class="loading">Loading&hellip;</div>';
+
+  var cats = [
+    { name: 'Compute',  url: '/api/compute?period=',  color: 'blue'   },
+    { name: 'Storage',  url: '/api/storage?period=',  color: 'green'  },
+    { name: 'Network',  url: '/api/network?period=',  color: 'orange' },
+    { name: 'Database', url: '/api/database?period=', color: 'purple' },
+  ];
+  var results = {};
+  var remaining = cats.length;
+
+  cats.forEach(function(cat) {
+    fetch(cat.url + currentPeriod)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        results[cat.name] = { total: data.total_usd || 0, color: cat.color, count: (data.services||[]).length };
+        remaining--;
+        if (remaining === 0) renderBreakdown(results);
+      })
+      .catch(function() {
+        results[cat.name] = { total: 0, color: cat.color, count: 0 };
+        remaining--;
+        if (remaining === 0) renderBreakdown(results);
+      });
+  });
+}
+
+function renderBreakdown(results) {
+  var grand = Object.values(results).reduce(function(s, r) { return s + r.total; }, 0) || 1;
+  var html = '<div class="kpi-grid">';
+  Object.keys(results).forEach(function(name) {
+    var r = results[name];
+    var share = (r.total / grand * 100).toFixed(1);
+    html += kpiCard(name, fmtCost(r.total) + ' (' + share + '%)', r.color, r.count + ' svc');
+  });
+  html += '</div>';
+  document.getElementById('breakdown-body').innerHTML = html;
+}
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+function loadStatus() {
+  fetch('/api/status')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { document.getElementById('st-error').textContent = 'Error: ' + d.error; return; }
+      var range = (d.date_range && d.date_range.length === 2) ? d.date_range[0] + ' \u2013 ' + d.date_range[1] : '&mdash;';
+      document.getElementById('st-range').innerHTML = 'Date range: <strong>' + range + '</strong>';
+      document.getElementById('st-rows').innerHTML  = 'Rows: <strong>' + fmtNum(d.row_count || 0) + '</strong>';
+      var age = d.cache_age_s != null ? Math.round(d.cache_age_s / 60) + ' min' : '&mdash;';
+      document.getElementById('st-age').innerHTML   = 'Cache age: <strong>' + age + '</strong>';
+      document.getElementById('st-error').textContent = '';
+    })
+    .catch(function(err) { document.getElementById('st-error').textContent = 'Status error: ' + err.message; });
+}
+
+function reloadData() {
+  document.getElementById('st-range').innerHTML = 'Date range: <strong>reloading&hellip;</strong>';
+  document.getElementById('st-error').textContent = '';
+  fetch('/api/reload', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { document.getElementById('st-error').textContent = 'Reload error: ' + d.error; return; }
+      loaded = {}; loadStatus(); loadCurrentTab();
+    })
+    .catch(function(err) { document.getElementById('st-error').textContent = 'Reload error: ' + err.message; });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function stat(label, val, cls) {
+  return '<div class="stat"><div class="stat-label">' + label + '</div>' +
+    '<div class="stat-value' + (cls ? ' ' + cls : '') + '">' + val + '</div></div>';
+}
+
+function kpiCard(label, val, cls, sub) {
+  return '<div class="kpi-card' + (cls ? ' ' + cls : '') + '">' +
+    '<div class="kpi-label">' + label + '</div>' +
+    '<div class="kpi-val">' + val + '</div>' +
+    (sub ? '<div class="kpi-sub">' + sub + '</div>' : '') + '</div>';
+}
+
+function shortName(s) {
+  if (!s) return '';
+  return s.length > 22 ? s.slice(0, 20) + '\u2026' : s;
+}
+
+function shortRg(s) {
+  if (!s) return '(none)';
+  return s.length > 20 ? s.slice(0, 18) + '\u2026' : s;
+}
+
+function periodDays() {
+  return { day: 1, week: 7, month: 30 }[currentPeriod] || 7;
+}
+
+function fmtCost(v) {
+  v = Number(v) || 0;
+  if (v === 0)      return '$0.00';
+  if (v >= 1)       return '$' + v.toFixed(2);
+  if (v >= 0.01)    return '$' + v.toFixed(3);
+  if (v >= 0.0001)  return '$' + v.toFixed(4);
+  return '< $0.0001';
+}
+
+function fmtNum(n) {
+  n = Number(n);
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+// Boot
+loadStatus();
+loadCurrentTab();
+</script>
+</body>
+</html>

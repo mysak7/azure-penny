@@ -404,6 +404,16 @@ async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
+@app.get("/manager", response_class=HTMLResponse, include_in_schema=False)
+async def manager(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/technician", response_class=HTMLResponse, include_in_schema=False)
+async def technician(request: Request):
+    return templates.TemplateResponse("technician.html", {"request": request})
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["health"])
@@ -566,3 +576,80 @@ async def refresh_cache() -> JSONResponse:
         log.exception("Reload failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return JSONResponse({"status": "refreshed", "rows_loaded": len(df), "columns": list(df.columns)})
+
+
+# ── Technician API endpoints ──────────────────────────────────────────────────
+
+@app.get("/api/services", tags=["api"])
+async def api_services(period: str = "week") -> JSONResponse:
+    """All services grouped by MeterCategory for the given period."""
+    try:
+        df = await get_cached_dataframe()
+        days = _period_days(period)
+        filtered = _filter_period(df, days)
+
+        fallback = False
+        if period == "day" and filtered.empty and "C_DATE" in df.columns and not df.empty:
+            last_date = df["C_DATE"].dropna().max()
+            filtered = df[df["C_DATE"] == last_date]
+            fallback = True
+
+        by_svc = _cost_by(filtered, "C_SERVICE")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "services": [{"service": k, "cost_usd": v} for k, v in by_svc.items()],
+            "total_usd": round(sum(by_svc.values()), 4),
+            "data_as_of": data_as_of,
+            "fallback": fallback,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/resource-groups", tags=["api"])
+async def api_resource_groups(period: str = "week") -> JSONResponse:
+    """Cost grouped by resource group (C_NAME) for the given period."""
+    try:
+        df = await get_cached_dataframe()
+        days = _period_days(period)
+        filtered = _filter_period(df, days)
+
+        by_rg = _cost_by(filtered, "C_NAME")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "resource_groups": [{"name": k, "cost_usd": v} for k, v in by_rg.items()],
+            "total_usd": round(sum(by_rg.values()), 4),
+            "data_as_of": data_as_of,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/daily", tags=["api"])
+async def api_daily(days: int = 30) -> JSONResponse:
+    """Daily spend totals for the last N days."""
+    try:
+        df = await get_cached_dataframe()
+        if "C_DATE" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"days": days, "points": [], "total_usd": 0})
+
+        cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+        filtered = df[df["C_DATE"] >= cutoff]
+        daily = filtered.groupby("C_DATE")["C_COST"].sum().sort_index()
+        points = [{"date": str(d), "cost_usd": round(float(v), 6)} for d, v in daily.items()]
+
+        return JSONResponse({
+            "days": days,
+            "points": points,
+            "total_usd": round(float(daily.sum()), 4),
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
