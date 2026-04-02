@@ -59,3 +59,5 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+consolidate_code.py
+full_codebase_context.txt
