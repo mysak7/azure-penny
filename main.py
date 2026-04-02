@@ -265,14 +265,25 @@ _cache: dict[str, Any] = {}  # keys: "df", "loaded_at"
 
 
 async def get_cached_dataframe() -> pd.DataFrame:
-    """Return the cached DataFrame, refreshing if expired or absent."""
+    """Return the cached DataFrame, refreshing if expired or absent.
+
+    Returns an empty DataFrame (with expected columns) when no export files
+    exist yet — this is normal for a new setup before the first Cost Management
+    export runs.
+    """
     async with _lock:
         now = time.monotonic()
         loaded_at: float = _cache.get("loaded_at", 0.0)
 
         if "df" not in _cache or (now - loaded_at) > TTL_SECONDS:
             log.info("Cache miss — loading data from Azure Blob Storage …")
-            df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
+            try:
+                df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
+            except ValueError as exc:
+                # No export files yet — return empty DataFrame so the dashboard
+                # renders with zero costs rather than a hard 500 error.
+                log.warning("%s — returning empty DataFrame.", exc)
+                df = pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))
             _cache["df"] = df
             _cache["loaded_at"] = now
             log.info("Cache refreshed at %.0f", now)
@@ -427,6 +438,7 @@ async def api_status() -> JSONResponse:
             "row_count": len(cached_df) if cached_df is not None else None,
             "date_range": periods,
             "cache_age_s": cache_age_s,
+            "no_data": cached_df is not None and cached_df.empty,
         }
     )
 
