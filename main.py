@@ -18,14 +18,17 @@ import logging
 import os
 import re
 import time
+from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
 
 # ---------------------------------------------------------------------------
 # Bootstrap
@@ -262,14 +265,25 @@ _cache: dict[str, Any] = {}  # keys: "df", "loaded_at"
 
 
 async def get_cached_dataframe() -> pd.DataFrame:
-    """Return the cached DataFrame, refreshing if expired or absent."""
+    """Return the cached DataFrame, refreshing if expired or absent.
+
+    Returns an empty DataFrame (with expected columns) when no export files
+    exist yet — this is normal for a new setup before the first Cost Management
+    export runs.
+    """
     async with _lock:
         now = time.monotonic()
         loaded_at: float = _cache.get("loaded_at", 0.0)
 
         if "df" not in _cache or (now - loaded_at) > TTL_SECONDS:
             log.info("Cache miss — loading data from Azure Blob Storage …")
-            df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
+            try:
+                df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
+            except ValueError as exc:
+                # No export files yet — return empty DataFrame so the dashboard
+                # renders with zero costs rather than a hard 500 error.
+                log.warning("%s — returning empty DataFrame.", exc)
+                df = pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))
             _cache["df"] = df
             _cache["loaded_at"] = now
             log.info("Cache refreshed at %.0f", now)
@@ -281,16 +295,129 @@ async def get_cached_dataframe() -> pd.DataFrame:
 # FastAPI application
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Azure service categories  (MeterCategory values)
+# ---------------------------------------------------------------------------
+
+CAT_COMPUTE = {
+    "Virtual Machines", "App Service", "Container Apps", "Azure Functions",
+    "Container Instances", "Azure Kubernetes Service", "Batch", "Cloud Services",
+}
+CAT_STORAGE = {
+    "Storage", "Azure Data Lake Storage", "Backup", "StorSimple",
+    "Azure NetApp Files", "Managed Disks",
+}
+CAT_NETWORK = {
+    "Virtual Network", "Load Balancer", "Application Gateway", "Azure DNS",
+    "Azure Front Door", "Bandwidth", "VPN Gateway", "Azure Bastion",
+    "Azure Firewall", "Network Watcher", "Traffic Manager",
+}
+CAT_DATABASE = {
+    "SQL Database", "Azure Cosmos DB", "Azure Cache for Redis",
+    "Azure Database for MySQL", "Azure Database for PostgreSQL",
+    "Azure SQL Managed Instance", "Azure Synapse Analytics",
+}
+
+# ---------------------------------------------------------------------------
+# Category filtering helpers
+# ---------------------------------------------------------------------------
+
+
+def _period_days(period: str) -> int:
+    return {"day": 1, "week": 7, "month": 30}.get(period, 7)
+
+
+def _filter_period(df: pd.DataFrame, days: int) -> pd.DataFrame:
+    """Filter rows to the last *days* calendar days using C_DATE."""
+    if "C_DATE" not in df.columns:
+        return df
+    cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+    return df[df["C_DATE"] >= cutoff]
+
+
+def _filter_services(df: pd.DataFrame, services: set[str]) -> pd.DataFrame:
+    """Keep only rows whose C_SERVICE matches the given set (case-insensitive)."""
+    if "C_SERVICE" not in df.columns:
+        return df
+    lower = {s.lower() for s in services}
+    return df[df["C_SERVICE"].str.lower().isin(lower)]
+
+
+def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
+    if col not in df.columns or "C_COST" not in df.columns:
+        return {}
+    grp = df.groupby(col)["C_COST"].sum()
+    return grp[grp > 0].sort_values(ascending=False).round(6).to_dict()
+
+
+async def _category_api(period: str, services: set[str]) -> dict:
+    df = await get_cached_dataframe()
+    days = _period_days(period)
+    filtered = _filter_services(_filter_period(df, days), services)
+
+    # Fallback: if day period is empty, use latest available day
+    fallback = False
+    if period == "day" and filtered.empty and "C_DATE" in df.columns:
+        df_svc = _filter_services(df, services)
+        if not df_svc.empty:
+            last_date = df_svc["C_DATE"].dropna().max()
+            filtered = df_svc[df_svc["C_DATE"] == last_date]
+            fallback = True
+
+    by_svc = _cost_by(filtered, "C_SERVICE")
+    data_as_of = None
+    if not filtered.empty and "C_DATE" in filtered.columns:
+        data_as_of = filtered["C_DATE"].dropna().max()
+
+    return {
+        "period": period,
+        "source": "Cost Management / Blob Storage",
+        "services": [{"service": k, "cost_usd": v} for k, v in by_svc.items()],
+        "total_usd": round(sum(by_svc.values()), 4),
+        "data_as_of": data_as_of,
+        "fallback": fallback,
+    }
+
+
+# ---------------------------------------------------------------------------
+# FastAPI application
+# ---------------------------------------------------------------------------
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+
 app = FastAPI(
     title="azure-penny",
     description="Azure Cost Management dashboard — reads Cost exports from Blob Storage.",
     version="1.0.0",
 )
 
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-@app.get("/", tags=["health"])
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/manager", response_class=HTMLResponse, include_in_schema=False)
+async def manager(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/technician", response_class=HTMLResponse, include_in_schema=False)
+async def technician(request: Request):
+    return templates.TemplateResponse("technician.html", {"request": request})
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
-    """Health / readiness probe."""
     return JSONResponse(
         {
             "status": "ok",
@@ -301,9 +428,83 @@ async def health_check() -> JSONResponse:
     )
 
 
+# ── Status / reload ───────────────────────────────────────────────────────────
+
+@app.get("/api/status", tags=["api"])
+async def api_status() -> JSONResponse:
+    cached_df: pd.DataFrame | None = _cache.get("df")
+    loaded_at: float = _cache.get("loaded_at", 0.0)
+    cache_age_s = round(time.monotonic() - loaded_at) if loaded_at else None
+    periods: list[str] = []
+    if cached_df is not None and "C_DATE" in cached_df.columns:
+        dates = cached_df["C_DATE"].dropna().unique().tolist()
+        if dates:
+            dates.sort()
+            periods = [dates[0], dates[-1]]
+    return JSONResponse(
+        {
+            "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
+            "container": STORAGE_CONTAINER_NAME,
+            "row_count": len(cached_df) if cached_df is not None else None,
+            "date_range": periods,
+            "cache_age_s": cache_age_s,
+            "no_data": cached_df is not None and cached_df.empty,
+        }
+    )
+
+
+@app.post("/api/reload", tags=["api"])
+async def api_reload() -> JSONResponse:
+    async with _lock:
+        _cache.clear()
+        log.info("Cache cleared via /api/reload")
+    try:
+        df = await get_cached_dataframe()
+    except Exception as exc:
+        log.exception("Reload failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return JSONResponse({"status": "reloaded", "rows_loaded": len(df)})
+
+
+# ── Category endpoints ────────────────────────────────────────────────────────
+
+@app.get("/api/compute", tags=["api"])
+async def api_compute(period: str = "week") -> JSONResponse:
+    try:
+        return JSONResponse(await _category_api(period, CAT_COMPUTE))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/storage", tags=["api"])
+async def api_storage(period: str = "week") -> JSONResponse:
+    try:
+        return JSONResponse(await _category_api(period, CAT_STORAGE))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/network", tags=["api"])
+async def api_network(period: str = "week") -> JSONResponse:
+    try:
+        return JSONResponse(await _category_api(period, CAT_NETWORK))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/database", tags=["api"])
+async def api_database(period: str = "week") -> JSONResponse:
+    try:
+        return JSONResponse(await _category_api(period, CAT_DATABASE))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# ── Raw costs (JSON) ──────────────────────────────────────────────────────────
+
 @app.get("/costs", tags=["costs"])
 async def get_costs() -> JSONResponse:
-    """Return aggregated cost data grouped by service, resource group, and date."""
+    """Aggregated cost data grouped by service, resource group, and date."""
     try:
         df = await get_cached_dataframe()
     except Exception as exc:
@@ -324,13 +525,12 @@ async def get_costs() -> JSONResponse:
         .sort_values("C_COST", ascending=False)
     )
     aggregated["C_COST"] = aggregated["C_COST"].round(4)
-
     return JSONResponse({"data": aggregated.to_dict(orient="records")})
 
 
 @app.get("/costs/summary", tags=["costs"])
 async def get_costs_summary() -> JSONResponse:
-    """Return total cost, top-5 services, and top-5 resource groups."""
+    """Total cost, top-5 services, and top-5 resource groups."""
     try:
         df = await get_cached_dataframe()
     except Exception as exc:
@@ -367,21 +567,89 @@ async def get_costs_summary() -> JSONResponse:
 
 @app.get("/costs/refresh", tags=["costs"])
 async def refresh_cache() -> JSONResponse:
-    """Clear the in-memory cache and reload from Azure Blob Storage immediately."""
+    """Clear the cache and reload from Azure Blob Storage."""
     async with _lock:
         _cache.clear()
-        log.info("Cache cleared via /costs/refresh")
-
     try:
         df = await get_cached_dataframe()
     except Exception as exc:
-        log.exception("Failed to reload cost data after cache clear")
+        log.exception("Reload failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return JSONResponse({"status": "refreshed", "rows_loaded": len(df), "columns": list(df.columns)})
 
-    return JSONResponse(
-        {
-            "status": "refreshed",
-            "rows_loaded": len(df),
-            "columns": list(df.columns),
-        }
-    )
+
+# ── Technician API endpoints ──────────────────────────────────────────────────
+
+@app.get("/api/services", tags=["api"])
+async def api_services(period: str = "week") -> JSONResponse:
+    """All services grouped by MeterCategory for the given period."""
+    try:
+        df = await get_cached_dataframe()
+        days = _period_days(period)
+        filtered = _filter_period(df, days)
+
+        fallback = False
+        if period == "day" and filtered.empty and "C_DATE" in df.columns and not df.empty:
+            last_date = df["C_DATE"].dropna().max()
+            filtered = df[df["C_DATE"] == last_date]
+            fallback = True
+
+        by_svc = _cost_by(filtered, "C_SERVICE")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "services": [{"service": k, "cost_usd": v} for k, v in by_svc.items()],
+            "total_usd": round(sum(by_svc.values()), 4),
+            "data_as_of": data_as_of,
+            "fallback": fallback,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/resource-groups", tags=["api"])
+async def api_resource_groups(period: str = "week") -> JSONResponse:
+    """Cost grouped by resource group (C_NAME) for the given period."""
+    try:
+        df = await get_cached_dataframe()
+        days = _period_days(period)
+        filtered = _filter_period(df, days)
+
+        by_rg = _cost_by(filtered, "C_NAME")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "resource_groups": [{"name": k, "cost_usd": v} for k, v in by_rg.items()],
+            "total_usd": round(sum(by_rg.values()), 4),
+            "data_as_of": data_as_of,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/daily", tags=["api"])
+async def api_daily(days: int = 30) -> JSONResponse:
+    """Daily spend totals for the last N days."""
+    try:
+        df = await get_cached_dataframe()
+        if "C_DATE" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"days": days, "points": [], "total_usd": 0})
+
+        cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+        filtered = df[df["C_DATE"] >= cutoff]
+        daily = filtered.groupby("C_DATE")["C_COST"].sum().sort_index()
+        points = [{"date": str(d), "cost_usd": round(float(v), 6)} for d, v in daily.items()]
+
+        return JSONResponse({
+            "days": days,
+            "points": points,
+            "total_usd": round(float(daily.sum()), 4),
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)

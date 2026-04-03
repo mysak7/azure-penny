@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny &mdash; Manager</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    /* Header */
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: .75rem 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .hdr-left { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; letter-spacing: .02em; white-space: nowrap; }
+    header h1 span { color: #64748b; font-weight: 400; font-size: 0.85rem; margin-left: .5rem; }
+    .hdr-refresh { display: flex; align-items: center; gap: .2rem; }
+    .rpill { background: #0f172a; border: 1px solid #334155; color: #64748b; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .rpill:hover { border-color: #4ade80; color: #4ade80; }
+    .rpill.active { background: #052e16; border-color: #4ade80; color: #4ade80; }
+    #hdr-cd { font-size: 0.68rem; color: #4ade80; font-family: monospace; min-width: 36px; padding-left: .2rem; }
+
+    /* Status bar */
+    .status-bar { background: #162032; border-bottom: 1px solid #1e3a5a; padding: .35rem 2rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
+    .status-item { font-size: 0.72rem; color: #64748b; }
+    .status-item strong { color: #38bdf8; }
+    .status-item.error { color: #f87171; }
+    .reload-btn { background: none; border: 1px solid #334155; color: #64748b; font-size: 0.7rem; padding: .15rem .5rem; border-radius: 4px; cursor: pointer; font-family: inherit; }
+    .reload-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    /* Layout */
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.75rem 2rem; }
+
+    /* Top controls */
+    .page-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.75rem; flex-wrap: wrap; gap: .75rem; }
+    .page-title { font-size: 1rem; font-weight: 600; color: #94a3b8; }
+    .period-pills { display: flex; gap: .25rem; }
+    .pill { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.78rem; padding: .3rem .9rem; border-radius: 20px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .pill:hover { border-color: #38bdf8; color: #38bdf8; }
+    .pill.active { background: #0c4a6e; border-color: #38bdf8; color: #38bdf8; }
+
+    /* Summary KPI row */
+    .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.75rem; }
+    @media (max-width: 900px) { .summary-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .summary-row { grid-template-columns: 1fr; } }
+    .summary-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .35rem; position: relative; overflow: hidden; }
+    .summary-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .summary-card.blue::before   { background: #38bdf8; }
+    .summary-card.green::before  { background: #4ade80; }
+    .summary-card.orange::before { background: #f97316; }
+    .summary-card.purple::before { background: #a78bfa; }
+    .summary-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
+    .summary-val { font-size: 1.5rem; font-weight: 700; font-family: monospace; }
+    .summary-card.blue   .summary-val { color: #38bdf8; }
+    .summary-card.green  .summary-val { color: #4ade80; }
+    .summary-card.orange .summary-val { color: #f97316; }
+    .summary-card.purple .summary-val { color: #a78bfa; }
+    .summary-sub { font-size: 0.72rem; color: #475569; }
+
+    /* Category grid */
+    .category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 860px) { .category-grid { grid-template-columns: 1fr; } }
+
+    /* Category cards */
+    .cat-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+    .cat-header { padding: .9rem 1.25rem; border-bottom: 1px solid #1e3a5a; display: flex; justify-content: space-between; align-items: center; }
+    .cat-title h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: .09em; color: #94a3b8; font-weight: 700; }
+    .cat-badge { font-size: 0.7rem; background: #0f172a; border: 1px solid #334155; color: #64748b; padding: .15rem .5rem; border-radius: 4px; }
+    .cat-body { padding: 1rem 1.25rem; }
+
+    /* Horizontal bar chart */
+    .hbar-chart { margin-bottom: .75rem; }
+    .hbar-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; }
+    .hbar-label { font-size: 0.72rem; color: #94a3b8; width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hbar-track { flex: 1; height: 8px; background: #0f172a; border-radius: 4px; overflow: hidden; }
+    .hbar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+    .hbar-fill.blue   { background: linear-gradient(90deg, #38bdf8, #0ea5e9); }
+    .hbar-fill.green  { background: linear-gradient(90deg, #4ade80, #22c55e); }
+    .hbar-fill.orange { background: linear-gradient(90deg, #f97316, #ea580c); }
+    .hbar-fill.purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
+    .hbar-cost { font-size: 0.72rem; color: #e2e8f0; font-family: monospace; width: 68px; text-align: right; flex-shrink: 0; }
+
+    /* Nav */
+    .nav { display: flex; gap: .5rem; align-items: center; }
+    .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
+    .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
+    .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+
+    /* Service table */
+    .svc-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: .25rem; }
+    .svc-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #334155; }
+    .svc-table td { padding: .45rem .5rem; border-bottom: 1px solid #1e293b; }
+    .svc-table tr:last-child td { border-bottom: none; }
+    .svc-table tr:hover td { background: rgba(56,189,248,.03); }
+    .pct-cell { color: #475569; font-size: 0.72rem; }
+
+    /* Loading / error / empty */
+    .loading { color: #64748b; font-size: 0.8rem; padding: 1.25rem 0; text-align: center; }
+    .error-msg { color: #f87171; font-size: 0.78rem; padding: .5rem 0; }
+    .empty { color: #475569; font-size: 0.78rem; text-align: center; padding: 1.25rem 0; font-style: italic; }
+    .cat-divider { border: none; border-top: 1px solid #334155; margin: .85rem 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-left">
+    <h1>azure-penny <span>Manager</span></h1>
+    <div class="hdr-refresh">
+      <button class="rpill active" data-s="0"    onclick="hdrSet(0)">Off</button>
+      <button class="rpill"        data-s="60"   onclick="hdrSet(60)">1m</button>
+      <button class="rpill"        data-s="300"  onclick="hdrSet(300)">5m</button>
+      <button class="rpill"        data-s="600"  onclick="hdrSet(600)">10m</button>
+      <button class="rpill"        data-s="1800" onclick="hdrSet(1800)">30m</button>
+      <span id="hdr-cd"></span>
+    </div>
+  </div>
+  <div class="nav">
+    <a href="/manager"    class="nav-link active">Manager</a>
+    <a href="/technician" class="nav-link">Technician</a>
+  </div>
+</header>
+
+<div class="status-bar" id="status-bar">
+  <span class="status-item">Source: <strong>Cost Management / Blob Storage</strong></span>
+  <span class="status-item" id="st-range">Date range: <strong>loading&hellip;</strong></span>
+  <span class="status-item" id="st-rows">Rows: <strong>&mdash;</strong></span>
+  <span class="status-item" id="st-age">Cache age: <strong>&mdash;</strong></span>
+  <button class="reload-btn" onclick="reloadData()">&#x21BB; Reload data</button>
+  <span id="st-error" class="status-item error"></span>
+</div>
+
+<div class="container">
+
+  <div class="page-controls">
+    <span class="page-title">Azure Infrastructure Cost Overview</span>
+    <div class="period-pills">
+      <button class="pill"        data-period="day"   onclick="setPeriod('day')">Day</button>
+      <button class="pill active" data-period="week"  onclick="setPeriod('week')">Week</button>
+      <button class="pill"        data-period="month" onclick="setPeriod('month')">Month</button>
+    </div>
+  </div>
+
+  <!-- KPI row -->
+  <div class="summary-row">
+    <div class="summary-card blue">
+      <div class="summary-label">Compute</div>
+      <div class="summary-val" id="kpi-compute">&mdash;</div>
+      <div class="summary-sub" id="kpi-compute-sub">&nbsp;</div>
+    </div>
+    <div class="summary-card green">
+      <div class="summary-label">Storage</div>
+      <div class="summary-val" id="kpi-storage">&mdash;</div>
+      <div class="summary-sub" id="kpi-storage-sub">&nbsp;</div>
+    </div>
+    <div class="summary-card orange">
+      <div class="summary-label">Network</div>
+      <div class="summary-val" id="kpi-network">&mdash;</div>
+      <div class="summary-sub" id="kpi-network-sub">&nbsp;</div>
+    </div>
+    <div class="summary-card purple">
+      <div class="summary-label">Database</div>
+      <div class="summary-val" id="kpi-database">&mdash;</div>
+      <div class="summary-sub" id="kpi-database-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Category grid -->
+  <div class="category-grid">
+
+    <div class="cat-card">
+      <div class="cat-header">
+        <div class="cat-title"><h2>Compute</h2></div>
+        <span id="cp-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="cp-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="cp-table"></div>
+        <div id="cp-error" class="error-msg"></div>
+      </div>
+    </div>
+
+    <div class="cat-card">
+      <div class="cat-header">
+        <div class="cat-title"><h2>Storage</h2></div>
+        <span id="st-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="st-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="st-table"></div>
+        <div id="st-error" class="error-msg"></div>
+      </div>
+    </div>
+
+    <div class="cat-card">
+      <div class="cat-header">
+        <div class="cat-title"><h2>Network</h2></div>
+        <span id="net-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="net-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="net-table"></div>
+        <div id="net-error" class="error-msg"></div>
+      </div>
+    </div>
+
+    <div class="cat-card">
+      <div class="cat-header">
+        <div class="cat-title"><h2>Database</h2></div>
+        <span id="db-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="db-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="db-table"></div>
+        <div id="db-error" class="error-msg"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+var currentPeriod = 'week';
+var loaded = {};
+
+// ── Header auto-refresh ───────────────────────────────────────────────────────
+var _hS=0, _hT=null, _hL=0;
+function hdrSet(s) {
+  _hS=s; clearInterval(_hT);
+  document.querySelectorAll('.rpill').forEach(function(b){ b.classList.toggle('active', +b.dataset.s===s); });
+  var el=document.getElementById('hdr-cd'); el.textContent='';
+  if(s>0){ _hL=s; _hT=setInterval(function(){ _hL--; var m=Math.floor(_hL/60),r=_hL%60; el.textContent=(m?m+'m ':'')+r+'s'; if(_hL<=0){ _hL=s; doRefresh(); } },1000); }
+}
+function doRefresh() { loaded={}; loadAll(); }
+
+// ── Period ────────────────────────────────────────────────────────────────────
+function setPeriod(p) {
+  document.querySelectorAll('.pill').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
+  currentPeriod=p; loaded={}; loadAll();
+}
+function periodLabel() {
+  return {day:'24 hours', week:'7 days', month:'30 days'}[currentPeriod]||currentPeriod;
+}
+
+// ── Load all ──────────────────────────────────────────────────────────────────
+function loadAll() {
+  loadCategory('compute',  '/api/compute?period='  +currentPeriod, 'cp',  'blue');
+  loadCategory('storage',  '/api/storage?period='  +currentPeriod, 'st',  'green');
+  loadCategory('network',  '/api/network?period='  +currentPeriod, 'net', 'orange');
+  loadCategory('database', '/api/database?period=' +currentPeriod, 'db',  'purple');
+}
+
+// ── Generic category loader ───────────────────────────────────────────────────
+function loadCategory(name, url, prefix, color) {
+  var key=name+currentPeriod;
+  if(loaded[key]) return;
+  loaded[key]=true;
+
+  document.getElementById(prefix+'-badge').textContent=periodLabel();
+  document.getElementById(prefix+'-chart').innerHTML='<div class="loading">Loading&hellip;</div>';
+  document.getElementById(prefix+'-table').innerHTML='';
+  document.getElementById(prefix+'-error').textContent='';
+
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(data.error) throw new Error(data.error);
+      var svcs=data.services||[];
+      var total=data.total_usd||0;
+
+      if(data.data_as_of){
+        var badge=data.fallback?'Latest: '+data.data_as_of:periodLabel()+' \xb7 as of '+data.data_as_of;
+        document.getElementById(prefix+'-badge').textContent=badge;
+      }
+
+      // KPI
+      var kpi=document.getElementById('kpi-'+name);
+      var sub=document.getElementById('kpi-'+name+'-sub');
+      if(kpi) kpi.textContent=fmtCost(total);
+      if(sub) sub.textContent=svcs.length+' service'+(svcs.length!==1?'s':'');
+
+      if(!svcs.length){
+        document.getElementById(prefix+'-chart').innerHTML='<p class="empty">No spend in this period.</p>';
+        return;
+      }
+
+      // Bar chart (top 5)
+      var top=svcs.slice(0,5); var max=top[0].cost_usd||1;
+      var chart=top.map(function(s){
+        var pct=Math.round(s.cost_usd/max*100);
+        return '<div class="hbar-row">'+
+          '<div class="hbar-label" title="'+s.service+'">'+s.service+'</div>'+
+          '<div class="hbar-track"><div class="hbar-fill '+color+'" style="width:'+pct+'%"></div></div>'+
+          '<div class="hbar-cost">'+fmtCost(s.cost_usd)+'</div>'+
+          '</div>';
+      }).join('');
+      document.getElementById(prefix+'-chart').innerHTML=chart;
+
+      // Table
+      var tot=total||1;
+      var rows=svcs.map(function(s){
+        var pct=(s.cost_usd/tot*100).toFixed(1);
+        return '<tr><td>'+s.service+'</td>'+
+          '<td style="font-family:monospace">'+fmtCost(s.cost_usd)+'</td>'+
+          '<td class="pct-cell">'+pct+'%</td></tr>';
+      }).join('');
+      document.getElementById(prefix+'-table').innerHTML=
+        '<table class="svc-table"><tr><th>Service</th><th>Cost</th><th>Share</th></tr>'+rows+'</table>';
+    })
+    .catch(function(err){
+      document.getElementById(prefix+'-chart').innerHTML='';
+      document.getElementById(prefix+'-error').textContent='Error: '+err.message;
+    });
+}
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+function loadStatus() {
+  fetch('/api/status')
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.error){ document.getElementById('st-error').textContent='Error: '+d.error; return; }
+      var range=(d.date_range&&d.date_range.length===2)?d.date_range[0]+' \u2013 '+d.date_range[1]:'&mdash;';
+      document.getElementById('st-range').innerHTML='Date range: <strong>'+range+'</strong>';
+      document.getElementById('st-rows').innerHTML='Rows: <strong>'+fmtNum(d.row_count||0)+'</strong>';
+      var age=d.cache_age_s!=null?Math.round(d.cache_age_s/60)+' min':'&mdash;';
+      document.getElementById('st-age').innerHTML='Cache age: <strong>'+age+'</strong>';
+      document.getElementById('st-error').textContent='';
+    })
+    .catch(function(err){ document.getElementById('st-error').textContent='Status error: '+err.message; });
+}
+
+function reloadData() {
+  document.getElementById('st-range').innerHTML='Date range: <strong>reloading&hellip;</strong>';
+  document.getElementById('st-error').textContent='';
+  fetch('/api/reload',{method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d.error){ document.getElementById('st-error').textContent='Reload error: '+d.error; return; }
+      loaded={}; loadStatus(); loadAll();
+    })
+    .catch(function(err){ document.getElementById('st-error').textContent='Reload error: '+err.message; });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtCost(v) {
+  v=Number(v)||0;
+  if(v===0) return '$0.00';
+  if(v>=1)  return '$'+v.toFixed(2);
+  if(v>=0.01) return '$'+v.toFixed(3);
+  if(v>=0.0001) return '$'+v.toFixed(4);
+  return '< $0.0001';
+}
+function fmtNum(n) {
+  n=Number(n);
+  if(n>=1e9) return (n/1e9).toFixed(2)+'B';
+  if(n>=1e6) return (n/1e6).toFixed(2)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'K';
+  return String(n);
+}
+
+// Boot
+loadStatus();
+loadAll();
+</script>
+</body>
+</html>
