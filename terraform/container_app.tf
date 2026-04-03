@@ -34,6 +34,11 @@ resource "azurerm_container_app" "main" {
     min_replicas = 0
     max_replicas = 1
 
+    http_scale_rule {
+      name                = "http"
+      concurrent_requests = 10
+    }
+
     container {
       name   = var.app_name
       image  = var.container_image

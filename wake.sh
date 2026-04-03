@@ -3,15 +3,14 @@ set -euo pipefail
 
 APP_NAME="azure-penny-prod"
 RG="azure-penny-prod-rg"
-URL="https://azure-penny-prod.ambitiouswave-074f51bf.eastus.azurecontainerapps.io"
+URL="https://azure-penny-prod--gcxloym.ambitiouswave-074f51bf.eastus.azurecontainerapps.io"
 
 echo "Waking up azure-penny..."
 
-az containerapp update \
+az containerapp start \
   --name "$APP_NAME" \
   --resource-group "$RG" \
-  --min-replicas 1 \
-  --output none 2>/dev/null
+  --output none 2>/dev/null || true
 
 echo "Waiting for app to respond at $URL"
 
