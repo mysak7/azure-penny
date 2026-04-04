@@ -578,6 +578,49 @@ async def refresh_cache() -> JSONResponse:
     return JSONResponse({"status": "refreshed", "rows_loaded": len(df), "columns": list(df.columns)})
 
 
+@app.get("/api/debug", tags=["api"])
+async def api_debug() -> JSONResponse:
+    """Diagnostic endpoint: shows raw columns, actual service names, and date range."""
+    try:
+        client = get_blob_service_client()
+        container_client = client.get_container_client(STORAGE_CONTAINER_NAME)
+        all_blobs = [b.name for b in container_client.list_blobs()]
+        blob_paths = all_blobs[:20]  # first 20 only
+
+        df = await get_cached_dataframe()
+        raw_cols = list(df.columns)
+
+        date_range = None
+        if "C_DATE" in df.columns:
+            dates = df["C_DATE"].dropna()
+            if not dates.empty:
+                date_range = {"min": dates.min(), "max": dates.max()}
+
+        top_services: list = []
+        if "C_SERVICE" in df.columns:
+            top_services = df["C_SERVICE"].value_counts().head(20).index.tolist()
+
+        top_rgs: list = []
+        if "C_NAME" in df.columns:
+            top_rgs = df["C_NAME"].value_counts().head(10).index.tolist()
+
+        total_cost = round(float(df["C_COST"].sum()), 4) if "C_COST" in df.columns else None
+
+        return JSONResponse({
+            "blob_count": len(all_blobs),
+            "blob_paths_sample": blob_paths,
+            "row_count": len(df),
+            "columns": raw_cols,
+            "date_range": date_range,
+            "total_cost": total_cost,
+            "top_services": top_services,
+            "top_resource_groups": top_rgs,
+        })
+    except Exception as exc:
+        log.exception("Debug endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── Technician API endpoints ──────────────────────────────────────────────────
 
 @app.get("/api/services", tags=["api"])
