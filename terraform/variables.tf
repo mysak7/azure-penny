@@ -1,3 +1,9 @@
+variable "subscription_id" {
+  description = "Azure Subscription ID. If null, falls back to the ARM_SUBSCRIPTION_ID environment variable (required by azurerm 4.x)."
+  type        = string
+  default     = null
+}
+
 variable "location" {
   description = "Azure region where all resources will be deployed."
   type        = string
