@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="azure-penny-prod"
 RG="azure-penny-prod-rg"
-URL="https://azure-penny-prod--gcxloym.ambitiouswave-074f51bf.eastus.azurecontainerapps.io"
+URL="https://azure-penny-prod.ambitiouswave-074f51bf.eastus.azurecontainerapps.io"
 
 echo "Waking up azure-penny..."
 
