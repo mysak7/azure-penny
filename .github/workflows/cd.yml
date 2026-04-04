@@ -66,10 +66,10 @@ jobs:
 
       - name: Configure ACR registry with managed identity
         run: |
-          IDENTITY_ID=$(az identity show \
-            --name "${{ vars.MANAGED_IDENTITY_NAME }}" \
+          IDENTITY_ID=$(az containerapp show \
+            --name "${{ vars.CONTAINER_APP_NAME }}" \
             --resource-group "${{ vars.RESOURCE_GROUP_NAME }}" \
-            --query id -o tsv)
+            --query "identity.userAssignedIdentities | keys(@) | [0]" -o tsv)
           az containerapp registry set \
             --name "${{ vars.CONTAINER_APP_NAME }}" \
             --resource-group "${{ vars.RESOURCE_GROUP_NAME }}" \
