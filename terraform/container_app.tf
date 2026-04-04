@@ -64,6 +64,11 @@ resource "azurerm_container_app" "main" {
     }
   }
 
+  registry {
+    server   = azurerm_container_registry.main.login_server
+    identity = azurerm_user_assigned_identity.main.id
+  }
+
   ingress {
     external_enabled = true
     target_port      = 8000
