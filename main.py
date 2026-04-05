@@ -198,13 +198,14 @@ def _blob_to_dataframe(raw: bytes, blob_name: str) -> pd.DataFrame:
 
 def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     """Rename raw Azure Cost Management columns to internal C_* names."""
+    # Build a case-insensitive lookup: lowercase(source) -> internal name
+    lower_map = {k.lower(): v for k, v in COLUMN_MAP.items()}
+
     rename: dict[str, str] = {}
     for raw_col in df.columns:
-        if raw_col in COLUMN_MAP:
-            internal = COLUMN_MAP[raw_col]
-            # Only add to rename dict if we haven't already mapped this target
-            if internal not in rename.values():
-                rename[raw_col] = internal
+        internal = lower_map.get(raw_col.lower())
+        if internal and internal not in rename.values():
+            rename[raw_col] = internal
         # Handle tag_ prefix (Azure sometimes flattens tags as tag_<key> columns)
         elif raw_col.lower().startswith("tag_") and "C_TAGS" not in rename.values():
             rename[raw_col] = "C_TAGS"

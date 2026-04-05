@@ -16,7 +16,7 @@ resource "azurerm_subscription_cost_management_export" "daily" {
 
   export_data_storage_location {
     container_id     = azurerm_storage_container.cost_exports.resource_manager_id
-    root_folder_path = "/${var.app_name}"
+    root_folder_path = var.app_name
   }
 
   export_data_options {
