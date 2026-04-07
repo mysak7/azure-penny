@@ -24,6 +24,8 @@ from typing import Any
 
 import pandas as pd
 from azure.identity import DefaultAzureCredential
+from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.resource import ResourceManagementClient
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -49,7 +51,9 @@ log = logging.getLogger("azure-penny")
 STORAGE_ACCOUNT_NAME: str = os.environ.get("STORAGE_ACCOUNT_NAME", "")
 STORAGE_CONTAINER_NAME: str = os.environ.get("STORAGE_CONTAINER_NAME", "cost-exports")
 AZURE_CLIENT_ID: str | None = os.environ.get("AZURE_CLIENT_ID")  # optional
+AZURE_SUBSCRIPTION_ID: str = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
 TTL_SECONDS: int = int(os.environ.get("CACHE_TTL_SECONDS", "3600"))
+LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))  # 15 min
 
 # ---------------------------------------------------------------------------
 # Azure Blob Storage client (constructed lazily; reused across requests)
@@ -110,6 +114,9 @@ COLUMN_MAP: dict[str, str] = {
     # Tags
     "Tags":                  "C_TAGS",
     "tag_":                  "C_TAGS",        # prefix match handled in code
+    # Resource identity (used by Live Resources tab for cost correlation)
+    "ResourceId":            "C_RESOURCE_ID",
+    "InstanceId":            "C_RESOURCE_ID",
 }
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
@@ -293,6 +300,162 @@ async def get_cached_dataframe() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Azure Resource Management clients (Live Resources tab)
+# ---------------------------------------------------------------------------
+
+_resource_mgmt_client: ResourceManagementClient | None = None
+_compute_mgmt_client: ComputeManagementClient | None = None
+
+
+def _get_resource_mgmt_client() -> ResourceManagementClient:
+    global _resource_mgmt_client
+    if _resource_mgmt_client is None:
+        if not AZURE_SUBSCRIPTION_ID:
+            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
+        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+        _resource_mgmt_client = ResourceManagementClient(credential, AZURE_SUBSCRIPTION_ID)
+    return _resource_mgmt_client
+
+
+def _get_compute_mgmt_client() -> ComputeManagementClient:
+    global _compute_mgmt_client
+    if _compute_mgmt_client is None:
+        if not AZURE_SUBSCRIPTION_ID:
+            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
+        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+        _compute_mgmt_client = ComputeManagementClient(credential, AZURE_SUBSCRIPTION_ID)
+    return _compute_mgmt_client
+
+
+# Resource type (lowercase ARM type string) → UI category
+_RTYPE_CATEGORY: dict[str, str] = {
+    "microsoft.compute/virtualmachines":            "vm",
+    "microsoft.compute/virtualmachinescalesets":    "vm",
+    "microsoft.compute/disks":                      "storage",
+    "microsoft.compute/snapshots":                  "storage",
+    "microsoft.storage/storageaccounts":            "storage",
+    "microsoft.netapp/netappaccounts":              "storage",
+    "microsoft.network/virtualnetworks":            "network",
+    "microsoft.network/publicipaddresses":          "network",
+    "microsoft.network/loadbalancers":              "network",
+    "microsoft.network/applicationgateways":        "network",
+    "microsoft.network/bastionhosts":               "network",
+    "microsoft.network/azurefirewalls":             "network",
+    "microsoft.network/vpngateways":                "network",
+    "microsoft.network/dnszones":                   "network",
+    "microsoft.network/privatednszones":            "network",
+    "microsoft.network/trafficmanagerprofiles":     "network",
+    "microsoft.network/frontdoors":                 "network",
+    "microsoft.sql/servers":                        "database",
+    "microsoft.sql/managedinstances":               "database",
+    "microsoft.documentdb/databaseaccounts":        "database",
+    "microsoft.cache/redis":                        "database",
+    "microsoft.dbformysql/servers":                 "database",
+    "microsoft.dbformysql/flexibleservers":         "database",
+    "microsoft.dbforpostgresql/servers":            "database",
+    "microsoft.dbforpostgresql/flexibleservers":    "database",
+    "microsoft.synapse/workspaces":                 "database",
+    "microsoft.containerregistry/registries":       "container",
+    "microsoft.app/containerapps":                  "container",
+    "microsoft.app/managedenvironments":            "container",
+    "microsoft.containerservice/managedclusters":   "container",
+    "microsoft.web/sites":                          "container",
+    "microsoft.web/serverfarms":                    "container",
+}
+
+
+def _resource_category(rtype: str) -> str:
+    return _RTYPE_CATEGORY.get(rtype.lower(), "other")
+
+
+def _fetch_resource_inventory() -> list[dict]:
+    """Enumerate all ARM resources with VM power states (runs in executor)."""
+    rc = _get_resource_mgmt_client()
+    all_res = list(rc.resources.list())
+    log.info("ARM inventory: %d resources found", len(all_res))
+
+    # Collect VMs for individual power-state queries
+    vm_resources = [
+        r for r in all_res
+        if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachines"
+    ]
+    vm_states: dict[str, str] = {}
+    if vm_resources:
+        try:
+            cc = _get_compute_mgmt_client()
+            for vm_res in vm_resources:
+                parts = vm_res.id.split("/resourceGroups/")
+                rg = parts[1].split("/")[0] if len(parts) > 1 else ""
+                try:
+                    inst = cc.virtual_machines.get(rg, vm_res.name, expand="instanceView")
+                    statuses = inst.instance_view.statuses if inst.instance_view else []
+                    power = next(
+                        (s.display_status for s in statuses
+                         if s.code.startswith("PowerState/")),
+                        "Unknown",
+                    )
+                    vm_states[vm_res.id.lower()] = power
+                except Exception as e:
+                    log.debug("VM power state error (%s): %s", vm_res.name, e)
+                    vm_states[vm_res.id.lower()] = "Unknown"
+        except Exception as e:
+            log.warning("Could not fetch VM power states: %s", e)
+
+    result: list[dict] = []
+    for r in all_res:
+        if not r.id:
+            continue
+        rtype = r.type or ""
+        cat = _resource_category(rtype)
+        parts = r.id.split("/resourceGroups/")
+        rg = parts[1].split("/")[0] if len(parts) > 1 else ""
+        status = vm_states.get(r.id.lower(), "Active") if cat == "vm" else "Active"
+        result.append({
+            "id": r.id,
+            "name": r.name or "",
+            "type": rtype,
+            "category": cat,
+            "resource_group": rg,
+            "location": r.location or "",
+            "status": status,
+        })
+    return result
+
+
+_live_lock: asyncio.Lock = asyncio.Lock()
+_live_cache: dict[str, Any] = {}
+
+
+async def _get_live_data() -> list[dict]:
+    """Live resource inventory merged with 30-day cost data (cached)."""
+    async with _live_lock:
+        now = time.monotonic()
+        if "inv" not in _live_cache or (now - _live_cache.get("ts", 0.0)) > LIVE_CACHE_TTL:
+            log.info("Live inventory cache miss — fetching from ARM…")
+            inv = await asyncio.get_event_loop().run_in_executor(
+                None, _fetch_resource_inventory
+            )
+            _live_cache["inv"] = inv
+            _live_cache["ts"] = now
+        inv: list[dict] = _live_cache["inv"]
+
+    # Cost correlation (outside lock — uses existing cost cache)
+    df = await get_cached_dataframe()
+    cost_by_id: dict[str, float] = {}
+    if not df.empty and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
+        cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
+        agg = mdf.groupby("C_RESOURCE_ID")["C_COST"].sum()
+        cost_by_id = {
+            str(k).lower(): round(float(v), 4)
+            for k, v in agg.items()
+            if v > 0
+        }
+
+    return [{**r, "monthly_cost": cost_by_id.get(r["id"].lower())} for r in inv]
+
+
+# ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
 
@@ -413,6 +576,11 @@ async def manager(request: Request):
 @app.get("/technician", response_class=HTMLResponse, include_in_schema=False)
 async def technician(request: Request):
     return templates.TemplateResponse("technician.html", {"request": request})
+
+
+@app.get("/live", response_class=HTMLResponse, include_in_schema=False)
+async def live_view(request: Request):
+    return templates.TemplateResponse("live.html", {"request": request})
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -675,6 +843,33 @@ async def api_resource_groups(period: str = "week") -> JSONResponse:
         })
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/live-resources", tags=["api"])
+async def api_live_resources() -> JSONResponse:
+    """All live Azure resources with 30-day cost from Cost Management exports."""
+    try:
+        resources = await _get_live_data()
+        return JSONResponse({
+            "resources": resources,
+            "count": len(resources),
+            "subscription_id": AZURE_SUBSCRIPTION_ID or "not configured",
+        })
+    except Exception as exc:
+        log.exception("Live resources endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/live-reload", tags=["api"])
+async def api_live_reload() -> JSONResponse:
+    """Clear the live resource cache and re-fetch from ARM."""
+    async with _live_lock:
+        _live_cache.clear()
+    try:
+        resources = await _get_live_data()
+        return JSONResponse({"status": "reloaded", "count": len(resources)})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/daily", tags=["api"])
