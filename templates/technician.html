@@ -138,6 +138,7 @@
 
 <div class="status-bar">
   <span class="status-item">Source: <strong>Cost Management / Blob Storage</strong></span>
+  <span class="status-item" style="color:#4ade80;font-weight:600">Total: <strong id="st-total-val">loading&hellip;</strong></span>
   <span class="status-item" id="st-range">Date range: <strong>loading&hellip;</strong></span>
   <span class="status-item" id="st-rows">Rows: <strong>&mdash;</strong></span>
   <span class="status-item" id="st-age">Cache age: <strong>&mdash;</strong></span>
@@ -253,7 +254,7 @@ function hdrSet(s) {
   var el=document.getElementById('hdr-cd'); el.textContent='';
   if(s>0){ _hL=s; _hT=setInterval(function(){ _hL--; var m=Math.floor(_hL/60),r=_hL%60; el.textContent=(m?m+'m ':'')+r+'s'; if(_hL<=0){ _hL=s; doRefresh(); } },1000); }
 }
-function doRefresh() { loaded={}; loadCurrentTab(); }
+function doRefresh() { loaded={}; loadCurrentTab(); loadGrandTotal(); }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function setTab(tab) {
@@ -274,6 +275,7 @@ function setPeriod(p) {
   currentPeriod = p;
   loaded = {};
   loadCurrentTab();
+  loadGrandTotal();
 }
 
 function periodLabel() {
@@ -402,7 +404,7 @@ function loadResourceGroups() {
       var total = data.total_usd || 0;
 
       document.getElementById('rg-kpi').innerHTML =
-        kpiCard('Total Cost', fmtCost(total), 'blue') +
+        kpiCard('RG Cost', fmtCost(total), 'green') +
         kpiCard('Resource Groups', rgs.length, 'green') +
         kpiCard('Top Group', rgs.length ? shortRg(rgs[0].name) : '—', 'orange') +
         kpiCard('Top Cost', rgs.length ? fmtCost(rgs[0].cost_usd) : '—', 'orange');
@@ -597,7 +599,7 @@ function reloadData() {
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { document.getElementById('st-error').textContent = 'Reload error: ' + d.error; return; }
-      loaded = {}; loadStatus(); loadCurrentTab();
+      loaded = {}; loadStatus(); loadCurrentTab(); loadGrandTotal();
     })
     .catch(function(err) { document.getElementById('st-error').textContent = 'Reload error: ' + err.message; });
 }
@@ -646,9 +648,22 @@ function fmtNum(n) {
   return String(n);
 }
 
+// ── Grand total (status bar — always in sync with manager) ───────────────────
+function loadGrandTotal() {
+  var bar = document.getElementById('st-total-val');
+  if (bar) bar.textContent = 'loading…';
+  fetch('/api/services?period=' + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (bar) bar.textContent = fmtCost(data.total_usd || 0) + ' (' + periodLabel() + ')';
+    })
+    .catch(function() { if (bar) bar.textContent = '—'; });
+}
+
 // Boot
 loadStatus();
 loadCurrentTab();
+loadGrandTotal();
 </script>
 </body>
 </html>

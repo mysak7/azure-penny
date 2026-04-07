@@ -123,6 +123,7 @@
 
 <div class="status-bar" id="status-bar">
   <span class="status-item">Source: <strong>Cost Management / Blob Storage</strong></span>
+  <span class="status-item" id="st-total" style="color:#4ade80;font-weight:600">Total: <strong id="st-total-val">loading&hellip;</strong></span>
   <span class="status-item" id="st-range">Date range: <strong>loading&hellip;</strong></span>
   <span class="status-item" id="st-rows">Rows: <strong>&mdash;</strong></span>
   <span class="status-item" id="st-age">Cache age: <strong>&mdash;</strong></span>
@@ -264,17 +265,22 @@ function loadAll() {
 function loadTotal() {
   var kpi = document.getElementById('kpi-total');
   var sub = document.getElementById('kpi-total-sub');
+  var bar = document.getElementById('st-total-val');
   if (kpi) kpi.textContent = '…';
+  if (bar) bar.textContent = 'loading…';
   fetch('/api/services?period=' + currentPeriod)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) throw new Error(data.error);
       var total = data.total_usd || 0;
+      var label = fmtCost(total) + ' (' + periodLabel() + ')';
       if (kpi) kpi.textContent = fmtCost(total);
       if (sub) sub.textContent = (data.services||[]).length + ' service' + ((data.services||[]).length !== 1 ? 's' : '');
+      if (bar) bar.textContent = label;
     })
     .catch(function(err) {
       if (kpi) kpi.textContent = 'err';
+      if (bar) bar.textContent = '—';
     });
 }
 
