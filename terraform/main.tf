@@ -44,6 +44,9 @@ provider "azurerm" {
   }
 }
 
+# Get current Azure client context for subscription_id
+data "azurerm_client_config" "current" {}
+
 # Register required resource providers
 resource "azurerm_resource_provider_registration" "app" {
   name = "Microsoft.App"
