@@ -954,9 +954,41 @@ async def api_live_reload() -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+def _test_api_direct() -> dict:
+    """Direct test of Azure Retail Prices API."""
+    results = {}
+    # Try without any filter
+    try:
+        url = "https://prices.azure.microsoft.com/api/retail/prices?api-version=2023-01-01-preview"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        results["no_filter"] = f"OK - {len(data.get('Items', []))} items"
+    except Exception as e:
+        results["no_filter"] = f"ERROR - {str(e)}"
+
+    # Try with simple filter
+    try:
+        filter_str = "armSkuName eq 'Standard_D2s_v3'"
+        filter_encoded = urllib.parse.quote(filter_str, safe="")
+        url = f"https://prices.azure.microsoft.com/api/retail/prices?api-version=2023-01-01-preview&$filter={filter_encoded}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        results["sku_only"] = f"OK - {len(data.get('Items', []))} items"
+    except Exception as e:
+        results["sku_only"] = f"ERROR - {str(e)}"
+
+    return results
+
+
 @app.get("/api/spot-price-debug", tags=["api"])
-async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
+async def api_spot_price_debug(vm_size: str = "", region: str = "") -> JSONResponse:
     """Debug endpoint: test spot price lookup for a given VM size + region."""
+    if not vm_size or not region:
+        test_results = await asyncio.get_event_loop().run_in_executor(None, _test_api_direct)
+        return JSONResponse({"api_connectivity": test_results, "status": "testing"})
+
     try:
         price = await asyncio.get_event_loop().run_in_executor(
             None, _fetch_spot_price, vm_size, region
