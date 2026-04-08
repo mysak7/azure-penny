@@ -388,29 +388,34 @@ def _fetch_spot_price(vm_size: str, region: str) -> float | None:
     if cache_key in _SPOT_PRICE_CACHE:
         return _SPOT_PRICE_CACHE[cache_key]
 
-    filter_str = (
-        f"armSkuName eq '{vm_size}' "
-        f"and armRegionName eq '{region.lower()}' "
-        f"and contains(skuName, 'Spot')"
-    )
-    qs = urllib.parse.urlencode({"api-version": "2023-01-01-preview", "$filter": filter_str})
-    url = f"https://prices.azure.microsoft.com/api/retail/prices?{qs}"
-    try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = _json.loads(resp.read())
-        items = data.get("Items", [])
-        if not items:
-            log.debug("No spot price found for %s in %s", vm_size, region)
-            return None
-        # Pick the lowest unit price (some SKUs have Windows/Linux variants)
-        price = min(float(i["retailPrice"]) for i in items if i.get("retailPrice"))
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("Spot price for %s (%s): $%.4f/hr", vm_size, region, price)
-        return price
-    except Exception as exc:
-        log.warning("Spot price lookup failed (%s %s): %s", vm_size, region, exc)
-        return None
+    # Try multiple filter strategies (API can be finicky about field names)
+    strategies = [
+        f"armSkuName eq '{vm_size}' and armRegionName eq '{region.lower()}' and contains(skuName, 'Spot')",
+        f"armSkuName eq '{vm_size}' and armRegionName eq '{region.lower()}' and priceType eq 'Consumption'",
+        f"skuName eq '{vm_size} Spot' and armRegionName eq '{region.lower()}'",
+    ]
+
+    for filter_str in strategies:
+        qs = urllib.parse.urlencode({"api-version": "2023-01-01-preview", "$filter": filter_str})
+        url = f"https://prices.azure.microsoft.com/api/retail/prices?{qs}"
+        try:
+            log.debug("Trying spot price lookup: %s (%s) — filter: %s", vm_size, region, filter_str)
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read())
+            items = data.get("Items", [])
+            if items:
+                # Pick the lowest unit price (some SKUs have Windows/Linux variants)
+                price = min(float(i["retailPrice"]) for i in items if i.get("retailPrice"))
+                _SPOT_PRICE_CACHE[cache_key] = price
+                log.info("✓ Spot price for %s (%s): $%.4f/hr", vm_size, region, price)
+                return price
+        except Exception as exc:
+            log.debug("Strategy failed: %s", exc)
+            continue
+
+    log.warning("✗ No spot price found for %s in %s (tried %d strategies)", vm_size, region, len(strategies))
+    return None
 
 
 def _fetch_resource_inventory() -> list[dict]:
@@ -942,6 +947,27 @@ async def api_live_reload() -> JSONResponse:
         return JSONResponse({"status": "reloaded", "count": len(resources)})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/spot-price-debug", tags=["api"])
+async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
+    """Debug endpoint: test spot price lookup for a given VM size + region."""
+    try:
+        price = await asyncio.get_event_loop().run_in_executor(
+            None, _fetch_spot_price, vm_size, region
+        )
+        if price is None:
+            return JSONResponse({"vm_size": vm_size, "region": region, "price": None, "status": "not_found"})
+        monthly = round(price * 24 * 30, 2)
+        return JSONResponse({
+            "vm_size": vm_size,
+            "region": region,
+            "hourly_usd": round(price, 4),
+            "monthly_usd": monthly,
+            "status": "found",
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc), "vm_size": vm_size, "region": region}, status_code=500)
 
 
 @app.get("/api/daily", tags=["api"])
