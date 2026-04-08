@@ -934,6 +934,35 @@ async def api_services(period: str = "week") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/cost-search", tags=["api"])
+async def api_cost_search(q: str) -> JSONResponse:
+    """Search cost export for rows matching a resource name pattern."""
+    try:
+        df = await get_cached_dataframe()
+        if df.empty or "C_NAME" not in df.columns:
+            return JSONResponse({"results": [], "count": 0})
+
+        # Search by resource name (case-insensitive substring match)
+        mask = df["C_NAME"].str.contains(q, case=False, na=False)
+        matches = df[mask][["C_NAME", "C_RESOURCE_ID", "C_COST", "C_DATE"]].drop_duplicates(subset=["C_RESOURCE_ID"]).to_dict("records")
+
+        return JSONResponse({
+            "query": q,
+            "count": len(matches),
+            "results": [
+                {
+                    "name": str(r.get("C_NAME", "")),
+                    "resource_id": str(r.get("C_RESOURCE_ID", "")),
+                    "last_cost": round(float(r.get("C_COST", 0)), 4),
+                    "date": str(r.get("C_DATE", "")),
+                }
+                for r in matches
+            ]
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/api/resource-groups", tags=["api"])
 async def api_resource_groups(period: str = "week") -> JSONResponse:
     """Cost grouped by resource group (C_NAME) for the given period."""
