@@ -396,8 +396,9 @@ def _fetch_spot_price(vm_size: str, region: str) -> float | None:
     ]
 
     for filter_str in strategies:
-        qs = urllib.parse.urlencode({"api-version": "2023-01-01-preview", "$filter": filter_str})
-        url = f"https://prices.azure.microsoft.com/api/retail/prices?{qs}"
+        # Must use quote() to properly encode the filter (it contains spaces)
+        filter_encoded = urllib.parse.quote(filter_str, safe="")
+        url = f"https://prices.azure.microsoft.com/api/retail/prices?api-version=2023-01-01-preview&$filter={filter_encoded}"
         try:
             log.debug("Trying spot price lookup: %s (%s) — filter: %s", vm_size, region, filter_str)
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
