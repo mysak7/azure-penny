@@ -230,10 +230,13 @@ function statusBadge(status, cat) {
 }
 
 // ── Cost cell ─────────────────────────────────────────────────────────────────
-function costCell(v) {
+function costCell(v, source) {
   if (v === null || v === undefined) return '<span class="cost-nil">&mdash;</span>';
   var n = Number(v);
   var cls = n >= 50 ? 'cost-hi' : n >= 10 ? 'cost-med' : 'cost-lo';
+  if (source === 'spot_rate') {
+    return '<span class="' + cls + '" title="Live spot rate (no export data yet)">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.7">/hr</span></span>';
+  }
   return '<span class="' + cls + '">' + fmtCost(n) + '</span>';
 }
 
@@ -334,7 +337,7 @@ function renderTable(rows) {
       '<td class="dim">' + escHtml(r.resource_group || '&mdash;') + '</td>' +
       '<td class="dim">' + escHtml(r.location || '&mdash;') + '</td>' +
       '<td>' + statusBadge(r.status, r.category) + '</td>' +
-      '<td style="text-align:right">' + costCell(r.monthly_cost) + '</td>' +
+      '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source) + '</td>' +
       '</tr>';
   }).join('') + '</tbody>';
 

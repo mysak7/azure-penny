@@ -14,10 +14,12 @@ Results are cached in memory for TTL_SECONDS (default 3 600 s / 1 hour).
 
 import asyncio
 import io
+import json as _json
 import logging
 import os
 import re
 import time
+import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -368,6 +370,51 @@ def _resource_category(rtype: str) -> str:
     return _RTYPE_CATEGORY.get(rtype.lower(), "other")
 
 
+# ---------------------------------------------------------------------------
+# Azure Retail Prices API — spot price lookup (public, no auth required)
+# ---------------------------------------------------------------------------
+
+_SPOT_PRICE_CACHE: dict[str, float] = {}  # "{vm_size}:{region}" → $/hr
+
+
+def _fetch_spot_price(vm_size: str, region: str) -> float | None:
+    """Return the current spot price in $/hr for a given VM size + region.
+
+    Uses the Azure Retail Prices public API — no credentials needed.
+    Result is cached in-process for the lifetime of the app.
+    """
+    cache_key = f"{vm_size.lower()}:{region.lower()}"
+    if cache_key in _SPOT_PRICE_CACHE:
+        return _SPOT_PRICE_CACHE[cache_key]
+
+    # Normalise the region name: ARM uses e.g. "centralus", API wants the same
+    filter_str = (
+        f"armSkuName eq '{vm_size}' "
+        f"and armRegionName eq '{region.lower()}' "
+        f"and contains(skuName, 'Spot')"
+    )
+    url = (
+        "https://prices.azure.microsoft.com/api/retail/prices"
+        f"?api-version=2023-01-01-preview&$filter={urllib.request.quote(filter_str)}"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        items = data.get("Items", [])
+        if not items:
+            log.debug("No spot price found for %s in %s", vm_size, region)
+            return None
+        # Pick the lowest unit price (some SKUs have multiple meters)
+        price = min(float(i["retailPrice"]) for i in items if i.get("retailPrice"))
+        _SPOT_PRICE_CACHE[cache_key] = price
+        log.info("Spot price for %s (%s): $%.4f/hr", vm_size, region, price)
+        return price
+    except Exception as exc:
+        log.warning("Spot price lookup failed (%s %s): %s", vm_size, region, exc)
+        return None
+
+
 def _fetch_resource_inventory() -> list[dict]:
     """Enumerate all ARM resources with VM power states (runs in executor)."""
     rc = _get_resource_mgmt_client()
@@ -380,6 +427,7 @@ def _fetch_resource_inventory() -> list[dict]:
         if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachines"
     ]
     vm_states: dict[str, str] = {}
+    vm_meta: dict[str, dict] = {}  # id.lower() → {"vm_size": str, "is_spot": bool}
     if vm_resources:
         try:
             cc = _get_compute_mgmt_client()
@@ -395,6 +443,10 @@ def _fetch_resource_inventory() -> list[dict]:
                         "Unknown",
                     )
                     vm_states[vm_res.id.lower()] = power
+                    vm_meta[vm_res.id.lower()] = {
+                        "vm_size": (inst.hardware_profile.vm_size or "") if inst.hardware_profile else "",
+                        "is_spot": (getattr(inst, "priority", None) or "").lower() == "spot",
+                    }
                 except Exception as e:
                     log.debug("VM power state error (%s): %s", vm_res.name, e)
                     vm_states[vm_res.id.lower()] = "Unknown"
@@ -410,6 +462,7 @@ def _fetch_resource_inventory() -> list[dict]:
         parts = r.id.split("/resourceGroups/")
         rg = parts[1].split("/")[0] if len(parts) > 1 else ""
         status = vm_states.get(r.id.lower(), "Active") if cat == "vm" else "Active"
+        meta = vm_meta.get(r.id.lower(), {})
         result.append({
             "id": r.id,
             "name": r.name or "",
@@ -418,6 +471,8 @@ def _fetch_resource_inventory() -> list[dict]:
             "resource_group": rg,
             "location": r.location or "",
             "status": status,
+            "vm_size": meta.get("vm_size", ""),
+            "is_spot": meta.get("is_spot", False),
         })
     return result
 
@@ -452,7 +507,22 @@ async def _get_live_data() -> list[dict]:
             if v > 0
         }
 
-    return [{**r, "monthly_cost": cost_by_id.get(r["id"].lower())} for r in inv]
+    enriched: list[dict] = []
+    for r in inv:
+        export_cost = cost_by_id.get(r["id"].lower())
+        entry: dict = {**r, "monthly_cost": export_cost, "cost_source": "export" if export_cost is not None else None}
+
+        # For spot VMs with no export cost, fetch live spot rate from Retail Prices API
+        if export_cost is None and r.get("is_spot") and r.get("vm_size") and r.get("location"):
+            spot_price = await asyncio.get_event_loop().run_in_executor(
+                None, _fetch_spot_price, r["vm_size"], r["location"]
+            )
+            if spot_price is not None:
+                entry["monthly_cost"] = round(spot_price, 4)
+                entry["cost_source"] = "spot_rate"
+
+        enriched.append(entry)
+    return enriched
 
 
 # ---------------------------------------------------------------------------
