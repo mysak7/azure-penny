@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import time
+import urllib.parse
 import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
@@ -387,16 +388,13 @@ def _fetch_spot_price(vm_size: str, region: str) -> float | None:
     if cache_key in _SPOT_PRICE_CACHE:
         return _SPOT_PRICE_CACHE[cache_key]
 
-    # Normalise the region name: ARM uses e.g. "centralus", API wants the same
     filter_str = (
         f"armSkuName eq '{vm_size}' "
         f"and armRegionName eq '{region.lower()}' "
         f"and contains(skuName, 'Spot')"
     )
-    url = (
-        "https://prices.azure.microsoft.com/api/retail/prices"
-        f"?api-version=2023-01-01-preview&$filter={urllib.request.quote(filter_str)}"
-    )
+    qs = urllib.parse.urlencode({"api-version": "2023-01-01-preview", "$filter": filter_str})
+    url = f"https://prices.azure.microsoft.com/api/retail/prices?{qs}"
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -405,7 +403,7 @@ def _fetch_spot_price(vm_size: str, region: str) -> float | None:
         if not items:
             log.debug("No spot price found for %s in %s", vm_size, region)
             return None
-        # Pick the lowest unit price (some SKUs have multiple meters)
+        # Pick the lowest unit price (some SKUs have Windows/Linux variants)
         price = min(float(i["retailPrice"]) for i in items if i.get("retailPrice"))
         _SPOT_PRICE_CACHE[cache_key] = price
         log.info("Spot price for %s (%s): $%.4f/hr", vm_size, region, price)
@@ -443,10 +441,13 @@ def _fetch_resource_inventory() -> list[dict]:
                         "Unknown",
                     )
                     vm_states[vm_res.id.lower()] = power
-                    vm_meta[vm_res.id.lower()] = {
-                        "vm_size": (inst.hardware_profile.vm_size or "") if inst.hardware_profile else "",
-                        "is_spot": (getattr(inst, "priority", None) or "").lower() == "spot",
-                    }
+                    vm_size = (inst.hardware_profile.vm_size or "") if inst.hardware_profile else ""
+                    # priority=="Spot" from ARM; fall back to name heuristic
+                    is_spot = (
+                        (getattr(inst, "priority", None) or "").lower() == "spot"
+                        or "spot" in (vm_res.name or "").lower()
+                    )
+                    vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot}
                 except Exception as e:
                     log.debug("VM power state error (%s): %s", vm_res.name, e)
                     vm_states[vm_res.id.lower()] = "Unknown"
@@ -518,7 +519,8 @@ async def _get_live_data() -> list[dict]:
                 None, _fetch_spot_price, r["vm_size"], r["location"]
             )
             if spot_price is not None:
-                entry["monthly_cost"] = round(spot_price, 4)
+                entry["monthly_cost"] = round(spot_price * 24 * 30, 2)
+                entry["spot_price_per_hour"] = round(spot_price, 4)
                 entry["cost_source"] = "spot_rate"
 
         enriched.append(entry)
