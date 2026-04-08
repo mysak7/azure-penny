@@ -937,6 +937,43 @@ async def api_services(period: str = "week") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/live-services", tags=["api"])
+async def api_live_services() -> JSONResponse:
+    """Service-level costs (Storage, Bandwidth, etc.) for the last 30 days.
+
+    These don't correlate to ARM resources, so they're shown separately.
+    """
+    try:
+        df = await get_cached_dataframe()
+        if df.empty or "C_SERVICE" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"services": [], "total_usd": 0})
+
+        cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
+
+        # Group by service and sum costs
+        by_svc = mdf.groupby("C_SERVICE")["C_COST"].sum().sort_values(ascending=False)
+
+        services = [
+            {
+                "name": str(svc),
+                "monthly_cost": round(float(cost), 2),
+                "category": "service",
+            }
+            for svc, cost in by_svc.items()
+            if cost > 0
+        ]
+
+        return JSONResponse({
+            "services": services,
+            "count": len(services),
+            "total_usd": round(float(by_svc.sum()), 2),
+        })
+    except Exception as exc:
+        log.exception("Live services endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/api/cost-search", tags=["api"])
 async def api_cost_search(q: str) -> JSONResponse:
     """Search cost export for rows matching a resource name pattern."""
