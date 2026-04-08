@@ -395,24 +395,26 @@ def _fetch_spot_price(vm_size: str, region: str) -> float | None:
         f"skuName eq '{vm_size} Spot' and armRegionName eq '{region.lower()}'",
     ]
 
-    for filter_str in strategies:
+    for idx, filter_str in enumerate(strategies):
         # Must use quote() to properly encode the filter (it contains spaces)
         filter_encoded = urllib.parse.quote(filter_str, safe="")
         url = f"https://prices.azure.microsoft.com/api/retail/prices?api-version=2023-01-01-preview&$filter={filter_encoded}"
         try:
-            log.debug("Trying spot price lookup: %s (%s) — filter: %s", vm_size, region, filter_str)
+            log.debug("Trying spot price lookup (strategy %d/%d): %s (%s)", idx+1, len(strategies), vm_size, region)
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=10) as resp:
-                data = _json.loads(resp.read())
+                raw = resp.read().decode('utf-8')
+                data = _json.loads(raw)
             items = data.get("Items", [])
+            log.debug("Strategy %d returned %d items. Response keys: %s", idx+1, len(items), list(data.keys()))
             if items:
                 # Pick the lowest unit price (some SKUs have Windows/Linux variants)
                 price = min(float(i["retailPrice"]) for i in items if i.get("retailPrice"))
                 _SPOT_PRICE_CACHE[cache_key] = price
-                log.info("✓ Spot price for %s (%s): $%.4f/hr", vm_size, region, price)
+                log.info("✓ Spot price for %s (%s): $%.4f/hr (strategy %d)", vm_size, region, price, idx+1)
                 return price
         except Exception as exc:
-            log.debug("Strategy failed: %s", exc)
+            log.warning("Strategy %d failed: %s", idx+1, exc)
             continue
 
     log.warning("✗ No spot price found for %s in %s (tried %d strategies)", vm_size, region, len(strategies))
