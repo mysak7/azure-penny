@@ -541,9 +541,12 @@ async def _get_live_data() -> list[dict]:
     if not df.empty and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
         cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
         mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
+        # Normalize ResourceId to lowercase BEFORE aggregation (case differences in cost export)
+        mdf = mdf.copy()
+        mdf["C_RESOURCE_ID"] = mdf["C_RESOURCE_ID"].str.lower()
         agg = mdf.groupby("C_RESOURCE_ID")["C_COST"].sum()
         cost_by_id = {
-            str(k).lower(): round(float(v), 4)
+            str(k): round(float(v), 4)
             for k, v in agg.items()
             if v > 0
         }
