@@ -150,6 +150,7 @@
       <button class="cpill"        data-cat="database"  onclick="setCat('database')">Database</button>
       <button class="cpill"        data-cat="container" onclick="setCat('container')">Container</button>
       <button class="cpill"        data-cat="other"     onclick="setCat('other')">Other</button>
+      <button class="cpill"        data-cat="service"   onclick="setCat('service')">Services</button>
     </div>
     <div class="filter-row">
       <label for="min-cost">Min cost &gt; $</label>
@@ -165,10 +166,6 @@
     <div class="loading">Loading resources from Azure&hellip;</div>
   </div>
 
-  <h3 style="margin-top:2rem;margin-bottom:0.5rem;color:#e2e8f0">Services (Storage, Bandwidth, etc.)</h3>
-  <div id="services-wrap" class="table-wrap">
-    <div class="loading">Loading service costs&hellip;</div>
-  </div>
 
 </div>
 
@@ -338,6 +335,16 @@ function renderTable(rows) {
     '</tr></thead>';
 
   var tbody = '<tbody>' + rows.map(function(r) {
+    if (r.category === 'service') {
+      return '<tr style="opacity:0.85">' +
+        '<td><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong></td>' +
+        '<td><span class="type-chip">Service</span></td>' +
+        '<td class="dim">&mdash;</td>' +
+        '<td class="dim">&mdash;</td>' +
+        '<td></td>' +
+        '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
+        '</tr>';
+    }
     return '<tr>' +
       '<td title="' + escHtml(r.id || '') + '"><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong></td>' +
       '<td><span class="type-chip" title="' + escHtml(r.type || '') + '">' + escHtml(friendlyType(r.type)) + '</span></td>' +
@@ -355,42 +362,41 @@ function renderTable(rows) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 function loadResources() {
   document.getElementById('table-wrap').innerHTML = '<div class="loading">Loading resources from Azure&hellip;</div>';
-  document.getElementById('services-wrap').innerHTML = '<div class="loading">Loading service costs&hellip;</div>';
   document.getElementById('st-error').textContent = '';
 
   Promise.all([
-    fetch('/api/live-resources').then(r => r.json()),
-    fetch('/api/live-services').then(r => r.json())
-  ]).then(function([resData, svcData]) {
+    fetch('/api/live-resources').then(function(r) { return r.json(); }),
+    fetch('/api/live-services').then(function(r) { return r.json(); })
+  ]).then(function(results) {
+    var resData = results[0], svcData = results[1];
     if (resData.error) throw new Error(resData.error);
-    allResources = resData.resources || [];
-    document.getElementById('st-count').textContent   = resData.count || 0;
-    document.getElementById('st-sub').textContent     = resData.subscription_id || '&mdash;';
+
+    var resources = resData.resources || [];
+
+    // Merge service rows into the same array as synthetic resource entries
+    var serviceRows = (svcData.services || []).map(function(s) {
+      return {
+        id: 'svc:' + s.name,
+        name: s.name,
+        type: 'service',
+        category: 'service',
+        resource_group: '',
+        location: '',
+        status: 'Active',
+        monthly_cost: s.monthly_cost,
+        cost_source: 'export',
+      };
+    });
+
+    allResources = resources.concat(serviceRows);
+    document.getElementById('st-count').textContent = resData.count || 0;
+    document.getElementById('st-sub').textContent   = resData.subscription_id || '&mdash;';
     applyFilters();
-    renderServices(svcData.services || []);
   })
   .catch(function(err) {
     document.getElementById('table-wrap').innerHTML = '<p class="error-msg">Error: ' + escHtml(err.message) + '</p>';
     document.getElementById('st-error').textContent = err.message;
   });
-}
-
-function renderServices(services) {
-  if (!services || services.length === 0) {
-    document.getElementById('services-wrap').innerHTML = '<p class="dim" style="padding:1rem">No service costs found.</p>';
-    return;
-  }
-  var thead = '<thead><tr>' +
-    '<th onclick="setSort(\'name\')">Service</th>' +
-    '<th style="text-align:right" onclick="setSort(\'monthly_cost\')">30-day Cost</th>' +
-    '</tr></thead>';
-  var tbody = '<tbody>' + services.map(function(s) {
-    return '<tr>' +
-      '<td><strong style="color:#e2e8f0">' + escHtml(s.name) + '</strong></td>' +
-      '<td style="text-align:right">' + costCell(s.monthly_cost) + '</td>' +
-      '</tr>';
-  }).join('') + '</tbody>';
-  document.getElementById('services-wrap').innerHTML = '<table>' + thead + tbody + '</table>';
 }
 
 function reloadLive() {
