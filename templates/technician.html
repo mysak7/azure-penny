@@ -209,7 +209,10 @@
     <div class="card">
       <div class="card-header">
         <h2>Cost by Resource Group <span class="az-badge">Azure</span></h2>
-        <span id="rg-badge" class="card-badge">7 days</span>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span id="rg-badge" class="card-badge">7 days</span>
+          <button class="btn-row-destroy" style="font-size:0.75rem;padding:.25rem .7rem" onclick="openBulkRgDeleteModal()">&#x1F5D1;&#xFE0F; Delete All RGs</button>
+        </div>
       </div>
       <div id="rg-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
       <div id="rg-table"></div>
@@ -446,6 +449,8 @@ function renderDailyTable(pts) {
 }
 
 // ── RESOURCE GROUPS ───────────────────────────────────────────────────────────
+var _loadedRgs = [];
+
 function loadResourceGroups() {
   document.getElementById('rg-badge').textContent = periodLabel();
   document.getElementById('rg-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
@@ -470,18 +475,24 @@ function loadResourceGroups() {
         return;
       }
 
+      _loadedRgs = rgs.filter(function(r) { return r.name; });
+
       var max  = rgs[0].cost_usd || 1;
       var rows = rgs.map(function(rg) {
         var pct   = Math.round(rg.cost_usd / max * 100);
         var share = ((rg.cost_usd / total) * 100).toFixed(1);
+        var delBtn = rg.name
+          ? '<button class="btn-row-destroy" onclick=\'openRgDeleteModal(' + JSON.stringify(rg.name) + ')\'>&#x1F5D1;&#xFE0F;</button>'
+          : '';
         return '<tr>' +
           '<td title="' + (rg.name||'') + '">' + (rg.name || '<em style="color:#475569">untagged</em>') + '</td>' +
           '<td><div class="bar-cell"><div class="bar green" style="width:' + Math.max(pct, 1) + 'px"></div>' +
           '<span style="font-family:monospace">' + fmtCost(rg.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+          '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
+          '<td style="text-align:center">' + delBtn + '</td></tr>';
       }).join('');
       document.getElementById('rg-table').innerHTML =
-        '<table><tr><th>Resource Group</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+        '<table><tr><th>Resource Group</th><th>Cost</th><th style="text-align:right">Share</th><th></th></tr>' + rows + '</table>';
     })
     .catch(function(err) {
       document.getElementById('rg-kpi').innerHTML = '';
@@ -772,11 +783,12 @@ function loadGrandTotal() {
 
 // ── Bulk Delete All Resource Groups modal ─────────────────────────────────────
 function openBulkRgDeleteModal() {
-  if (!_loadedMachines.length) {
-    alert('No resource groups loaded. Switch to the Compute tab first.');
+  var source = currentTab === 'resource-groups' ? _loadedRgs : _loadedMachines;
+  if (!source.length) {
+    alert('No resource groups loaded yet. Wait for the tab to finish loading.');
     return;
   }
-  var names = _loadedMachines.map(function(m) { return m.name; });
+  var names = source.map(function(m) { return m.name; });
   document.getElementById('bdm-count').textContent = names.length;
   document.getElementById('bdm-list').innerHTML = names.map(function(n) {
     return '<div style="padding:.1rem 0;border-bottom:1px solid #1e293b">' + n + '</div>';
@@ -833,6 +845,7 @@ async function confirmBulkRgDelete() {
     cancelBtn.textContent  = 'Close';
     cancelBtn.disabled = false;
     _loadedMachines = [];
+    _loadedRgs = [];
 
   } catch (err) {
     logEl.innerHTML += '<span class="err">❌ ' + err.message.replace(/</g,'&lt;') + '\n</span>';
