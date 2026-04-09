@@ -289,6 +289,9 @@ function costCell(v, source, r) {
     var tip = 'Spot rate estimate (24×30h)' + (hrly ? ' — ' + hrly : '') + '. No export data yet.';
     return '<span class="' + cls + '" title="' + tip + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
+  if (source === 'price_table') {
+    return '<span class="' + cls + '" title="Retail price estimate (24×30h). No export data yet.">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
+  }
   return '<span class="' + cls + '">' + fmtCost(n) + '</span>';
 }
 
@@ -401,8 +404,10 @@ function renderTable(rows) {
     var destroyBtn = r.id
       ? '<button class="btn-row-destroy" onclick=\'openDestroyModal(' + JSON.stringify(r) + ')\'>🗑️</button>'
       : '';
+    var nameTip = [r.id, r.vm_size ? 'Size: ' + r.vm_size : '', r.is_spot ? 'Spot instance' : ''].filter(Boolean).join('\n');
     return '<tr>' +
-      '<td title="' + escHtml(r.id || '') + '"><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong></td>' +
+      '<td title="' + escHtml(nameTip) + '"><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong>' +
+      (r.vm_size ? '<span style="font-size:0.68rem;color:#64748b;margin-left:.4rem">' + escHtml(r.vm_size) + '</span>' : '') + '</td>' +
       '<td><span class="type-chip" title="' + escHtml(r.type || '') + '">' + escHtml(friendlyType(r.type)) + '</span></td>' +
       '<td class="dim">' + escHtml(r.resource_group || '&mdash;') + '</td>' +
       '<td class="dim">' + escHtml(r.location || '&mdash;') + '</td>' +

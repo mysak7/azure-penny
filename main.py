@@ -562,11 +562,8 @@ def _fetch_resource_inventory() -> list[dict]:
                     )
                     vm_states[vm_res.id.lower()] = power
                     vm_size = (inst.hardware_profile.vm_size or "") if inst.hardware_profile else ""
-                    # priority=="Spot" from ARM; fall back to name heuristic
-                    is_spot = (
-                        (getattr(inst, "priority", None) or "").lower() == "spot"
-                        or "spot" in (vm_res.name or "").lower()
-                    )
+                    # Use ARM priority field only — name heuristic is unreliable
+                    is_spot = (getattr(inst, "priority", None) or "").lower() == "spot"
                     vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot}
                 except Exception as e:
                     log.debug("VM power state error (%s): %s", vm_res.name, e)
