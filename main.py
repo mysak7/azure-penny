@@ -562,6 +562,14 @@ def _fetch_resource_inventory() -> list[dict]:
                     )
                     vm_states[vm_res.id.lower()] = power
                     vm_size = (inst.hardware_profile.vm_size or "") if inst.hardware_profile else ""
+                    # Fallback: read vm_size from ARM resource properties if Compute didn't return it
+                    if not vm_size:
+                        try:
+                            arm_res = rc.resources.get_by_id(vm_res.id, api_version="2024-03-01")
+                            props = arm_res.properties or {}
+                            vm_size = (props.get("hardwareProfile") or {}).get("vmSize", "")
+                        except Exception:
+                            pass
                     # Use ARM priority field only — name heuristic is unreliable
                     is_spot = (getattr(inst, "priority", None) or "").lower() == "spot"
                     vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot}
