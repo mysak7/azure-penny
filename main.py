@@ -1152,6 +1152,95 @@ async def api_live_reload() -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.delete("/api/resource", tags=["infrastructure"])
+async def api_delete_resource(resource_id: str) -> StreamingResponse:
+    """Delete a live Azure resource by its full ARM resource ID.
+
+    Streams status log lines as plain text while the operation runs.
+    resource_id example:
+        /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/myvm
+    """
+    if not resource_id.lower().startswith("/subscriptions/"):
+        raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
+
+    log.warning("⚠️  DELETE resource initiated: %s", resource_id)
+
+    def _get_api_version(client: ResourceManagementClient, namespace: str, rtype: str) -> str:
+        """Return the latest non-preview API version for a resource type."""
+        FALLBACKS: dict[str, str] = {
+            "microsoft.compute":              "2024-03-01",
+            "microsoft.storage":              "2023-05-01",
+            "microsoft.network":              "2024-01-01",
+            "microsoft.sql":                  "2024-01-01",
+            "microsoft.documentdb":           "2023-11-15",
+            "microsoft.app":                  "2024-03-01",
+            "microsoft.containerregistry":    "2023-07-01",
+            "microsoft.operationalinsights":  "2022-10-01",
+            "microsoft.insights":             "2022-06-15",
+            "microsoft.keyvault":             "2023-07-01",
+            "microsoft.web":                  "2023-12-01",
+            "microsoft.cache":                "2023-08-01",
+            "microsoft.dbforpostgresql":      "2024-03-01-preview",
+            "microsoft.dbformysql":           "2023-12-30",
+        }
+        try:
+            provider = client.providers.get(namespace)
+            for rt in provider.resource_types or []:
+                if rt.resource_type and rt.resource_type.lower() == rtype.lower():
+                    stable = [v for v in (rt.api_versions or []) if "preview" not in v.lower()]
+                    return stable[0] if stable else (rt.api_versions or [FALLBACKS.get(namespace.lower(), "2024-01-01")])[0]
+        except Exception:
+            pass
+        return FALLBACKS.get(namespace.lower(), "2024-01-01")
+
+    async def log_streamer():
+        try:
+            yield f"[INFO] Resource: {resource_id}\n"
+
+            # Parse provider namespace + resource type from the ARM ID
+            # /subscriptions/{s}/resourceGroups/{rg}/providers/{ns}/{type}/{name}[/...]
+            parts = resource_id.strip("/").split("/")
+            try:
+                prov_idx = [p.lower() for p in parts].index("providers")
+                namespace = parts[prov_idx + 1]
+                rtype     = parts[prov_idx + 2]
+            except (ValueError, IndexError):
+                yield "❌ ERROR: Cannot parse provider namespace from resource ID\n"
+                return
+
+            client = _get_resource_mgmt_client()
+
+            yield f"[INFO] Looking up API version for {namespace}/{rtype}...\n"
+            api_version = await asyncio.get_event_loop().run_in_executor(
+                None, _get_api_version, client, namespace, rtype
+            )
+            yield f"[INFO] Using API version: {api_version}\n"
+            yield "[INFO] Sending delete request to Azure Resource Manager...\n"
+
+            poller = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: client.resources.begin_delete_by_id(resource_id, api_version)
+            )
+
+            yield "[INFO] Delete operation accepted. Waiting for completion...\n"
+
+            # Poll every 5 s and stream status
+            elapsed = 0
+            while not poller.done():
+                await asyncio.sleep(5)
+                elapsed += 5
+                yield f"[{elapsed:>4}s] status: {poller.status()}\n"
+
+            await asyncio.get_event_loop().run_in_executor(None, poller.result)
+            log.warning("✅ Resource deleted: %s", resource_id)
+            yield f"\n✅ Resource deleted successfully ({elapsed}s total)\n"
+
+        except Exception as exc:
+            log.exception("Resource delete failed for %s", resource_id)
+            yield f"\n❌ ERROR: {exc}\n"
+
+    return StreamingResponse(log_streamer(), media_type="text/plain")
+
+
 @app.get("/api/spot-price-debug", tags=["api"])
 async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
     """Debug endpoint: test spot price lookup for a given VM size + region."""
