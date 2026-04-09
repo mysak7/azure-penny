@@ -1318,6 +1318,54 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
     return StreamingResponse(log_streamer(), media_type="text/plain")
 
 
+@app.delete("/api/resource-groups/all", tags=["infrastructure"])
+async def api_delete_all_resource_groups(resource_groups: list[str]) -> StreamingResponse:
+    """Delete multiple Azure resource groups sequentially.
+
+    Accepts a JSON array of resource group names in the request body.
+    Streams progress for each group as plain text.
+    """
+    if not resource_groups:
+        raise HTTPException(status_code=400, detail="resource_groups list is empty")
+
+    log.warning("⚠️  BULK DELETE resource groups initiated: %s", resource_groups)
+
+    async def log_streamer():
+        client = _get_resource_mgmt_client()
+        total = len(resource_groups)
+        succeeded = 0
+        failed = 0
+
+        for i, rg in enumerate(resource_groups, 1):
+            rg = rg.strip()
+            yield f"\n[{i}/{total}] Deleting resource group: {rg}\n"
+            try:
+                poller = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda r=rg: client.resource_groups.begin_delete(r)
+                )
+                elapsed = 0
+                while not poller.done():
+                    await asyncio.sleep(5)
+                    elapsed += 5
+                    yield f"  [{elapsed:>4}s] {rg}: {poller.status()}\n"
+
+                await asyncio.get_event_loop().run_in_executor(None, poller.result)
+                log.warning("✅ Resource group deleted: %s", rg)
+                yield f"  ✅ {rg} deleted ({elapsed}s)\n"
+                succeeded += 1
+            except Exception as exc:
+                log.exception("Resource group delete failed for %s", rg)
+                yield f"  ❌ {rg} FAILED: {exc}\n"
+                failed += 1
+
+        yield f"\n{'✅' if failed == 0 else '⚠️'} Done — {succeeded}/{total} deleted"
+        if failed:
+            yield f", {failed} failed"
+        yield "\n"
+
+    return StreamingResponse(log_streamer(), media_type="text/plain")
+
+
 @app.get("/api/spot-price-debug", tags=["api"])
 async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
     """Debug endpoint: test spot price lookup for a given VM size + region."""

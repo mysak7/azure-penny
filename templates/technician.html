@@ -222,7 +222,10 @@
     <div class="card">
       <div class="card-header">
         <h2>Compute Services <span class="az-badge">VMs &bull; App Service &bull; AKS</span></h2>
-        <span id="cp-badge" class="card-badge">7 days</span>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span id="cp-badge" class="card-badge">7 days</span>
+          <button class="btn-row-destroy" style="font-size:0.75rem;padding:.25rem .7rem" onclick="openBulkRgDeleteModal()">&#x1F5D1;&#xFE0F; Delete All RGs</button>
+        </div>
       </div>
       <div id="cp-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
       <div id="cp-table"></div>
@@ -262,6 +265,22 @@
   </div>
 
 </div><!-- /container -->
+
+<!-- Bulk Delete All Resource Groups Modal -->
+<div class="modal-overlay" id="rg-bulk-delete-modal">
+  <div class="modal">
+    <h2>&#9888;&#65039; Delete ALL Resource Groups</h2>
+    <div class="modal-warning">
+      &#9888;&#65039; This will permanently delete <strong id="bdm-count">&mdash;</strong> resource groups and <strong>every resource inside each one</strong>. This action cannot be undone.
+    </div>
+    <div id="bdm-list" style="font-size:0.78rem;color:#94a3b8;max-height:120px;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:.6rem .85rem;font-family:monospace"></div>
+    <div id="bdm-log" class="destroy-log" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="bdm-cancel-btn" onclick="closeBulkRgDeleteModal()">Cancel</button>
+      <button class="btn-confirm-destroy" id="bdm-destroy-btn" onclick="confirmBulkRgDelete()">&#x1F5D1;&#xFE0F; Delete All</button>
+    </div>
+  </div>
+</div>
 
 <!-- Delete Resource Group Modal -->
 <div class="modal-overlay" id="rg-delete-modal">
@@ -471,6 +490,8 @@ function loadResourceGroups() {
 }
 
 // ── COMPUTE MACHINES ──────────────────────────────────────────────────────────
+var _loadedMachines = [];
+
 function loadComputeMachines() {
   document.getElementById('cp-badge').textContent = periodLabel();
   document.getElementById('cp-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
@@ -482,6 +503,7 @@ function loadComputeMachines() {
     .then(function(data) {
       if (data.error) throw new Error(data.error);
       var machines = data.machines || [];
+      _loadedMachines = machines;
       var total    = data.total_usd || 0;
 
       if (data.data_as_of) {
@@ -747,6 +769,81 @@ function loadGrandTotal() {
     })
     .catch(function() { if (bar) bar.textContent = '—'; });
 }
+
+// ── Bulk Delete All Resource Groups modal ─────────────────────────────────────
+function openBulkRgDeleteModal() {
+  if (!_loadedMachines.length) {
+    alert('No resource groups loaded. Switch to the Compute tab first.');
+    return;
+  }
+  var names = _loadedMachines.map(function(m) { return m.name; });
+  document.getElementById('bdm-count').textContent = names.length;
+  document.getElementById('bdm-list').innerHTML = names.map(function(n) {
+    return '<div style="padding:.1rem 0;border-bottom:1px solid #1e293b">' + n + '</div>';
+  }).join('');
+  document.getElementById('bdm-log').style.display = 'none';
+  document.getElementById('bdm-log').innerHTML = '';
+  document.getElementById('bdm-cancel-btn').textContent = 'Cancel';
+  document.getElementById('bdm-cancel-btn').disabled = false;
+  document.getElementById('bdm-destroy-btn').textContent = '\uD83D\uDDD1\uFE0F Delete All';
+  document.getElementById('bdm-destroy-btn').disabled = false;
+  document.getElementById('rg-bulk-delete-modal').classList.add('active');
+}
+
+function closeBulkRgDeleteModal() {
+  document.getElementById('rg-bulk-delete-modal').classList.remove('active');
+}
+
+async function confirmBulkRgDelete() {
+  var names = _loadedMachines.map(function(m) { return m.name; });
+  if (!names.length) return;
+
+  var logEl     = document.getElementById('bdm-log');
+  var cancelBtn = document.getElementById('bdm-cancel-btn');
+  var destroyBtn = document.getElementById('bdm-destroy-btn');
+
+  logEl.style.display = 'block';
+  logEl.innerHTML = '<span style="color:#94a3b8">Sending request…\n</span>';
+  cancelBtn.disabled  = true;
+  destroyBtn.disabled = true;
+
+  try {
+    var resp = await fetch('/api/resource-groups/all', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(names)
+    });
+
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      var text = decoder.decode(chunk.value, { stream: true });
+      text.split('\n').forEach(function(line) {
+        if (!line) return;
+        var cls = line.includes('✅') ? 'ok' : line.includes('❌') || line.includes('FAILED') ? 'err' : '';
+        logEl.innerHTML += '<span' + (cls ? ' class="' + cls + '"' : '') + '>' +
+          line.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '\n</span>';
+      });
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    destroyBtn.textContent = '✅ Done';
+    cancelBtn.textContent  = 'Close';
+    cancelBtn.disabled = false;
+    _loadedMachines = [];
+
+  } catch (err) {
+    logEl.innerHTML += '<span class="err">❌ ' + err.message.replace(/</g,'&lt;') + '\n</span>';
+    cancelBtn.disabled  = false;
+    destroyBtn.disabled = false;
+  }
+}
+
+document.getElementById('rg-bulk-delete-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeBulkRgDeleteModal();
+});
 
 // ── Delete Resource Group modal ───────────────────────────────────────────────
 var _deleteRgName = null;
