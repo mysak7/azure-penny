@@ -13,3 +13,11 @@ resource "azurerm_role_assignment" "storage_blob_reader" {
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 }
+
+# Allow azure-penny to delete resources across the subscription.
+# Scoped to the subscription so it can destroy resources in any RG.
+resource "azurerm_role_assignment" "subscription_contributor" {
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}"
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_user_assigned_identity.main.principal_id
+}

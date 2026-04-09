@@ -203,8 +203,11 @@
       <span>Resource Group: <strong id="dm-rg">&mdash;</strong></span>
       <span>Monthly Cost: <strong id="dm-cost" style="color:#f87171">&mdash;</strong></span>
     </div>
-    <div class="modal-warning">
+    <div class="modal-warning" id="dm-warning">
       ⚠️ This will permanently delete the Azure resource. This action cannot be undone.
+    </div>
+    <div class="modal-warning" id="dm-aks-warning" style="display:none; background:#78350f; border-color:#92400e; color:#fde68a;">
+      ⚠️ <strong>AKS-managed resource!</strong> This resource is inside an AKS managed resource group (<code>MC_…</code>). Deleting it directly will break the cluster. Delete the <strong>AKS cluster</strong> instead (<code>Microsoft.ContainerService/managedClusters</code>).
     </div>
     <div id="dm-log" class="destroy-log" style="display:none"></div>
     <div class="modal-actions">
@@ -518,6 +521,12 @@ function openDestroyModal(r) {
   document.getElementById('dm-cancel-btn').disabled     = false;
   document.getElementById('dm-destroy-btn').textContent = '🗑️ Destroy';
   document.getElementById('dm-destroy-btn').disabled    = false;
+
+  // Warn if this is inside an AKS managed resource group (MC_ prefix)
+  var isAksManaged = /\/resourceGroups\/MC_/i.test(r.id || '');
+  document.getElementById('dm-warning').style.display    = isAksManaged ? 'none' : '';
+  document.getElementById('dm-aks-warning').style.display = isAksManaged ? '' : 'none';
+
   document.getElementById('destroy-modal').classList.add('active');
 }
 
