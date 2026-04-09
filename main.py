@@ -131,55 +131,74 @@ _DATE_FOLDER_RE = re.compile(r"^(\d{8})-(\d{8})$")
 
 
 def _discover_latest_blobs(container_name: str) -> list[str]:
-    """Walk the container and return blob names in the most-recent date folder.
+    """Walk the container and return only the most-recently modified export file(s).
 
     Azure Cost Management export paths look like:
         <export-name>/<YYYYMMDD-YYYYMMDD>/<guid>/<file>.parquet
 
-    We collect every unique YYYYMMDD-YYYYMMDD segment across all blobs,
-    choose the lexicographically largest (most-recent), then return all blob
-    names whose path contains that segment.
+    Azure daily exports are CUMULATIVE — each new run in the same date-range
+    folder contains all data from the start of the billing period up to that
+    day.  Reading multiple files from the same folder would double- (or N-times-)
+    count costs.
+
+    Strategy:
+    1. Find the lexicographically latest YYYYMMDD-YYYYMMDD folder.
+    2. Among all data files in that folder, keep only the one with the latest
+       last_modified timestamp (i.e. the most recent export run).
     """
     client = get_blob_service_client()
     container_client = client.get_container_client(container_name)
 
-    all_blobs: list[str] = [b.name for b in container_client.list_blobs()]
-    if not all_blobs:
+    # Collect blobs with their last_modified so we can pick the newest run
+    all_blob_props = list(container_client.list_blobs())
+    if not all_blob_props:
         return []
 
-    log.info("Found %d blob(s) in container '%s'", len(all_blobs), container_name)
+    log.info("Found %d blob(s) in container '%s'", len(all_blob_props), container_name)
 
     # Find all date segments present in blob paths
     date_segments: set[str] = set()
-    for name in all_blobs:
-        for part in name.split("/"):
+    for bp in all_blob_props:
+        for part in bp.name.split("/"):
             if _DATE_FOLDER_RE.match(part):
                 date_segments.add(part)
+
+    _EXPORT_EXTS = (".parquet", ".csv", ".csv.gz")
 
     if not date_segments:
         log.warning(
             "No date-folder segments (YYYYMMDD-YYYYMMDD) found in blob paths. "
-            "Falling back to reading all .parquet/.csv files."
+            "Falling back to reading only the newest .parquet/.csv file."
         )
-        return [
-            n for n in all_blobs
-            if n.endswith(".parquet") or n.endswith(".csv") or n.endswith(".csv.gz")
-        ]
+        candidates = [bp for bp in all_blob_props if bp.name.endswith(_EXPORT_EXTS)]
+        if not candidates:
+            return []
+        newest = max(candidates, key=lambda bp: bp.last_modified or 0)
+        log.info("Fallback: selected newest blob %s", newest.name)
+        return [newest.name]
 
     latest_segment = sorted(date_segments)[-1]
     log.info("Latest export date folder: %s", latest_segment)
 
-    selected = [
-        n for n in all_blobs
-        if latest_segment in n
-        and (
-            n.endswith(".parquet")
-            or n.endswith(".csv")
-            or n.endswith(".csv.gz")
-        )
+    candidates = [
+        bp for bp in all_blob_props
+        if latest_segment in bp.name and bp.name.endswith(_EXPORT_EXTS)
     ]
-    log.info("Selected %d file(s) from folder '%s'", len(selected), latest_segment)
-    return selected
+    if not candidates:
+        return []
+
+    if len(candidates) == 1:
+        log.info("Selected 1 file from folder '%s': %s", latest_segment, candidates[0].name)
+        return [candidates[0].name]
+
+    # Multiple files in the same date folder → pick only the most recent export
+    # run to avoid cumulative double-counting.
+    newest = max(candidates, key=lambda bp: bp.last_modified or 0)
+    log.info(
+        "Found %d file(s) in folder '%s'; using only the most-recent: %s (last_modified=%s)",
+        len(candidates), latest_segment, newest.name, newest.last_modified,
+    )
+    return [newest.name]
 
 
 # ---------------------------------------------------------------------------
