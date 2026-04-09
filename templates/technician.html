@@ -290,7 +290,7 @@ function loadCurrentTab() {
   switch (currentTab) {
     case 'all-services':    loadAllServices();    break;
     case 'resource-groups': loadResourceGroups(); break;
-    case 'compute':         loadCategoryDetail('compute',  '/api/compute?period=',  'cp',  'blue');   break;
+    case 'compute':         loadComputeMachines(); break;
     case 'database':        loadCategoryDetail('database', '/api/database?period=', 'db',  'purple'); break;
     case 'insights':        loadInsights(); loadBreakdown(); break;
   }
@@ -431,6 +431,55 @@ function loadResourceGroups() {
     .catch(function(err) {
       document.getElementById('rg-kpi').innerHTML = '';
       document.getElementById('rg-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+// ── COMPUTE MACHINES ──────────────────────────────────────────────────────────
+function loadComputeMachines() {
+  document.getElementById('cp-badge').textContent = periodLabel();
+  document.getElementById('cp-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('cp-table').innerHTML = '';
+  document.getElementById('cp-error').textContent = '';
+
+  fetch('/api/compute/machines?period=' + currentPeriod)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var machines = data.machines || [];
+      var total    = data.total_usd || 0;
+
+      if (data.data_as_of) {
+        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
+        document.getElementById('cp-badge').textContent = badge;
+      }
+
+      document.getElementById('cp-kpi').innerHTML =
+        kpiCard('Total', fmtCost(total), 'blue') +
+        kpiCard('Machines', machines.length, '') +
+        kpiCard('Top Machine', machines.length ? shortName(machines[0].name) : '—', 'blue') +
+        kpiCard('Top Cost', machines.length ? fmtCost(machines[0].cost_usd) : '—', 'blue');
+
+      if (!machines.length) {
+        document.getElementById('cp-table').innerHTML = '<p class="empty">No spend in this period.</p>';
+        return;
+      }
+
+      var max  = machines[0].cost_usd || 1;
+      var rows = machines.map(function(m) {
+        var pct   = Math.round(m.cost_usd / max * 100);
+        var share = ((m.cost_usd / total) * 100).toFixed(1);
+        return '<tr>' +
+          '<td>' + m.name + '</td>' +
+          '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+          '<span style="font-family:monospace">' + fmtCost(m.cost_usd) + '</span></div></td>' +
+          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+      }).join('');
+      document.getElementById('cp-table').innerHTML =
+        '<table><tr><th>Machine</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+    })
+    .catch(function(err) {
+      document.getElementById('cp-kpi').innerHTML = '';
+      document.getElementById('cp-error').textContent = 'Error: ' + err.message;
     });
 }
 

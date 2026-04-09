@@ -779,6 +779,39 @@ async def api_compute(period: str = "week") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+@app.get("/api/compute/machines", tags=["api"])
+async def api_compute_machines(period: str = "week") -> JSONResponse:
+    """Cost breakdown per individual machine (resource name) for compute services."""
+    try:
+        df = await get_cached_dataframe()
+        days = _period_days(period)
+        filtered = _filter_services(_filter_period(df, days), CAT_COMPUTE)
+
+        fallback = False
+        if period == "day" and filtered.empty and "C_DATE" in df.columns:
+            df_svc = _filter_services(df, CAT_COMPUTE)
+            if not df_svc.empty:
+                last_date = df_svc["C_DATE"].dropna().max()
+                filtered = df_svc[df_svc["C_DATE"] == last_date]
+                fallback = True
+
+        by_machine = _cost_by(filtered, "C_NAME")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "source": "Cost Management / Blob Storage",
+            "machines": [{"name": k, "cost_usd": v} for k, v in by_machine.items()],
+            "total_usd": round(sum(by_machine.values()), 4),
+            "data_as_of": data_as_of,
+            "fallback": fallback,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 @app.get("/api/storage", tags=["api"])
 async def api_storage(period: str = "week") -> JSONResponse:
     try:
