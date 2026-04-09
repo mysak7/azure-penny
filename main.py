@@ -958,11 +958,10 @@ async def api_services(period: str = "week") -> JSONResponse:
 
 @app.get("/api/live-services", tags=["api"])
 async def api_live_services() -> JSONResponse:
-    """Unattributed service-level costs (Bandwidth, DNS, etc.) for the last 30 days.
+    """Service-level costs grouped by MeterCategory for the last 30 days.
 
-    Only rows WITHOUT a ResourceId are included here — rows that have a
-    ResourceId are already correlated to specific ARM resources in
-    /api/live-resources and would cause double-counting if shown again.
+    These are aggregate summaries shown in the Services tab. Individual
+    resource costs are shown per ARM resource in /api/live-resources.
     """
     try:
         df = await get_cached_dataframe()
@@ -971,13 +970,6 @@ async def api_live_services() -> JSONResponse:
 
         cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
         mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
-
-        # Exclude rows that have a ResourceId — those costs are already shown
-        # on individual ARM resource rows and including them here would
-        # double-count (e.g. "Virtual Machines" service = sum of all VMSS costs
-        # which are also shown per-resource).
-        if "C_RESOURCE_ID" in mdf.columns:
-            mdf = mdf[mdf["C_RESOURCE_ID"].isna() | (mdf["C_RESOURCE_ID"].str.strip() == "")]
 
         # Group by service and sum costs
         by_svc = mdf.groupby("C_SERVICE")["C_COST"].sum().sort_values(ascending=False)

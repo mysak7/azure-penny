@@ -258,6 +258,9 @@ function applyFilters() {
   var search  = (document.getElementById('search').value || '').toLowerCase();
 
   var filtered = allResources.filter(function(r) {
+    // Service rows are aggregates — only show them in the Services tab, not
+    // in All (where individual resource rows already cover those costs).
+    if (currentCat === 'all' && r.category === 'service') return false;
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : 0;
     if (cost < minCost) return false;
