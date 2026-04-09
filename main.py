@@ -19,6 +19,8 @@ import logging
 import os
 import re
 import time
+import urllib.parse
+import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -438,37 +440,96 @@ _ONDEMAND_PRICES: dict[str, dict[str, float]] = {
 }
 
 
-def _fetch_spot_price(vm_size: str, region: str) -> float | None:
-    """Return the approximate spot price in $/hr for a given VM size + region.
+def _fetch_retail_price(vm_size: str, region: str, price_type: str = "Consumption") -> float | None:
+    """Query the Azure Retail Prices API for a VM price.
 
-    Uses hardcoded pricing table (Azure Retail Prices API not accessible
-    from container app due to network restrictions).
-
-    Falls back to 40% of on-demand rate for unlisted VMs.
+    price_type: 'Consumption' for on-demand, 'DevTestConsumption' for dev/test,
+                'Spot' for spot pricing.
+    Returns $/hr or None if not found / unreachable.
     """
-    cache_key = f"{vm_size.lower()}:{region.lower()}"
+    filter_str = (
+        f"armRegionName eq '{region.lower()}'"
+        f" and armSkuName eq '{vm_size}'"
+        f" and priceType eq '{price_type}'"
+        " and serviceName eq 'Virtual Machines'"
+    )
+    url = (
+        "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&$filter="
+        + urllib.parse.quote(filter_str)
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = _json.loads(resp.read())
+        items = data.get("Items") or []
+        # Prefer non-Windows, non-Low Priority rows
+        for item in items:
+            sku = (item.get("skuName") or "").lower()
+            if "windows" in sku or "low priority" in sku:
+                continue
+            price = item.get("retailPrice") or item.get("unitPrice")
+            if price:
+                return float(price)
+        # Fallback: return first available price
+        if items:
+            return float(items[0].get("retailPrice") or items[0].get("unitPrice") or 0) or None
+    except Exception as exc:
+        log.debug("Retail Prices API unavailable for %s/%s: %s", vm_size, region, exc)
+    return None
+
+
+def _fetch_spot_price(vm_size: str, region: str) -> float | None:
+    """Return spot price $/hr for a VM. Tries live API, falls back to table."""
+    cache_key = f"spot:{vm_size.lower()}:{region.lower()}"
     if cache_key in _SPOT_PRICE_CACHE:
         return _SPOT_PRICE_CACHE[cache_key]
 
-    vm_size_norm = vm_size  # Azure normalizes these consistently
+    # Try live API first
+    price = _fetch_retail_price(vm_size, region, price_type="Spot")
+    if price is not None:
+        _SPOT_PRICE_CACHE[cache_key] = price
+        log.info("✓ Spot price %s (%s): $%.4f/hr (live API)", vm_size, region, price)
+        return price
+
+    # Fall back to hardcoded table
     region_norm = region.lower()
-
-    # Try spot price lookup
-    if vm_size_norm in _SPOT_PRICES and region_norm in _SPOT_PRICES[vm_size_norm]:
-        price = _SPOT_PRICES[vm_size_norm][region_norm]
+    if vm_size in _SPOT_PRICES and region_norm in _SPOT_PRICES[vm_size]:
+        price = _SPOT_PRICES[vm_size][region_norm]
         _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ Spot price for %s (%s): $%.4f/hr (cached)", vm_size_norm, region_norm, price)
+        log.info("✓ Spot price %s (%s): $%.4f/hr (table)", vm_size, region_norm, price)
         return price
 
-    # Fall back to on-demand × 40% if listed
-    if vm_size_norm in _ONDEMAND_PRICES and region_norm in _ONDEMAND_PRICES[vm_size_norm]:
-        ondemand = _ONDEMAND_PRICES[vm_size_norm][region_norm]
-        price = round(ondemand * 0.4, 4)
+    if vm_size in _ONDEMAND_PRICES and region_norm in _ONDEMAND_PRICES[vm_size]:
+        price = round(_ONDEMAND_PRICES[vm_size][region_norm] * 0.4, 4)
         _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ Spot price for %s (%s): $%.4f/hr (40%% on-demand)", vm_size_norm, region_norm, price)
+        log.info("✓ Spot price %s (%s): $%.4f/hr (40%% on-demand table)", vm_size, region_norm, price)
         return price
 
-    log.warning("✗ No price found for %s in %s (not in pricing table)", vm_size_norm, region_norm)
+    log.warning("✗ No spot price found for %s in %s", vm_size, region)
+    return None
+
+
+def _fetch_ondemand_price(vm_size: str, region: str) -> float | None:
+    """Return on-demand price $/hr for a VM. Tries live API, falls back to table."""
+    cache_key = f"ondemand:{vm_size.lower()}:{region.lower()}"
+    if cache_key in _SPOT_PRICE_CACHE:
+        return _SPOT_PRICE_CACHE[cache_key]
+
+    # Try live API first
+    price = _fetch_retail_price(vm_size, region, price_type="Consumption")
+    if price is not None:
+        _SPOT_PRICE_CACHE[cache_key] = price
+        log.info("✓ On-demand price %s (%s): $%.4f/hr (live API)", vm_size, region, price)
+        return price
+
+    # Fall back to hardcoded table
+    region_norm = region.lower()
+    if vm_size in _ONDEMAND_PRICES and region_norm in _ONDEMAND_PRICES[vm_size]:
+        price = _ONDEMAND_PRICES[vm_size][region_norm]
+        _SPOT_PRICE_CACHE[cache_key] = price
+        log.info("✓ On-demand price %s (%s): $%.4f/hr (table)", vm_size, region_norm, price)
+        return price
+
+    log.warning("✗ No on-demand price found for %s in %s", vm_size, region)
     return None
 
 
@@ -575,15 +636,25 @@ async def _get_live_data() -> list[dict]:
         export_cost = cost_by_id.get(r["id"].lower())
         entry: dict = {**r, "monthly_cost": export_cost, "cost_source": "export" if export_cost is not None else None}
 
-        # For spot VMs with no export cost, fetch live spot rate from Retail Prices API
-        if export_cost is None and r.get("is_spot") and r.get("vm_size") and r.get("location"):
-            spot_price = await asyncio.get_event_loop().run_in_executor(
-                None, _fetch_spot_price, r["vm_size"], r["location"]
-            )
-            if spot_price is not None:
-                entry["monthly_cost"] = round(spot_price * 24 * 30, 2)
-                entry["spot_price_per_hour"] = round(spot_price, 4)
-                entry["cost_source"] = "spot_rate"
+        # For VMs with no export cost, fall back to pricing table
+        if export_cost is None and r.get("vm_size") and r.get("location"):
+            vm_size_norm = r["vm_size"]
+            region_norm = r["location"].lower()
+            if r.get("is_spot"):
+                spot_price = await asyncio.get_event_loop().run_in_executor(
+                    None, _fetch_spot_price, vm_size_norm, region_norm
+                )
+                if spot_price is not None:
+                    entry["monthly_cost"] = round(spot_price * 24 * 30, 2)
+                    entry["spot_price_per_hour"] = round(spot_price, 4)
+                    entry["cost_source"] = "spot_rate"
+            else:
+                ondemand = await asyncio.get_event_loop().run_in_executor(
+                    None, _fetch_ondemand_price, vm_size_norm, region_norm
+                )
+                if ondemand is not None:
+                    entry["monthly_cost"] = round(ondemand * 24 * 30, 2)
+                    entry["cost_source"] = "price_table"
 
         enriched.append(entry)
     return enriched
