@@ -1274,6 +1274,50 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
     return StreamingResponse(log_streamer(), media_type="text/plain")
 
 
+@app.delete("/api/resource-group", tags=["infrastructure"])
+async def api_delete_resource_group(resource_group_name: str) -> StreamingResponse:
+    """Delete all resources in an Azure resource group by deleting the group itself.
+
+    Streams status log lines as plain text while the operation runs.
+    """
+    if not resource_group_name or not resource_group_name.strip():
+        raise HTTPException(status_code=400, detail="resource_group_name is required")
+
+    rg = resource_group_name.strip()
+    log.warning("⚠️  DELETE resource group initiated: %s", rg)
+
+    async def log_streamer():
+        try:
+            yield f"[INFO] Resource group: {rg}\n"
+            yield "[INFO] This will delete ALL resources inside the group.\n"
+
+            client = _get_resource_mgmt_client()
+
+            yield "[INFO] Sending delete request to Azure Resource Manager...\n"
+
+            poller = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: client.resource_groups.begin_delete(rg)
+            )
+
+            yield "[INFO] Delete operation accepted. Waiting for completion...\n"
+
+            elapsed = 0
+            while not poller.done():
+                await asyncio.sleep(5)
+                elapsed += 5
+                yield f"[{elapsed:>4}s] status: {poller.status()}\n"
+
+            await asyncio.get_event_loop().run_in_executor(None, poller.result)
+            log.warning("✅ Resource group deleted: %s", rg)
+            yield f"\n✅ Resource group '{rg}' deleted successfully ({elapsed}s total)\n"
+
+        except Exception as exc:
+            log.exception("Resource group delete failed for %s", rg)
+            yield f"\n❌ ERROR: {exc}\n"
+
+    return StreamingResponse(log_streamer(), media_type="text/plain")
+
+
 @app.get("/api/spot-price-debug", tags=["api"])
 async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
     """Debug endpoint: test spot price lookup for a given VM size + region."""

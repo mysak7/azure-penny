@@ -114,6 +114,27 @@
 
     /* Section title */
     .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 1.25rem 0 .6rem; }
+
+    /* Delete RG button */
+    .btn-row-destroy { background: none; border: 1px solid #7f1d1d; color: #f87171; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .btn-row-destroy:hover { background: #7f1d1d; color: #fff; }
+
+    /* Delete RG modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 9998; }
+    .modal-overlay.active { display: flex; align-items: center; justify-content: center; }
+    .modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.75rem; max-width: 560px; width: 95%; box-shadow: 0 12px 48px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 1rem; }
+    .modal h2 { font-size: 1rem; color: #f87171; }
+    .modal-warning { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; padding: .65rem .9rem; border-radius: 6px; font-size: 0.82rem; }
+    .modal-actions { display: flex; gap: .75rem; }
+    .btn-confirm-destroy { background: #dc2626; border: 1px solid #dc2626; color: #fff; padding: .55rem 1.2rem; border-radius: 6px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: background .15s; white-space: nowrap; }
+    .btn-confirm-destroy:hover:not(:disabled) { background: #991b1b; }
+    .btn-confirm-destroy:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-modal-cancel { flex: 1; background: #334155; border: 1px solid #475569; color: #e2e8f0; padding: .55rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.88rem; }
+    .btn-modal-cancel:hover:not(:disabled) { border-color: #64748b; }
+    .btn-modal-cancel:disabled { opacity: .5; cursor: not-allowed; }
+    .destroy-log { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: .85rem 1rem; font-family: monospace; font-size: 0.74rem; max-height: 260px; overflow-y: auto; color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+    .destroy-log .ok  { color: #4ade80; }
+    .destroy-log .err { color: #f87171; }
   </style>
 </head>
 <body>
@@ -241,6 +262,21 @@
   </div>
 
 </div><!-- /container -->
+
+<!-- Delete Resource Group Modal -->
+<div class="modal-overlay" id="rg-delete-modal">
+  <div class="modal">
+    <h2>&#9888;&#65039; Delete Resource Group</h2>
+    <div class="modal-warning">
+      &#9888;&#65039; This will permanently delete <strong id="rdm-name">&mdash;</strong> and <strong>all resources inside it</strong>. This action cannot be undone.
+    </div>
+    <div id="rdm-log" class="destroy-log" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="rdm-cancel-btn" onclick="closeRgDeleteModal()">Cancel</button>
+      <button class="btn-confirm-destroy" id="rdm-destroy-btn" onclick="confirmRgDelete()">&#x1F5D1;&#xFE0F; Delete All</button>
+    </div>
+  </div>
+</div>
 
 <script>
 var currentTab    = 'all-services';
@@ -468,14 +504,16 @@ function loadComputeMachines() {
       var rows = machines.map(function(m) {
         var pct   = Math.round(m.cost_usd / max * 100);
         var share = ((m.cost_usd / total) * 100).toFixed(1);
+        var delBtn = '<button class="btn-row-destroy" onclick=\'openRgDeleteModal(' + JSON.stringify(m.name) + ')\'>&#x1F5D1;&#xFE0F;</button>';
         return '<tr>' +
           '<td>' + m.name + '</td>' +
           '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
           '<span style="font-family:monospace">' + fmtCost(m.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+          '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
+          '<td style="text-align:center">' + delBtn + '</td></tr>';
       }).join('');
       document.getElementById('cp-table').innerHTML =
-        '<table><tr><th>Machine</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+        '<table><tr><th>Machine</th><th>Cost</th><th style="text-align:right">Share</th><th></th></tr>' + rows + '</table>';
     })
     .catch(function(err) {
       document.getElementById('cp-kpi').innerHTML = '';
@@ -709,6 +747,74 @@ function loadGrandTotal() {
     })
     .catch(function() { if (bar) bar.textContent = '—'; });
 }
+
+// ── Delete Resource Group modal ───────────────────────────────────────────────
+var _deleteRgName = null;
+
+function openRgDeleteModal(rgName) {
+  _deleteRgName = rgName;
+  document.getElementById('rdm-name').textContent = rgName;
+  document.getElementById('rdm-log').style.display = 'none';
+  document.getElementById('rdm-log').innerHTML = '';
+  document.getElementById('rdm-cancel-btn').textContent = 'Cancel';
+  document.getElementById('rdm-cancel-btn').disabled = false;
+  document.getElementById('rdm-destroy-btn').textContent = '\uD83D\uDDD1\uFE0F Delete All';
+  document.getElementById('rdm-destroy-btn').disabled = false;
+  document.getElementById('rg-delete-modal').classList.add('active');
+}
+
+function closeRgDeleteModal() {
+  document.getElementById('rg-delete-modal').classList.remove('active');
+  _deleteRgName = null;
+}
+
+async function confirmRgDelete() {
+  if (!_deleteRgName) return;
+  var rgName = _deleteRgName;
+
+  var logEl     = document.getElementById('rdm-log');
+  var cancelBtn = document.getElementById('rdm-cancel-btn');
+  var destroyBtn = document.getElementById('rdm-destroy-btn');
+
+  logEl.style.display = 'block';
+  logEl.innerHTML = '<span style="color:#94a3b8">Sending request…\n</span>';
+  cancelBtn.disabled  = true;
+  destroyBtn.disabled = true;
+
+  try {
+    var resp = await fetch('/api/resource-group?resource_group_name=' + encodeURIComponent(rgName), {
+      method: 'DELETE'
+    });
+
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      var text = decoder.decode(chunk.value, { stream: true });
+      text.split('\n').forEach(function(line) {
+        if (!line) return;
+        var cls = line.startsWith('✅') ? 'ok' : line.startsWith('❌') ? 'err' : '';
+        logEl.innerHTML += '<span' + (cls ? ' class="' + cls + '"' : '') + '>' +
+          line.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '\n</span>';
+      });
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    destroyBtn.textContent = '✅ Done';
+    cancelBtn.textContent  = 'Close';
+    cancelBtn.disabled = false;
+
+  } catch (err) {
+    logEl.innerHTML += '<span class="err">❌ ' + err.message.replace(/</g,'&lt;') + '\n</span>';
+    cancelBtn.disabled  = false;
+    destroyBtn.disabled = false;
+  }
+}
+
+document.getElementById('rg-delete-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeRgDeleteModal();
+});
 
 // Boot
 loadStatus();
