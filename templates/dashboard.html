@@ -99,6 +99,34 @@
     .error-msg { color: #f87171; font-size: 0.78rem; padding: .5rem 0; }
     .empty { color: #475569; font-size: 0.78rem; text-align: center; padding: 1.25rem 0; font-style: italic; }
     .cat-divider { border: none; border-top: 1px solid #334155; margin: .85rem 0; }
+
+    /* Destroy modal */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.6); z-index: 9998; }
+    .modal-overlay.active { display: flex; align-items: center; justify-content: center; }
+    .modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 2rem; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+    .modal h2 { color: #f87171; font-size: 1.25rem; margin-bottom: 1rem; }
+    .modal p { color: #cbd5e1; font-size: 0.9rem; line-height: 1.5; margin-bottom: 1rem; }
+    .modal .warning { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; padding: .75rem; border-radius: 6px; margin-bottom: 1.5rem; font-size: 0.85rem; }
+    .destroy-options { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
+    .destroy-option { background: #0f172a; border: 1px solid #334155; padding: 1rem; border-radius: 8px; cursor: pointer; transition: all .15s; }
+    .destroy-option:hover { border-color: #f87171; background: #1a0a0a; }
+    .destroy-option input { cursor: pointer; margin-right: .5rem; }
+    .destroy-option label { cursor: pointer; display: flex; align-items: center; }
+    .destroy-option .opt-title { font-weight: 600; color: #e2e8f0; margin-bottom: .25rem; }
+    .destroy-option .opt-desc { font-size: 0.8rem; color: #94a3b8; margin-left: 1.5rem; }
+    .modal-actions { display: flex; gap: .75rem; }
+    .btn-destroy { background: #dc2626; border: 1px solid #dc2626; color: #fff; padding: .6rem 1.2rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all .15s; }
+    .btn-destroy:hover { background: #991b1b; }
+    .btn-destroy:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-cancel { background: #334155; border: 1px solid #475569; color: #e2e8f0; padding: .6rem 1.2rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; flex: 1; }
+    .btn-cancel:hover { border-color: #64748b; }
+    .destroy-logs { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 1rem; font-family: monospace; font-size: 0.75rem; max-height: 300px; overflow-y: auto; color: #4ade80; white-space: pre-wrap; word-break: break-word; margin-top: 1rem; }
+    .log-line { line-height: 1.3; }
+    .log-line.error { color: #f87171; }
+    .log-line.success { color: #4ade80; }
+    .hdr-destroy { background: #dc2626; border: none; color: #fff; font-size: 0.7rem; padding: .2rem .6rem; border-radius: 4px; cursor: pointer; font-family: inherit; font-weight: 600; transition: all .15s; }
+    .hdr-destroy:hover { background: #991b1b; }
+    .hdr-destroy:disabled { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -119,8 +147,57 @@
     <a href="/manager"    class="nav-link active">Manager</a>
     <a href="/technician" class="nav-link">Technician</a>
     <a href="/live"       class="nav-link">Live</a>
+    <button class="hdr-destroy" onclick="openDestroyModal()" title="Destroy costly Azure resources">🗑️ Destroy</button>
   </div>
 </header>
+
+<!-- Destroy Modal -->
+<div class="modal-overlay" id="destroy-modal">
+  <div class="modal">
+    <h2>⚠️ Destroy Azure Resources</h2>
+    <p>Select which resources to destroy. Terraform will handle dependencies automatically.</p>
+    <div class="warning">
+      <strong>⚠️ WARNING:</strong> This action is destructive and will incur Azure charges during the destroy process. Make sure you have backups if needed.
+    </div>
+
+    <div class="destroy-options">
+      <div class="destroy-option">
+        <label>
+          <input type="radio" name="destroy-target" value="container_app" checked>
+          <div>
+            <div class="opt-title">Container App Only</div>
+            <div class="opt-desc">Stops compute costs immediately. Keep infrastructure for quick redeploy.</div>
+          </div>
+        </label>
+      </div>
+      <div class="destroy-option">
+        <label>
+          <input type="radio" name="destroy-target" value="with_logs">
+          <div>
+            <div class="opt-title">App + Log Analytics</div>
+            <div class="opt-desc">Removes compute + logging costs. Keep storage and ACR.</div>
+          </div>
+        </label>
+      </div>
+      <div class="destroy-option">
+        <label>
+          <input type="radio" name="destroy-target" value="all">
+          <div>
+            <div class="opt-title">Full Terraform Destroy</div>
+            <div class="opt-desc">Destroy EVERYTHING including storage and ACR. ⚠️ Data loss risk.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div id="destroy-logs" class="destroy-logs" style="display:none;"></div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeDestroyModal()" id="modal-cancel-btn">Cancel</button>
+      <button class="btn-destroy" onclick="executeDestroy()" id="modal-destroy-btn">🗑️ Destroy</button>
+    </div>
+  </div>
+</div>
 
 <div class="status-bar" id="status-bar">
   <span class="status-item">Source: <strong>Cost Management / Blob Storage</strong></span>
@@ -392,6 +469,94 @@ function fmtNum(n) {
   if(n>=1e3) return (n/1e3).toFixed(1)+'K';
   return String(n);
 }
+
+// ── Destroy modal ─────────────────────────────────────────────────────────────
+function openDestroyModal() {
+  document.getElementById('destroy-modal').classList.add('active');
+  document.getElementById('destroy-logs').style.display = 'none';
+  document.getElementById('destroy-logs').innerHTML = '';
+  document.getElementById('modal-cancel-btn').textContent = 'Cancel';
+  document.getElementById('modal-destroy-btn').textContent = '🗑️ Destroy';
+  document.getElementById('modal-destroy-btn').disabled = false;
+}
+
+function closeDestroyModal() {
+  document.getElementById('destroy-modal').classList.remove('active');
+}
+
+async function executeDestroy() {
+  const target = document.querySelector('input[name="destroy-target"]:checked').value;
+  const logsEl = document.getElementById('destroy-logs');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
+  const destroyBtn = document.getElementById('modal-destroy-btn');
+
+  // Show logs and disable buttons
+  logsEl.style.display = 'block';
+  logsEl.innerHTML = '<div class="log-line">🔄 Starting destroy process...</div>';
+  cancelBtn.disabled = true;
+  destroyBtn.disabled = true;
+
+  try {
+    const response = await fetch(`/api/destroy?target=${encodeURIComponent(target)}`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      logsEl.innerHTML += `<div class="log-line error">❌ Error: HTTP ${response.status}</div>`;
+      cancelBtn.disabled = false;
+      return;
+    }
+
+    // Stream the response
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const text = decoder.decode(value, { stream: true });
+      const lines = text.split('\n');
+
+      for (const line of lines) {
+        if (line.trim()) {
+          const className = line.includes('✅') ? 'success' : line.includes('❌') || line.includes('Error') ? 'error' : '';
+          logsEl.innerHTML += `<div class="log-line ${className}">${escapeHtml(line)}</div>`;
+          logsEl.scrollTop = logsEl.scrollHeight;
+        }
+      }
+    }
+
+    logsEl.innerHTML += '<div class="log-line success">\n✅ Destroy stream ended</div>';
+    destroyBtn.textContent = '✅ Done';
+    cancelBtn.textContent = 'Close';
+    cancelBtn.disabled = false;
+
+  } catch (err) {
+    logsEl.innerHTML += `<div class="log-line error">❌ Network error: ${escapeHtml(err.message)}</div>`;
+    cancelBtn.disabled = false;
+    destroyBtn.disabled = false;
+  }
+}
+
+function escapeHtml(str) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return str.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Close modal on overlay click
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('destroy-modal');
+  if (e.target === modal) {
+    closeDestroyModal();
+  }
+});
 
 // Boot
 loadStatus();
