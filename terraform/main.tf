@@ -12,21 +12,11 @@ terraform {
     }
   }
 
-  # Remote backend — required for GitHub Actions CI/CD.
-  # 1. Create a storage account + container manually (or run bootstrap/init-backend.sh).
-  # 2. Run: terraform init -migrate-state
-  # 3. Delete the local terraform.tfstate file after migration.
-  #
-  # backend "azurerm" {
-  #   resource_group_name  = "azure-penny-tfstate-rg"
-  #   storage_account_name = "<your-tfstate-storage-account>"
-  #   container_name       = "tfstate"
-  #   key                  = "azure-penny.tfstate"
-  #   use_oidc             = true
-  # }
-
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "azurerm" {
+    resource_group_name  = "azure-penny-tfstate-rg"
+    storage_account_name = "azurepennytf3759"
+    container_name       = "tfstate"
+    key                  = "azure-penny.tfstate"
   }
 }
 
