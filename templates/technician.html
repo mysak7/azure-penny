@@ -410,7 +410,9 @@ function loadAllServices() {
 
 function drawDailyChart(pts) {
   var canvas = document.getElementById('daily-chart');
-  if (!pts.length) { canvas.parentElement.innerHTML = '<p class="empty">No daily data available.</p>'; return; }
+  if (!canvas) return;
+  if (!pts.length) { canvas.style.display = 'none'; document.getElementById('daily-error').textContent = 'No daily data available.'; return; }
+  canvas.style.display = '';
   var W = (canvas.parentElement.clientWidth || 900) - 16;
   canvas.width = W; canvas.height = 100;
   var ctx = canvas.getContext('2d');
