@@ -10,7 +10,7 @@ resource "azurerm_subscription_cost_management_export" "daily" {
   subscription_id = data.azurerm_subscription.current.id
 
   recurrence_type              = "Daily"
-  recurrence_period_start_date = "2026-04-08T00:00:00Z"
+  recurrence_period_start_date = "2026-04-10T00:00:00Z"
   recurrence_period_end_date   = "2099-12-31T00:00:00Z"
 
   file_format = "Csv"
