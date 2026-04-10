@@ -641,10 +641,14 @@ async def _get_live_data() -> list[dict]:
         export_cost = cost_by_id.get(r["id"].lower())
         entry: dict = {**r, "monthly_cost": export_cost, "cost_source": "export" if export_cost is not None else None}
 
-        # For VMs with no export cost, fall back to pricing table
-        if export_cost is None and r.get("vm_size") and r.get("location"):
+        # For VMs, always compute projected monthly from pricing API (hourly_rate × 24 × 30).
+        # Export data shows accumulated billing-period cost (could be just 1-2 days), which
+        # is misleading in a "Monthly Cost" column. We keep export_cost for reference.
+        if r.get("vm_size") and r.get("location"):
             vm_size_norm = r["vm_size"]
             region_norm = r["location"].lower()
+            if export_cost is not None:
+                entry["export_cost"] = export_cost  # preserve actual billing data
             if r.get("is_spot"):
                 spot_price = await asyncio.get_event_loop().run_in_executor(
                     None, _fetch_spot_price, vm_size_norm, region_norm

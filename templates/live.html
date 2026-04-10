@@ -284,13 +284,15 @@ function costCell(v, source, r) {
   if (v === null || v === undefined) return '<span class="cost-nil">&mdash;</span>';
   var n = Number(v);
   var cls = n >= 50 ? 'cost-hi' : n >= 10 ? 'cost-med' : 'cost-lo';
+  var billedSuffix = (r && r.export_cost != null) ? ' Billed so far: ' + fmtCost(r.export_cost) + '.' : '';
   if (source === 'spot_rate') {
     var hrly = r && r.spot_price_per_hour ? fmtCost(r.spot_price_per_hour) + '/hr' : '';
-    var tip = 'Spot rate estimate (24×30h)' + (hrly ? ' — ' + hrly : '') + '. No export data yet.';
+    var tip = 'Spot rate estimate (24×30h)' + (hrly ? ' — ' + hrly : '') + '.' + billedSuffix;
     return '<span class="' + cls + '" title="' + tip + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
   if (source === 'price_table') {
-    return '<span class="' + cls + '" title="Retail price estimate (24×30h). No export data yet.">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
+    var tip2 = 'Retail price estimate (24×30h).' + billedSuffix;
+    return '<span class="' + cls + '" title="' + tip2 + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
   return '<span class="' + cls + '">' + fmtCost(n) + '</span>';
 }
