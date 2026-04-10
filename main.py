@@ -644,7 +644,9 @@ async def _get_live_data() -> list[dict]:
         # For VMs, always compute projected monthly from pricing API (hourly_rate × 24 × 30).
         # Export data shows accumulated billing-period cost (could be just 1-2 days), which
         # is misleading in a "Monthly Cost" column. We keep export_cost for reference.
-        if r.get("vm_size") and r.get("location"):
+        # Deallocated/stopped VMs don't accrue compute charges — skip pricing lookup.
+        vm_is_active = (r.get("status") or "").lower() not in ("deallocated", "stopped", "vm deallocated", "vm stopped")
+        if r.get("vm_size") and r.get("location") and vm_is_active:
             vm_size_norm = r["vm_size"]
             region_norm = r["location"].lower()
             if export_cost is not None:
