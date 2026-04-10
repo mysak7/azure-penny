@@ -32,7 +32,7 @@ from azure.mgmt.resource import ResourceManagementClient
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 # ---------------------------------------------------------------------------
@@ -1040,84 +1040,6 @@ async def api_debug() -> JSONResponse:
         log.exception("Debug endpoint failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
 
-
-# ── Destroy / Infrastructure Management ───────────────────────────────────────
-
-import subprocess
-from fastapi.responses import StreamingResponse
-
-
-@app.post("/api/destroy", tags=["infrastructure"])
-async def api_destroy(target: str = "container_app") -> StreamingResponse:
-    """Destroy Azure resources via terraform destroy.
-
-    Args:
-        target: 'container_app' (just app), 'with_logs' (app + log analytics),
-                or 'all' (full terraform destroy).
-
-    Streams terraform destroy logs in real-time.
-    """
-    terraform_dir = Path(__file__).parent / "terraform"
-    if not terraform_dir.exists():
-        raise HTTPException(status_code=400, detail="terraform/ directory not found")
-
-    # Map target to terraform resource patterns
-    targets_map = {
-        "container_app": ["azurerm_container_app.main", "azurerm_container_app_environment.main"],
-        "with_logs": [
-            "azurerm_container_app.main",
-            "azurerm_container_app_environment.main",
-            "azurerm_log_analytics_workspace.main",
-        ],
-        "all": [],  # empty list = destroy everything
-    }
-
-    if target not in targets_map:
-        raise HTTPException(status_code=400, detail=f"Unknown target: {target}")
-
-    targets = targets_map[target]
-    log.warning("⚠️  DESTROY initiated: target=%s, resources=%s", target, targets or "ALL")
-
-    async def log_streamer():
-        """Stream terraform destroy output line-by-line."""
-        try:
-            # Build terraform destroy command
-            cmd = ["terraform", "destroy", "-auto-approve"]
-            if targets:
-                for t in targets:
-                    cmd.extend(["-target", t])
-
-            log.info("Running: %s", " ".join(cmd))
-
-            # Run terraform destroy with streaming output
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(terraform_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-
-            # Stream stdout line-by-line
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                yield line.decode("utf-8", errors="replace")
-
-            await proc.wait()
-
-            if proc.returncode == 0:
-                log.warning("✅ Destroy completed successfully")
-                yield f"\n\n✅ Destroy completed successfully (exit code: {proc.returncode})\n".encode()
-            else:
-                log.error("❌ Destroy failed with exit code %d", proc.returncode)
-                yield f"\n\n❌ Destroy failed (exit code: {proc.returncode})\n".encode()
-
-        except Exception as e:
-            log.exception("Destroy failed with exception")
-            yield f"\n\n❌ ERROR: {str(e)}\n".encode()
-
-    return StreamingResponse(log_streamer(), media_type="text/plain")
 
 
 # ── Technician API endpoints ──────────────────────────────────────────────────
