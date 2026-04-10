@@ -294,15 +294,6 @@ function costCell(v, source, r) {
     var tip2 = 'Retail price estimate (24×30h).' + billedSuffix;
     return '<span class="' + cls + '" title="' + tip2 + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
-  var exportTip = '';
-  if (r && (r.status || '').toLowerCase().indexOf('deallocated') !== -1) {
-    exportTip = 'Actual billed cost (disk/storage only — VM is deallocated, no compute charges).';
-  } else if (r && (r.status || '').toLowerCase().indexOf('stopped') !== -1) {
-    exportTip = 'Actual billed cost (disk/storage only — VM is stopped, no compute charges).';
-  }
-  if (exportTip) {
-    return '<span class="' + cls + '" title="' + exportTip + '">' + fmtCost(n) + '</span>';
-  }
   return '<span class="' + cls + '">' + fmtCost(n) + '</span>';
 }
 

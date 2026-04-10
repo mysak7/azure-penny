@@ -588,6 +588,8 @@ def _fetch_resource_inventory() -> list[dict]:
         parts = r.id.split("/resourceGroups/")
         rg = parts[1].split("/")[0] if len(parts) > 1 else ""
         status = vm_states.get(r.id.lower(), "Active") if cat == "vm" else "Active"
+        if status.lower() in ("deallocated", "vm deallocated", "stopped", "vm stopped"):
+            continue
         meta = vm_meta.get(r.id.lower(), {})
         result.append({
             "id": r.id,
