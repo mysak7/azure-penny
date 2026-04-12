@@ -13,11 +13,6 @@
     .hdr-left { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
     header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; letter-spacing: .02em; white-space: nowrap; }
     header h1 span { color: #64748b; font-weight: 400; font-size: 0.85rem; margin-left: .5rem; }
-    .hdr-refresh { display: flex; align-items: center; gap: .2rem; }
-    .rpill { background: #0f172a; border: 1px solid #334155; color: #64748b; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
-    .rpill:hover { border-color: #4ade80; color: #4ade80; }
-    .rpill.active { background: #052e16; border-color: #4ade80; color: #4ade80; }
-    #hdr-cd { font-size: 0.68rem; color: #4ade80; font-family: monospace; min-width: 36px; padding-left: .2rem; }
     .nav { display: flex; gap: .5rem; align-items: center; }
     .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
     .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
@@ -142,14 +137,6 @@
 <header>
   <div class="hdr-left">
     <h1>azure-penny <span>Technician</span></h1>
-    <div class="hdr-refresh">
-      <button class="rpill active" data-s="0"    onclick="hdrSet(0)">Off</button>
-      <button class="rpill"        data-s="60"   onclick="hdrSet(60)">1m</button>
-      <button class="rpill"        data-s="300"  onclick="hdrSet(300)">5m</button>
-      <button class="rpill"        data-s="600"  onclick="hdrSet(600)">10m</button>
-      <button class="rpill"        data-s="1800" onclick="hdrSet(1800)">30m</button>
-      <span id="hdr-cd"></span>
-    </div>
   </div>
   <div class="nav">
     <a href="/manager"    class="nav-link">Manager</a>
@@ -304,16 +291,6 @@
 var currentTab    = 'all-services';
 var currentPeriod = 'week';
 var loaded = {};
-
-// ── Header auto-refresh ───────────────────────────────────────────────────────
-var _hS=0, _hT=null, _hL=0;
-function hdrSet(s) {
-  _hS=s; clearInterval(_hT);
-  document.querySelectorAll('.hdr-refresh .rpill').forEach(function(b){ b.classList.toggle('active', +b.dataset.s===s); });
-  var el=document.getElementById('hdr-cd'); el.textContent='';
-  if(s>0){ _hL=s; _hT=setInterval(function(){ _hL--; var m=Math.floor(_hL/60),r=_hL%60; el.textContent=(m?m+'m ':'')+r+'s'; if(_hL<=0){ _hL=s; doRefresh(); } },1000); }
-}
-function doRefresh() { loaded={}; loadCurrentTab(); loadGrandTotal(); }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function setTab(tab) {
