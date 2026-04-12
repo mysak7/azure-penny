@@ -504,6 +504,17 @@ function openDestroyModal(r) {
   document.getElementById('dm-warning').style.display    = isAksManaged ? 'none' : '';
   document.getElementById('dm-aks-warning').style.display = isAksManaged ? '' : 'none';
 
+  var cancelBtn  = document.getElementById('dm-cancel-btn');
+  var destroyBtn = document.getElementById('dm-destroy-btn');
+  cancelBtn.textContent  = 'Cancel';
+  cancelBtn.style.display = '';
+  cancelBtn.disabled = false;
+  destroyBtn.textContent = '🗑️ Destroy';
+  destroyBtn.disabled = false;
+  destroyBtn.onclick = confirmDestroy;
+  document.getElementById('dm-log').style.display = 'none';
+  document.getElementById('dm-log').innerHTML = '';
+
   document.getElementById('destroy-modal').classList.add('active');
 }
 
@@ -553,8 +564,9 @@ async function confirmDestroy() {
     }
 
     destroyBtn.textContent = '✅ Done';
-    cancelBtn.textContent  = 'Close';
-    cancelBtn.disabled = false;
+    destroyBtn.disabled    = false;
+    destroyBtn.onclick     = closeDestroyModal;
+    cancelBtn.style.display = 'none';
 
     // Remove the destroyed resource from the local list and re-render
     allResources = allResources.filter(function(r) { return r.id !== resourceId; });
