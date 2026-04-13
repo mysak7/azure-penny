@@ -167,7 +167,6 @@
       <button class="cpill"        data-cat="database"  onclick="setCat('database')">Database</button>
       <button class="cpill"        data-cat="container" onclick="setCat('container')">Container</button>
       <button class="cpill"        data-cat="other"     onclick="setCat('other')">Other</button>
-      <button class="cpill"        data-cat="service"   onclick="setCat('service')">Services</button>
     </div>
     <div class="filter-row">
       <label for="min-cost">Min cost &gt; $</label>
@@ -303,9 +302,6 @@ function applyFilters() {
   var search  = (document.getElementById('search').value || '').toLowerCase();
 
   var filtered = allResources.filter(function(r) {
-    // Service rows are aggregates — only show them in the Services tab, not
-    // in All (where individual resource rows already cover those costs).
-    if (currentCat === 'all' && r.category === 'service') return false;
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : 0;
     if (cost < minCost) return false;
@@ -424,23 +420,7 @@ function loadResources() {
     if (resData.error) throw new Error(resData.error);
 
     var resources = resData.resources || [];
-
-    // Merge service rows into the same array as synthetic resource entries
-    var serviceRows = (svcData.services || []).map(function(s) {
-      return {
-        id: 'svc:' + s.name,
-        name: s.name,
-        type: 'service',
-        category: 'service',
-        resource_group: '',
-        location: '',
-        status: 'Active',
-        monthly_cost: s.monthly_cost,
-        cost_source: 'export',
-      };
-    });
-
-    allResources = resources.concat(serviceRows);
+    allResources = resources;
     document.getElementById('st-count').textContent = resData.count || 0;
     document.getElementById('st-sub').textContent   = resData.subscription_id || '&mdash;';
     // Authoritative 30-day billed total straight from cost exports (not filtered/correlated)
