@@ -139,7 +139,6 @@
   <span class="status-item">Subscription: <strong id="st-sub">&mdash;</strong></span>
   <span class="status-item">Resources: <strong id="st-count">&mdash;</strong></span>
   <span class="status-item">Showing: <strong id="st-showing">&mdash;</strong></span>
-  <span class="status-item">Matched cost: <strong id="st-cost" style="color:#4ade80">&mdash;</strong></span>
   <span class="status-item">Billed 30d: <strong id="st-billed" style="color:#facc15">&mdash;</strong></span>
   <button class="reload-btn" onclick="reloadLive()">&#x21BB; Refresh inventory</button>
   <span id="st-error" class="status-item error"></span>
@@ -152,8 +151,7 @@
     Monthly cost is the 30-day sum from Cost Management exports correlated by ResourceId.
     Resources with no cost match show <strong>&mdash;</strong> — set <em>Min cost</em> to <strong>0</strong> to show all.
     The Managed Identity needs <strong>Reader</strong> role on the subscription to list resources.
-    <strong>Matched cost</strong> counts only ARM-visible resources with a cost-export match;
-    <strong>Billed 30d</strong> is the full export total (includes deleted or unmatched resources).
+    <strong>Billed 30d</strong> is the full 30-day total from cost exports, including deleted or ARM-unmatched resources.
   </div>
 
   <div class="toolbar">
@@ -330,10 +328,6 @@ function applyFilters() {
 
   // Update status
   document.getElementById('st-showing').textContent = filtered.length;
-  var totalCost = filtered.reduce(function(s, r) {
-    return s + (r.monthly_cost !== null && r.monthly_cost !== undefined ? Number(r.monthly_cost) : 0);
-  }, 0);
-  document.getElementById('st-cost').textContent = fmtCost(totalCost);
 }
 
 function sortVal(r, col) {
