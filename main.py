@@ -1169,10 +1169,23 @@ async def api_live_resources() -> JSONResponse:
     """All live Azure resources with 30-day cost from Cost Management exports."""
     try:
         resources = await _get_live_data()
+
+        # Sum the actual billed export cost for matched ARM resources.
+        # VMs store it in "export_cost" (monthly_cost is overridden by pricing API);
+        # everything else stores it directly in "monthly_cost" when cost_source=="export".
+        matched_export_usd = 0.0
+        for r in resources:
+            ec = r.get("export_cost")
+            if ec is not None:
+                matched_export_usd += ec
+            elif r.get("cost_source") == "export":
+                matched_export_usd += r.get("monthly_cost") or 0
+
         return JSONResponse({
             "resources": resources,
             "count": len(resources),
             "subscription_id": AZURE_SUBSCRIPTION_ID or "not configured",
+            "matched_export_usd": round(matched_export_usd, 2),
         })
     except Exception as exc:
         log.exception("Live resources endpoint failed")

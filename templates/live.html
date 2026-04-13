@@ -140,6 +140,8 @@
   <span class="status-item">Resources: <strong id="st-count">&mdash;</strong></span>
   <span class="status-item">Showing: <strong id="st-showing">&mdash;</strong></span>
   <span class="status-item">Billed 30d: <strong id="st-billed" style="color:#facc15">&mdash;</strong></span>
+  <span class="status-item" title="Cost matched to live ARM resources">Live: <strong id="st-live" style="color:#4ade80">&mdash;</strong></span>
+  <span class="status-item" title="Cost for deleted or ARM-invisible resources (Billed 30d minus Live)">Deleted/hidden: <strong id="st-orphan" style="color:#f87171">&mdash;</strong></span>
   <button class="reload-btn" onclick="reloadLive()">&#x21BB; Refresh inventory</button>
   <span id="st-error" class="status-item error"></span>
 </div>
@@ -151,7 +153,9 @@
     Monthly cost is the 30-day sum from Cost Management exports correlated by ResourceId.
     Resources with no cost match show <strong>&mdash;</strong> — set <em>Min cost</em> to <strong>0</strong> to show all.
     The Managed Identity needs <strong>Reader</strong> role on the subscription to list resources.
-    <strong>Billed 30d</strong> is the full 30-day total from cost exports, including deleted or ARM-unmatched resources.
+    <strong>Billed 30d</strong> is the full 30-day total from cost exports.
+    <strong>Live</strong> is the portion matched to currently-visible ARM resources.
+    <strong>Deleted/hidden</strong> is the remainder — cost for resources that have since been deleted or that the Managed Identity cannot see.
   </div>
 
   <div class="toolbar">
@@ -440,9 +444,12 @@ function loadResources() {
     document.getElementById('st-count').textContent = resData.count || 0;
     document.getElementById('st-sub').textContent   = resData.subscription_id || '&mdash;';
     // Authoritative 30-day billed total straight from cost exports (not filtered/correlated)
-    var exportTotal = svcData.total_usd;
-    document.getElementById('st-billed').textContent =
-      exportTotal !== undefined ? fmtCost(exportTotal) : '&mdash;';
+    var exportTotal  = svcData.total_usd || 0;
+    var liveMatched  = resData.matched_export_usd || 0;
+    var orphaned     = Math.max(0, Math.round((exportTotal - liveMatched) * 100) / 100);
+    document.getElementById('st-billed').textContent = fmtCost(exportTotal);
+    document.getElementById('st-live').textContent   = fmtCost(liveMatched);
+    document.getElementById('st-orphan').textContent = fmtCost(orphaned);
     applyFilters();
   })
   .catch(function(err) {
