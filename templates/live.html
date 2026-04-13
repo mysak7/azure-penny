@@ -347,7 +347,7 @@ function setSort(col) {
 }
 
 function updateSortHeaders() {
-  var cols = ['name', 'type', 'resource_group', 'location', 'status', 'monthly_cost'];
+  var cols = ['name', 'type', 'resource_group', 'location', 'status', 'private_ip', 'monthly_cost'];
   cols.forEach(function(c) {
     var el = document.getElementById('th-' + c);
     if (!el) return;
@@ -371,6 +371,7 @@ function renderTable(rows) {
     '<th id="th-resource_group" onclick="setSort(\'resource_group\')">Resource Group</th>' +
     '<th id="th-location"       onclick="setSort(\'location\')">Region</th>' +
     '<th id="th-status"         onclick="setSort(\'status\')">Status</th>' +
+    '<th id="th-private_ip"     onclick="setSort(\'private_ip\')">IP</th>' +
     '<th id="th-monthly_cost"   onclick="setSort(\'monthly_cost\')" style="text-align:right">Monthly Cost</th>' +
     '<th style="width:70px"></th>' +
     '</tr></thead>';
@@ -383,6 +384,7 @@ function renderTable(rows) {
         '<td class="dim">&mdash;</td>' +
         '<td class="dim">&mdash;</td>' +
         '<td></td>' +
+        '<td class="dim">&mdash;</td>' +
         '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
         '<td></td>' +
         '</tr>';
@@ -391,6 +393,9 @@ function renderTable(rows) {
       ? '<button class="btn-row-destroy" onclick=\'openDestroyModal(' + JSON.stringify(r) + ')\'>🗑️</button>'
       : '';
     var nameTip = [r.id, r.vm_size ? 'Size: ' + r.vm_size : '', r.is_spot ? 'Spot instance' : ''].filter(Boolean).join('\n');
+    var ipCell = r.category === 'vm' && r.private_ip
+      ? '<span style="font-family:monospace;font-size:0.78rem">' + escHtml(r.private_ip) + '</span>'
+      : '<span class="dim">&mdash;</span>';
     return '<tr>' +
       '<td title="' + escHtml(nameTip) + '"><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong>' +
       (r.vm_size ? '<span style="font-size:0.68rem;color:#64748b;margin-left:.4rem">' + escHtml(r.vm_size) + '</span>' : '') + '</td>' +
@@ -398,6 +403,7 @@ function renderTable(rows) {
       '<td class="dim">' + escHtml(r.resource_group || '&mdash;') + '</td>' +
       '<td class="dim">' + escHtml(r.location || '&mdash;') + '</td>' +
       '<td>' + statusBadge(r.status, r.category) + '</td>' +
+      '<td>' + ipCell + '</td>' +
       '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
       '<td style="text-align:center">' + destroyBtn + '</td>' +
       '</tr>';

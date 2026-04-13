@@ -545,7 +545,7 @@ def _fetch_resource_inventory() -> list[dict]:
         if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachines"
     ]
     vm_states: dict[str, str] = {}
-    vm_meta: dict[str, dict] = {}  # id.lower() → {"vm_size": str, "is_spot": bool}
+    vm_meta: dict[str, dict] = {}  # id.lower() → {"vm_size": str, "is_spot": bool, "private_ip": str}
     if vm_resources:
         try:
             cc = _get_compute_mgmt_client()
@@ -572,7 +572,19 @@ def _fetch_resource_inventory() -> list[dict]:
                             pass
                     # Use ARM priority field only — name heuristic is unreliable
                     is_spot = (getattr(inst, "priority", None) or "").lower() == "spot"
-                    vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot}
+                    # Resolve private IP from the first NIC
+                    private_ip = ""
+                    try:
+                        nics = (inst.network_profile.network_interfaces or []) if inst.network_profile else []
+                        if nics:
+                            nic_res = rc.resources.get_by_id(nics[0].id, api_version="2024-05-01")
+                            nic_props = nic_res.properties or {}
+                            ip_cfgs = nic_props.get("ipConfigurations") or []
+                            if ip_cfgs:
+                                private_ip = (ip_cfgs[0].get("properties") or {}).get("privateIPAddress", "")
+                    except Exception:
+                        pass
+                    vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": private_ip}
                 except Exception as e:
                     log.debug("VM power state error (%s): %s", vm_res.name, e)
                     vm_states[vm_res.id.lower()] = "Unknown"
@@ -601,6 +613,7 @@ def _fetch_resource_inventory() -> list[dict]:
             "status": status,
             "vm_size": meta.get("vm_size", ""),
             "is_spot": meta.get("is_spot", False),
+            "private_ip": meta.get("private_ip", ""),
         })
     return result
 
