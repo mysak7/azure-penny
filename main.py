@@ -402,40 +402,66 @@ _SPOT_PRICE_CACHE: dict[str, float] = {}  # "{vm_size}:{region}" → $/hr
 # These are representative Sept 2025–Apr 2026 spot rates; actual rates vary
 _SPOT_PRICES: dict[str, dict[str, float]] = {
     "Standard_D2s_v3": {
-        "eastus": 0.0380, "westus": 0.0380, "centralus": 0.0360,
+        "eastus": 0.0380, "westus": 0.0380, "westus2": 0.0380, "centralus": 0.0360,
         "northeurope": 0.0420, "westeurope": 0.0410,
+        "swedencentral": 0.0400, "japaneast": 0.0390, "southeastasia": 0.0380,
+        "australiaeast": 0.0420, "uksouth": 0.0410, "eastasia": 0.0390,
     },
     "Standard_D4s_v3": {
-        "eastus": 0.0760, "westus": 0.0760, "centralus": 0.0720,
+        "eastus": 0.0760, "westus": 0.0760, "westus2": 0.0760, "centralus": 0.0720,
         "northeurope": 0.0840, "westeurope": 0.0820,
+        "swedencentral": 0.0800, "japaneast": 0.0780, "southeastasia": 0.0760,
+        "australiaeast": 0.0840, "uksouth": 0.0820, "eastasia": 0.0780,
     },
     "Standard_D8s_v3": {
-        "eastus": 0.1520, "westus": 0.1520, "centralus": 0.1440,
+        "eastus": 0.1520, "westus": 0.1520, "westus2": 0.1520, "centralus": 0.1440,
         "northeurope": 0.1680, "westeurope": 0.1640,
+        "swedencentral": 0.1600, "japaneast": 0.1560, "southeastasia": 0.1520,
     },
     "Standard_E4s_v3": {
-        "eastus": 0.0852, "westus": 0.0852, "centralus": 0.0808,
+        "eastus": 0.0852, "westus": 0.0852, "westus2": 0.0852, "centralus": 0.0808,
         "northeurope": 0.0945, "westeurope": 0.0924,
+        "swedencentral": 0.0900, "japaneast": 0.0876,
+    },
+    # Standard_F1als_v7: ~$0.0095/hr on-demand; spot ~35% of on-demand
+    "Standard_F1als_v7": {
+        "eastus": 0.0033, "westus": 0.0033, "westus2": 0.0033, "westus3": 0.0033,
+        "centralus": 0.0031, "northeurope": 0.0036, "westeurope": 0.0035,
+        "swedencentral": 0.0034, "japaneast": 0.0034, "southeastasia": 0.0033,
+        "australiaeast": 0.0036, "uksouth": 0.0035, "eastasia": 0.0034,
     },
 }
 
 # On-demand rates for fallback when spot not listed ($/hr, Compute)
 _ONDEMAND_PRICES: dict[str, dict[str, float]] = {
     "Standard_D2s_v3": {
-        "eastus": 0.0960, "westus": 0.0960, "centralus": 0.0960,
+        "eastus": 0.0960, "westus": 0.0960, "westus2": 0.0960, "centralus": 0.0960,
         "northeurope": 0.1056, "westeurope": 0.1056,
+        "swedencentral": 0.1056, "japaneast": 0.1008, "southeastasia": 0.1008,
+        "australiaeast": 0.1072, "uksouth": 0.1056, "eastasia": 0.1008,
     },
     "Standard_D4s_v3": {
-        "eastus": 0.1920, "westus": 0.1920, "centralus": 0.1920,
+        "eastus": 0.1920, "westus": 0.1920, "westus2": 0.1920, "centralus": 0.1920,
         "northeurope": 0.2112, "westeurope": 0.2112,
+        "swedencentral": 0.2112, "japaneast": 0.2016, "southeastasia": 0.2016,
+        "australiaeast": 0.2144, "uksouth": 0.2112, "eastasia": 0.2016,
     },
     "Standard_D8s_v3": {
-        "eastus": 0.3840, "westus": 0.3840, "centralus": 0.3840,
+        "eastus": 0.3840, "westus": 0.3840, "westus2": 0.3840, "centralus": 0.3840,
         "northeurope": 0.4224, "westeurope": 0.4224,
+        "swedencentral": 0.4224, "japaneast": 0.4032, "southeastasia": 0.4032,
     },
     "Standard_E4s_v3": {
-        "eastus": 0.2133, "westus": 0.2133, "centralus": 0.2133,
+        "eastus": 0.2133, "westus": 0.2133, "westus2": 0.2133, "centralus": 0.2133,
         "northeurope": 0.2346, "westeurope": 0.2346,
+        "swedencentral": 0.2346, "japaneast": 0.2240,
+    },
+    # Standard_F1als_v7: 1 vCPU, 2 GiB RAM — Fasv7 series
+    "Standard_F1als_v7": {
+        "eastus": 0.0095, "westus": 0.0095, "westus2": 0.0095, "westus3": 0.0095,
+        "centralus": 0.0090, "northeurope": 0.0104, "westeurope": 0.0101,
+        "swedencentral": 0.0099, "japaneast": 0.0098, "southeastasia": 0.0097,
+        "australiaeast": 0.0104, "uksouth": 0.0101, "eastasia": 0.0098,
     },
 }
 
@@ -443,14 +469,19 @@ _ONDEMAND_PRICES: dict[str, dict[str, float]] = {
 def _fetch_retail_price(vm_size: str, region: str, price_type: str = "Consumption") -> float | None:
     """Query the Azure Retail Prices API for a VM price.
 
-    price_type: 'Consumption' for on-demand, 'DevTestConsumption' for dev/test,
-                'Spot' for spot pricing.
+    price_type: 'Consumption' for on-demand/spot, 'DevTestConsumption' for dev/test.
+    NOTE: The Azure Retail Prices API does NOT support priceType='Spot'. Spot rows use
+    priceType='Consumption' with ' Spot' in the skuName. Pass price_type='Spot' as a
+    sentinel — this function translates it to the correct Consumption+skuName filter.
     Returns $/hr or None if not found / unreachable.
     """
+    want_spot = price_type == "Spot"
+    api_price_type = "Consumption" if want_spot else price_type
+
     filter_str = (
         f"armRegionName eq '{region.lower()}'"
         f" and armSkuName eq '{vm_size}'"
-        f" and priceType eq '{price_type}'"
+        f" and priceType eq '{api_price_type}'"
         " and serviceName eq 'Virtual Machines'"
     )
     url = (
@@ -461,17 +492,30 @@ def _fetch_retail_price(vm_size: str, region: str, price_type: str = "Consumptio
         with urllib.request.urlopen(url, timeout=8) as resp:
             data = _json.loads(resp.read())
         items = data.get("Items") or []
-        # Prefer non-Windows, non-Low Priority rows
-        for item in items:
-            sku = (item.get("skuName") or "").lower()
-            if "windows" in sku or "low priority" in sku:
-                continue
-            price = item.get("retailPrice") or item.get("unitPrice")
-            if price:
-                return float(price)
-        # Fallback: return first available price
-        if items:
-            return float(items[0].get("retailPrice") or items[0].get("unitPrice") or 0) or None
+        if want_spot:
+            # Spot rows have ' Spot' in skuName; exclude Windows and Low Priority
+            spot_items = [
+                i for i in items
+                if "spot" in (i.get("skuName") or "").lower()
+                and "windows" not in (i.get("skuName") or "").lower()
+                and "low priority" not in (i.get("skuName") or "").lower()
+            ]
+            for item in spot_items:
+                price = item.get("retailPrice") or item.get("unitPrice")
+                if price:
+                    return float(price)
+        else:
+            # Prefer non-Windows, non-Low Priority, non-Spot rows
+            for item in items:
+                sku = (item.get("skuName") or "").lower()
+                if "windows" in sku or "low priority" in sku or "spot" in sku:
+                    continue
+                price = item.get("retailPrice") or item.get("unitPrice")
+                if price:
+                    return float(price)
+            # Fallback: return first available price
+            if items:
+                return float(items[0].get("retailPrice") or items[0].get("unitPrice") or 0) or None
     except Exception as exc:
         log.debug("Retail Prices API unavailable for %s/%s: %s", vm_size, region, exc)
     return None
@@ -674,6 +718,16 @@ async def _get_live_data() -> list[dict]:
                     entry["monthly_cost"] = round(spot_price * 24 * 30, 2)
                     entry["spot_price_per_hour"] = round(spot_price, 4)
                     entry["cost_source"] = "spot_rate"
+                else:
+                    # Last resort: use on-demand × 0.4 as spot estimate
+                    ondemand = await asyncio.get_event_loop().run_in_executor(
+                        None, _fetch_ondemand_price, vm_size_norm, region_norm
+                    )
+                    if ondemand is not None:
+                        spot_est = round(ondemand * 0.4, 4)
+                        entry["monthly_cost"] = round(spot_est * 24 * 30, 2)
+                        entry["spot_price_per_hour"] = spot_est
+                        entry["cost_source"] = "spot_rate"
             else:
                 ondemand = await asyncio.get_event_loop().run_in_executor(
                     None, _fetch_ondemand_price, vm_size_norm, region_norm
