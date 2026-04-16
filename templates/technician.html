@@ -619,7 +619,7 @@ function loadInsights() {
         var lowCount = svcs.filter(function(s) { return s.cost_usd < 0.01; }).length;
         if (lowCount > 0) {
           html += '<div class="insight ok"><span class="insight-icon">&#x2713;</span>' +
-            lowCount + ' service' + (lowCount>1?'s':'') + ' with cost &lt; $0.01 (negligible spend).</div>';
+            lowCount + ' service' + (lowCount>1?'s':'') + ' with cost &lt; €0.01 (negligible spend).</div>';
         }
 
         // Total summary
@@ -733,11 +733,11 @@ function periodDays() {
 
 function fmtCost(v) {
   v = Number(v) || 0;
-  if (v === 0)      return '$0.00';
-  if (v >= 1)       return '$' + v.toFixed(2);
-  if (v >= 0.01)    return '$' + v.toFixed(3);
-  if (v >= 0.0001)  return '$' + v.toFixed(4);
-  return '< $0.0001';
+  if (v === 0)      return '€0.00';
+  if (v >= 1)       return '€' + v.toFixed(2);
+  if (v >= 0.01)    return '€' + v.toFixed(3);
+  if (v >= 0.0001)  return '€' + v.toFixed(4);
+  return '< €0.0001';
 }
 
 function fmtNum(n) {
