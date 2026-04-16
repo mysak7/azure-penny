@@ -792,6 +792,13 @@ def _filter_services(df: pd.DataFrame, services: set[str]) -> pd.DataFrame:
     return df[df["C_SERVICE"].str.lower().isin(lower)]
 
 
+def _filter_rg(df: pd.DataFrame, rg: str) -> pd.DataFrame:
+    """Keep only rows belonging to the given resource group (case-insensitive). Empty string = no filter."""
+    if not rg or "C_NAME" not in df.columns:
+        return df
+    return df[df["C_NAME"].str.lower() == rg.lower()]
+
+
 def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
     if col not in df.columns or "C_COST" not in df.columns:
         return {}
@@ -799,8 +806,9 @@ def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
     return grp[grp > 0].sort_values(ascending=False).round(6).to_dict()
 
 
-async def _category_api(period: str, services: set[str]) -> dict:
+async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
     df = await get_cached_dataframe()
+    df = _filter_rg(df, rg)
     days = _period_days(period)
     filtered = _filter_services(_filter_period(df, days), services)
 
@@ -923,18 +931,19 @@ async def api_reload() -> JSONResponse:
 # ── Category endpoints ────────────────────────────────────────────────────────
 
 @app.get("/api/compute", tags=["api"])
-async def api_compute(period: str = "week") -> JSONResponse:
+async def api_compute(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_COMPUTE))
+        return JSONResponse(await _category_api(period, CAT_COMPUTE, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/compute/machines", tags=["api"])
-async def api_compute_machines(period: str = "week") -> JSONResponse:
+async def api_compute_machines(period: str = "week", rg: str = "") -> JSONResponse:
     """Cost breakdown per individual machine (resource name) for compute services."""
     try:
         df = await get_cached_dataframe()
+        df = _filter_rg(df, rg)
         days = _period_days(period)
         filtered = _filter_services(_filter_period(df, days), CAT_COMPUTE)
 
@@ -964,25 +973,25 @@ async def api_compute_machines(period: str = "week") -> JSONResponse:
 
 
 @app.get("/api/storage", tags=["api"])
-async def api_storage(period: str = "week") -> JSONResponse:
+async def api_storage(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_STORAGE))
+        return JSONResponse(await _category_api(period, CAT_STORAGE, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/network", tags=["api"])
-async def api_network(period: str = "week") -> JSONResponse:
+async def api_network(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_NETWORK))
+        return JSONResponse(await _category_api(period, CAT_NETWORK, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/database", tags=["api"])
-async def api_database(period: str = "week") -> JSONResponse:
+async def api_database(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_DATABASE))
+        return JSONResponse(await _category_api(period, CAT_DATABASE, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -1112,10 +1121,11 @@ async def api_debug() -> JSONResponse:
 # ── Technician API endpoints ──────────────────────────────────────────────────
 
 @app.get("/api/services", tags=["api"])
-async def api_services(period: str = "week") -> JSONResponse:
+async def api_services(period: str = "week", rg: str = "") -> JSONResponse:
     """All services grouped by MeterCategory for the given period."""
     try:
         df = await get_cached_dataframe()
+        df = _filter_rg(df, rg)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -1209,10 +1219,11 @@ async def api_cost_search(q: str) -> JSONResponse:
 
 
 @app.get("/api/resource-groups", tags=["api"])
-async def api_resource_groups(period: str = "week") -> JSONResponse:
+async def api_resource_groups(period: str = "week", rg: str = "") -> JSONResponse:
     """Cost grouped by resource group (C_NAME) for the given period."""
     try:
         df = await get_cached_dataframe()
+        df = _filter_rg(df, rg)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -1227,6 +1238,28 @@ async def api_resource_groups(period: str = "week") -> JSONResponse:
             "total_usd": round(sum(by_rg.values()), 4),
             "data_as_of": data_as_of,
         })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/resource-groups-list", tags=["api"])
+async def api_resource_groups_list() -> JSONResponse:
+    """All resource groups sorted by total cost (all-time). Used to populate the global RG filter dropdown."""
+    try:
+        df = await get_cached_dataframe()
+        if df.empty or "C_NAME" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"resource_groups": []})
+        by_rg = (
+            df.groupby("C_NAME", dropna=False)["C_COST"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+        rgs = [
+            {"name": str(k), "total_cost": round(float(v), 2)}
+            for k, v in by_rg.items()
+            if v > 0 and str(k).strip()
+        ]
+        return JSONResponse({"resource_groups": rgs})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -1474,10 +1507,11 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
 
 
 @app.get("/api/daily", tags=["api"])
-async def api_daily(days: int = 30) -> JSONResponse:
+async def api_daily(days: int = 30, rg: str = "") -> JSONResponse:
     """Daily spend totals for the last N days."""
     try:
         df = await get_cached_dataframe()
+        df = _filter_rg(df, rg)
         if "C_DATE" not in df.columns or "C_COST" not in df.columns:
             return JSONResponse({"days": days, "points": [], "total_usd": 0})
 

@@ -81,6 +81,13 @@
     .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
     .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
 
+    /* RG filter dropdown */
+    .rg-select-wrap { display: flex; align-items: center; gap: .4rem; }
+    .rg-select-label { font-size: 0.72rem; color: #64748b; white-space: nowrap; }
+    .rg-select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; font-size: 0.78rem; padding: .25rem .5rem; border-radius: 6px; font-family: inherit; cursor: pointer; max-width: 200px; }
+    .rg-select:focus { outline: none; border-color: #38bdf8; }
+    .rg-select.filtered { border-color: #38bdf8; color: #38bdf8; background: #0c4a6e22; }
+
     /* Service table */
     .svc-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: .25rem; }
     .svc-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #334155; }
@@ -101,6 +108,12 @@
 <header>
   <div class="hdr-left">
     <h1>azure-penny <span>Manager</span></h1>
+    <div class="rg-select-wrap">
+      <span class="rg-select-label">RG:</span>
+      <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
+        <option value="">All</option>
+      </select>
+    </div>
   </div>
   <div class="nav">
     <a href="/manager"    class="nav-link active">Manager</a>
@@ -221,6 +234,35 @@
 var currentPeriod = 'week';
 var loaded = {};
 
+// ── Resource group filter ─────────────────────────────────────────────────────
+function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
+function rgParam() { var rg = getCurrentRg(); return rg ? '&rg=' + encodeURIComponent(rg) : ''; }
+function onRgChange(val) {
+  if (val) localStorage.setItem('az_penny_rg', val);
+  else localStorage.removeItem('az_penny_rg');
+  var sel = document.getElementById('rg-select');
+  if (sel) sel.classList.toggle('filtered', !!val);
+  loaded = {}; loadAll();
+}
+function loadRgList() {
+  fetch('/api/resource-groups-list')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var sel = document.getElementById('rg-select');
+      if (!sel) return;
+      var current = getCurrentRg();
+      var rgs = data.resource_groups || [];
+      sel.innerHTML = '<option value="">All</option>' + rgs.map(function(rg) {
+        return '<option value="' + escAttr(rg.name) + '"' + (rg.name === current ? ' selected' : '') + '>' +
+               escHtml(rg.name) + ' (' + fmtCost(rg.total_cost) + ')</option>';
+      }).join('');
+      sel.classList.toggle('filtered', !!current);
+    })
+    .catch(function() {});
+}
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 // ── Period ────────────────────────────────────────────────────────────────────
 function setPeriod(p) {
   document.querySelectorAll('.pill').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
@@ -232,10 +274,10 @@ function periodLabel() {
 
 // ── Load all ──────────────────────────────────────────────────────────────────
 function loadAll() {
-  loadCategory('compute',  '/api/compute?period='  +currentPeriod, 'cp',  'blue');
-  loadCategory('storage',  '/api/storage?period='  +currentPeriod, 'st',  'green');
-  loadCategory('network',  '/api/network?period='  +currentPeriod, 'net', 'orange');
-  loadCategory('database', '/api/database?period=' +currentPeriod, 'db',  'purple');
+  loadCategory('compute',  '/api/compute?period='  +currentPeriod+rgParam(), 'cp',  'blue');
+  loadCategory('storage',  '/api/storage?period='  +currentPeriod+rgParam(), 'st',  'green');
+  loadCategory('network',  '/api/network?period='  +currentPeriod+rgParam(), 'net', 'orange');
+  loadCategory('database', '/api/database?period=' +currentPeriod+rgParam(), 'db',  'purple');
   loadTotal();
 }
 
@@ -246,7 +288,7 @@ function loadTotal() {
   var bar = document.getElementById('st-total-val');
   if (kpi) kpi.textContent = '…';
   if (bar) bar.textContent = 'loading…';
-  fetch('/api/services?period=' + currentPeriod)
+  fetch('/api/services?period=' + currentPeriod + rgParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) throw new Error(data.error);
@@ -372,6 +414,7 @@ function fmtNum(n) {
 
 // Boot
 loadStatus();
+loadRgList();
 loadAll();
 </script>
 </body>
