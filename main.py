@@ -927,22 +927,18 @@ async def _get_live_data() -> list[dict]:
 
         enriched.append(entry)
 
-    # For storage accounts that have Azure Files shares, replace the export-projected cost
-    # with the sum of provisioned-rate estimates from the share entries.
-    # Export projection breaks when a large share is newly created (1 day in a 10-day window
-    # gives 10× underestimate before the ×3 projection, still way off).
-    files_cost_by_sa: dict[str, float] = {}
-    for e in enriched:
-        if e.get("cost_source") == "files_rate" and e.get("parent_storage_account"):
-            sa_key = e["parent_storage_account"].lower()
-            files_cost_by_sa[sa_key] = files_cost_by_sa.get(sa_key, 0.0) + (e.get("monthly_cost") or 0)
-
+    # For storage accounts that have Azure Files share children, suppress the account-level
+    # cost (show —) to avoid double-counting — the cost is already visible on each share row.
+    sa_with_shares: set[str] = {
+        e["parent_storage_account"].lower()
+        for e in enriched
+        if e.get("cost_source") == "files_rate" and e.get("parent_storage_account")
+    }
     for e in enriched:
         if (e.get("type") or "").lower() == "microsoft.storage/storageaccounts":
-            sa_key = (e.get("name") or "").lower()
-            if sa_key in files_cost_by_sa:
-                e["monthly_cost"] = round(files_cost_by_sa[sa_key], 2)
-                e["cost_source"] = "files_rate"
+            if (e.get("name") or "").lower() in sa_with_shares:
+                e["monthly_cost"] = None
+                e["cost_source"] = "in_shares"
 
     return enriched
 

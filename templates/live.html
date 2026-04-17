@@ -314,6 +314,7 @@ function statusBadge(status, cat) {
 
 // ── Cost cell ─────────────────────────────────────────────────────────────────
 function costCell(v, source, r) {
+  if (source === 'in_shares') return '<span class="cost-nil" title="Cost shown in file share rows below">in shares</span>';
   if (v === null || v === undefined) return '<span class="cost-nil">&mdash;</span>';
   var n = Number(v);
   var cls = n >= 50 ? 'cost-hi' : n >= 10 ? 'cost-med' : 'cost-lo';
