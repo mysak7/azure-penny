@@ -325,6 +325,12 @@ function costCell(v, source, r) {
     return '<span class="' + cls + '" title="' + tip + '">' + fmtCost(n) +
       '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
+  if (source === 'export_last_day') {
+    var raw2 = r && r.export_cost_raw != null ? fmtCost(r.export_cost_raw) : '?';
+    var tip2 = 'Estimated from last day\'s cost × 30 (new large resource detected). Actual billed: ' + raw2 + '.';
+    return '<span class="' + cls + '" title="' + tip2 + '">' + fmtCost(n) +
+      '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
+  }
   if (source === 'spot_rate') {
     var hrly = r && r.spot_price_per_hour ? fmtCost(r.spot_price_per_hour) + '/hr' : '';
     var tip = 'Spot rate estimate (24×30h)' + (hrly ? ' — ' + hrly : '') + '.' + billedSuffix;

@@ -29,7 +29,15 @@ import pandas as pd
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.storage import StorageManagementClient
+try:
+    from azure.mgmt.storage import StorageManagementClient
+    _HAS_STORAGE_MGMT = True
+except ImportError:
+    StorageManagementClient = None  # type: ignore[assignment,misc]
+    _HAS_STORAGE_MGMT = False
+    logging.getLogger("azure-penny").warning(
+        "azure-mgmt-storage not installed — Azure Files share enumeration disabled"
+    )
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -730,7 +738,7 @@ def _fetch_resource_inventory() -> list[dict]:
 
     # Enumerate Azure Files shares (sub-resources not returned by resources.list())
     storage_accounts = [r for r in all_res if (r.type or "").lower() == "microsoft.storage/storageaccounts"]
-    if storage_accounts:
+    if storage_accounts and _HAS_STORAGE_MGMT:
         try:
             sc = _get_storage_mgmt_client()
             for sa in storage_accounts:
@@ -823,10 +831,16 @@ async def _get_live_data() -> list[dict]:
             if v > 0
         }
         # How many distinct days of data does each resource have?
+        # Also track the most recent day's cost for storage-account fallback.
+        last_day_cost_by_id: dict[str, float] = {}
         if "C_DATE" in mdf.columns:
             days_agg = mdf.groupby("C_RESOURCE_ID")["C_DATE"].nunique()
             days_by_id = {str(k): int(v) for k, v in days_agg.items()}
             window_days = int(mdf["C_DATE"].nunique()) or 1
+            last_date = mdf["C_DATE"].max()
+            if last_date:
+                ld_agg = mdf[mdf["C_DATE"] == last_date].groupby("C_RESOURCE_ID")["C_COST"].sum()
+                last_day_cost_by_id = {str(k): round(float(v), 4) for k, v in ld_agg.items() if v > 0}
 
     enriched: list[dict] = []
     for r in inv:
@@ -834,10 +848,29 @@ async def _get_live_data() -> list[dict]:
         # Project sparse export data to a full 30-day month.
         # If the export only has N < 28 days, the raw sum understates monthly cost.
         # Use the per-resource day count (falling back to the window total).
-        export_days = days_by_id.get(r["id"].lower(), window_days) if export_cost is not None else window_days
+        rid = r["id"].lower()
+        export_days = days_by_id.get(rid, window_days) if export_cost is not None else window_days
         if export_cost is not None and export_days < 28:
-            monthly_projected = round(export_cost / export_days * 30, 2)
-            cost_source = "export_projected"
+            window_projected = round(export_cost / export_days * 30, 2)
+            # For storage accounts: also try last-day × 30.
+            # Window averaging dilutes cost when a large resource (e.g. 5 TB file share)
+            # was created recently — the new daily rate dominates the last day but the
+            # earlier empty days drag the average way down.
+            is_storage_account = (r.get("type") or "").lower() == "microsoft.storage/storageaccounts"
+            last_day_cost = last_day_cost_by_id.get(rid)
+            if is_storage_account and last_day_cost is not None:
+                last_day_projected = round(last_day_cost * 30, 2)
+                # Use the higher of the two estimates — if the last day reflects the
+                # current provisioned state it will be higher than the diluted window avg.
+                if last_day_projected > window_projected:
+                    monthly_projected = last_day_projected
+                    cost_source = "export_last_day"
+                else:
+                    monthly_projected = window_projected
+                    cost_source = "export_projected"
+            else:
+                monthly_projected = window_projected
+                cost_source = "export_projected"
         else:
             monthly_projected = export_cost
             cost_source = "export" if export_cost is not None else None
