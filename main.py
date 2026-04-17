@@ -691,6 +691,23 @@ async def _get_live_data() -> list[dict]:
         # Normalize ResourceId to lowercase BEFORE aggregation (case differences in cost export)
         mdf = mdf.copy()
         mdf["C_RESOURCE_ID"] = mdf["C_RESOURCE_ID"].str.lower()
+
+        # Sub-resources (e.g. file shares: .../storageAccounts/x/fileServices/default/shares/y)
+        # are billed separately but only the parent storage account appears in the ARM inventory.
+        # Roll sub-resource costs up to the nearest top-level ARM resource ID so the cost
+        # correlation in _get_live_data matches the live inventory.
+        _SUBRESOURCE_STRIP_RE = re.compile(
+            r"(/providers/[^/]+/[^/]+/[^/]+)"  # keep up to /<type>/<name>
+            r"(?:/(?:fileservices|blobservices|queueservices|tableservices|managementpolicies"
+            r"|encryptionscopes|objectreplicationpolicies|privateendpointconnections"
+            r"|inventorypolicies|shares|containers|queues|tables).*)$"
+        )
+
+        def _normalize_rid(rid: str) -> str:
+            m = _SUBRESOURCE_STRIP_RE.search(rid)
+            return rid[: m.end(1)] if m else rid
+
+        mdf["C_RESOURCE_ID"] = mdf["C_RESOURCE_ID"].apply(_normalize_rid)
         agg = mdf.groupby("C_RESOURCE_ID")["C_COST"].sum()
         cost_by_id = {
             str(k): round(float(v), 4)
