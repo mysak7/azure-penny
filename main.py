@@ -29,6 +29,7 @@ import pandas as pd
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.storage import StorageManagementClient
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -330,6 +331,7 @@ async def get_cached_dataframe() -> pd.DataFrame:
 
 _resource_mgmt_client: ResourceManagementClient | None = None
 _compute_mgmt_client: ComputeManagementClient | None = None
+_storage_mgmt_client: StorageManagementClient | None = None
 
 
 def _get_resource_mgmt_client() -> ResourceManagementClient:
@@ -352,14 +354,75 @@ def _get_compute_mgmt_client() -> ComputeManagementClient:
     return _compute_mgmt_client
 
 
+def _get_storage_mgmt_client() -> StorageManagementClient:
+    global _storage_mgmt_client
+    if _storage_mgmt_client is None:
+        if not AZURE_SUBSCRIPTION_ID:
+            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
+        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+        _storage_mgmt_client = StorageManagementClient(credential, AZURE_SUBSCRIPTION_ID)
+    return _storage_mgmt_client
+
+
+# Approximate Azure Files Premium LRS price ($/GiB/month) by region — used when Retail API is unreachable
+_FILES_PREMIUM_PRICES: dict[str, float] = {
+    "eastus": 0.21, "eastus2": 0.21, "westus": 0.21, "westus2": 0.21, "westus3": 0.21,
+    "centralus": 0.21, "northcentralus": 0.21, "southcentralus": 0.21,
+    "northeurope": 0.22, "westeurope": 0.22, "uksouth": 0.22, "ukwest": 0.22,
+    "swedencentral": 0.21, "switzerlandnorth": 0.25,
+    "japaneast": 0.23, "japanwest": 0.23,
+    "southeastasia": 0.23, "eastasia": 0.24,
+    "australiaeast": 0.25, "australiasoutheast": 0.25,
+    "brazilsouth": 0.28,
+}
+_FILES_PRICE_CACHE: dict[str, float] = {}
+
+
+def _fetch_files_premium_price(region: str) -> float:
+    """Return Azure Files Premium LRS price in $/GiB/month. Tries Retail API, falls back to table."""
+    region_lc = region.lower()
+    if region_lc in _FILES_PRICE_CACHE:
+        return _FILES_PRICE_CACHE[region_lc]
+
+    filter_str = (
+        f"armRegionName eq '{region_lc}'"
+        " and serviceName eq 'Storage'"
+        " and priceType eq 'Consumption'"
+    )
+    url = (
+        "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&$filter="
+        + urllib.parse.quote(filter_str)
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=8) as resp:
+            data = _json.loads(resp.read())
+        for item in (data.get("Items") or []):
+            sku  = (item.get("skuName") or "").lower()
+            meter = (item.get("meterName") or "").lower()
+            if "premium" in sku and "file" in sku and "data stored" in meter and "lrs" in sku:
+                price = float(item.get("retailPrice") or item.get("unitPrice") or 0)
+                if price > 0:
+                    _FILES_PRICE_CACHE[region_lc] = price
+                    log.info("Azure Files Premium LRS price %s: $%.4f/GiB/mo (live API)", region, price)
+                    return price
+    except Exception as exc:
+        log.debug("Files pricing API error for %s: %s", region, exc)
+
+    fallback = _FILES_PREMIUM_PRICES.get(region_lc, 0.21)
+    _FILES_PRICE_CACHE[region_lc] = fallback
+    log.info("Azure Files Premium LRS price %s: $%.4f/GiB/mo (table)", region, fallback)
+    return fallback
+
+
 # Resource type (lowercase ARM type string) → UI category
 _RTYPE_CATEGORY: dict[str, str] = {
     "microsoft.compute/virtualmachines":            "vm",
     "microsoft.compute/virtualmachinescalesets":    "vm",
     "microsoft.compute/disks":                      "storage",
     "microsoft.compute/snapshots":                  "storage",
-    "microsoft.storage/storageaccounts":            "storage",
-    "microsoft.netapp/netappaccounts":              "storage",
+    "microsoft.storage/storageaccounts":                        "storage",
+    "microsoft.storage/storageaccounts/fileservices/shares":    "storage",
+    "microsoft.netapp/netappaccounts":                          "storage",
     "microsoft.network/virtualnetworks":            "network",
     "microsoft.network/publicipaddresses":          "network",
     "microsoft.network/loadbalancers":              "network",
@@ -661,7 +724,50 @@ def _fetch_resource_inventory() -> list[dict]:
             "vm_size": meta.get("vm_size", ""),
             "is_spot": meta.get("is_spot", False),
             "private_ip": meta.get("private_ip", ""),
+            "provisioned_size_gib": None,
+            "parent_storage_account": None,
         })
+
+    # Enumerate Azure Files shares (sub-resources not returned by resources.list())
+    storage_accounts = [r for r in all_res if (r.type or "").lower() == "microsoft.storage/storageaccounts"]
+    if storage_accounts:
+        try:
+            sc = _get_storage_mgmt_client()
+            for sa in storage_accounts:
+                sa_parts = sa.id.split("/resourceGroups/")
+                sa_rg = sa_parts[1].split("/")[0] if len(sa_parts) > 1 else ""
+                try:
+                    shares = list(sc.file_shares.list(sa_rg, sa.name))
+                    for share in shares:
+                        quota_gib = share.share_quota or 0
+                        price_per_gib = _fetch_files_premium_price(sa.location or "eastus")
+                        monthly_est = round(quota_gib * price_per_gib, 2)
+                        share_id = f"{sa.id}/fileServices/default/shares/{share.name}"
+                        result.append({
+                            "id": share_id,
+                            "name": share.name or "",
+                            "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+                            "category": "storage",
+                            "resource_group": sa_rg,
+                            "location": sa.location or "",
+                            "status": "Active",
+                            "vm_size": "",
+                            "is_spot": False,
+                            "private_ip": "",
+                            "provisioned_size_gib": quota_gib,
+                            "parent_storage_account": sa.name or "",
+                            "monthly_cost": monthly_est,
+                            "cost_source": "files_rate",
+                        })
+                        log.info(
+                            "File share: %s/%s  quota=%d GiB  est=$%.2f/mo",
+                            sa.name, share.name, quota_gib, monthly_est,
+                        )
+                except Exception as e:
+                    log.debug("File shares enum error for %s: %s", sa.name, e)
+        except Exception as e:
+            log.warning("StorageManagementClient error during file share enumeration: %s", e)
+
     return result
 
 

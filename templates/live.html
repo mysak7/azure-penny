@@ -261,8 +261,9 @@ var TYPE_NAMES = {
   'microsoft.compute/virtualmachinescalesets':  'VM Scale Set',
   'microsoft.compute/disks':                    'Managed Disk',
   'microsoft.compute/snapshots':                'Snapshot',
-  'microsoft.storage/storageaccounts':          'Storage Account',
-  'microsoft.netapp/netappaccounts':            'NetApp',
+  'microsoft.storage/storageaccounts':                        'Storage Account',
+  'microsoft.storage/storageaccounts/fileservices/shares':    'Azure Files Share',
+  'microsoft.netapp/netappaccounts':                          'NetApp',
   'microsoft.network/virtualnetworks':          'Virtual Network',
   'microsoft.network/publicipaddresses':        'Public IP',
   'microsoft.network/loadbalancers':            'Load Balancer',
@@ -325,6 +326,11 @@ function costCell(v, source, r) {
   if (source === 'price_table') {
     var tip2 = 'Retail price estimate (24×30h).' + billedSuffix;
     return '<span class="' + cls + '" title="' + tip2 + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
+  }
+  if (source === 'files_rate') {
+    var quota = r && r.provisioned_size_gib ? r.provisioned_size_gib + ' GiB provisioned' : '';
+    var tip3 = 'Azure Files Premium — provisioned capacity pricing.' + (quota ? ' ' + quota + '.' : '');
+    return '<span class="' + cls + '" title="' + tip3 + '">' + fmtCost(n) + '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">~mo</span></span>';
   }
   return '<span class="' + cls + '">' + fmtCost(n) + '</span>';
 }
@@ -435,13 +441,23 @@ function renderTable(rows) {
     var destroyBtn = r.id
       ? '<button class="btn-row-destroy" onclick=\'openDestroyModal(' + JSON.stringify(r) + ')\'>🗑️</button>'
       : '';
-    var nameTip = [r.id, r.vm_size ? 'Size: ' + r.vm_size : '', r.is_spot ? 'Spot instance' : ''].filter(Boolean).join('\n');
+    var isFileShare = (r.type || '').toLowerCase() === 'microsoft.storage/storageaccounts/fileservices/shares';
+    var nameTipParts = [r.id];
+    if (r.vm_size)               nameTipParts.push('Size: ' + r.vm_size);
+    if (r.is_spot)               nameTipParts.push('Spot instance');
+    if (r.parent_storage_account) nameTipParts.push('Account: ' + r.parent_storage_account);
+    if (r.provisioned_size_gib)  nameTipParts.push('Provisioned: ' + r.provisioned_size_gib + ' GiB');
+    var nameTip = nameTipParts.filter(Boolean).join('\n');
     var ipCell = r.category === 'vm' && r.private_ip
       ? '<span style="font-family:monospace;font-size:0.78rem">' + escHtml(r.private_ip) + '</span>'
       : '<span class="dim">&mdash;</span>';
+    var nameExtra = '';
+    if (r.vm_size)              nameExtra = '<span style="font-size:0.68rem;color:#64748b;margin-left:.4rem">' + escHtml(r.vm_size) + '</span>';
+    if (isFileShare && r.provisioned_size_gib) nameExtra = '<span style="font-size:0.68rem;color:#38bdf8;margin-left:.4rem">' + r.provisioned_size_gib + ' GiB provisioned</span>';
+    if (isFileShare && r.parent_storage_account) nameExtra += '<span style="font-size:0.65rem;color:#64748b;margin-left:.4rem">(' + escHtml(r.parent_storage_account) + ')</span>';
     return '<tr>' +
       '<td title="' + escHtml(nameTip) + '"><strong style="color:#e2e8f0">' + escHtml(r.name) + '</strong>' +
-      (r.vm_size ? '<span style="font-size:0.68rem;color:#64748b;margin-left:.4rem">' + escHtml(r.vm_size) + '</span>' : '') + '</td>' +
+      nameExtra + '</td>' +
       '<td><span class="type-chip" title="' + escHtml(r.type || '') + '">' + escHtml(friendlyType(r.type)) + '</span></td>' +
       '<td class="dim">' + escHtml(r.resource_group || '&mdash;') + '</td>' +
       '<td class="dim">' + escHtml(r.location || '&mdash;') + '</td>' +
