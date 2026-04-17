@@ -842,26 +842,33 @@ async def _get_live_data() -> list[dict]:
                 ld_agg = mdf[mdf["C_DATE"] == last_date].groupby("C_RESOURCE_ID")["C_COST"].sum()
                 last_day_cost_by_id = {str(k): round(float(v), 4) for k, v in ld_agg.items() if v > 0}
 
+    # Pre-compute which storage accounts currently have live file share children.
+    sa_with_live_shares: set[str] = {
+        (r.get("parent_storage_account") or "").lower()
+        for r in inv
+        if (r.get("type") or "").lower() == "microsoft.storage/storageaccounts/fileservices/shares"
+    }
+
     enriched: list[dict] = []
     for r in inv:
-        export_cost = cost_by_id.get(r["id"].lower())
-        # Project sparse export data to a full 30-day month.
-        # If the export only has N < 28 days, the raw sum understates monthly cost.
-        # Use the per-resource day count (falling back to the window total).
         rid = r["id"].lower()
+        export_cost = cost_by_id.get(rid)
         export_days = days_by_id.get(rid, window_days) if export_cost is not None else window_days
+        is_storage_account = (r.get("type") or "").lower() == "microsoft.storage/storageaccounts"
+        has_live_shares = is_storage_account and (r.get("name") or "").lower() in sa_with_live_shares
+
         if export_cost is not None and export_days < 28:
-            window_projected = round(export_cost / export_days * 30, 2)
-            # For storage accounts: also try last-day × 30.
-            # Window averaging dilutes cost when a large resource (e.g. 5 TB file share)
-            # was created recently — the new daily rate dominates the last day but the
-            # earlier empty days drag the average way down.
-            is_storage_account = (r.get("type") or "").lower() == "microsoft.storage/storageaccounts"
-            last_day_cost = last_day_cost_by_id.get(rid)
-            if is_storage_account and last_day_cost is not None:
-                last_day_projected = round(last_day_cost * 30, 2)
-                # Use the higher of the two estimates — if the last day reflects the
-                # current provisioned state it will be higher than the diluted window avg.
+            if is_storage_account and not has_live_shares:
+                # No live file shares — export charges are historical (share likely just deleted).
+                # Show the raw period total instead of projecting to avoid misleading the user.
+                monthly_projected = export_cost
+                cost_source = "export_period"
+            elif is_storage_account and has_live_shares:
+                # Has live shares: last-day × 30 captures recently-created large shares better
+                # than averaging over days when the share didn't yet exist.
+                window_projected = round(export_cost / export_days * 30, 2)
+                last_day_cost = last_day_cost_by_id.get(rid)
+                last_day_projected = round(last_day_cost * 30, 2) if last_day_cost else 0
                 if last_day_projected > window_projected:
                     monthly_projected = last_day_projected
                     cost_source = "export_last_day"
@@ -869,7 +876,7 @@ async def _get_live_data() -> list[dict]:
                     monthly_projected = window_projected
                     cost_source = "export_projected"
             else:
-                monthly_projected = window_projected
+                monthly_projected = round(export_cost / export_days * 30, 2)
                 cost_source = "export_projected"
         else:
             monthly_projected = export_cost

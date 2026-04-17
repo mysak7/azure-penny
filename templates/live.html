@@ -319,6 +319,12 @@ function costCell(v, source, r) {
   var n = Number(v);
   var cls = n >= 50 ? 'cost-hi' : n >= 10 ? 'cost-med' : 'cost-lo';
   var billedSuffix = (r && r.export_cost != null) ? ' Billed so far: ' + fmtCost(r.export_cost) + '.' : '';
+  if (source === 'export_period') {
+    var days = r && r.export_days ? r.export_days : '?';
+    var tip  = days + '-day billed total (no live shares — not projected to avoid misleading estimate).';
+    return '<span class="' + cls + '" title="' + tip + '">' + fmtCost(n) +
+      '<span style="font-size:0.7em;opacity:0.6;margin-left:2px">' + days + 'd</span></span>';
+  }
   if (source === 'export_projected') {
     var raw  = r && r.export_cost_raw != null ? fmtCost(r.export_cost_raw) : '?';
     var days = r && r.export_days ? r.export_days : '?';
