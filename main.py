@@ -791,6 +791,8 @@ async def _get_live_data() -> list[dict]:
     # Cost correlation (outside lock — uses existing cost cache)
     df = await get_cached_dataframe()
     cost_by_id: dict[str, float] = {}
+    days_by_id: dict[str, int] = {}   # distinct days of data per resource
+    window_days: int = 1              # total distinct days in the 30-day window
     if not df.empty and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
         cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
         mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
@@ -820,11 +822,32 @@ async def _get_live_data() -> list[dict]:
             for k, v in agg.items()
             if v > 0
         }
+        # How many distinct days of data does each resource have?
+        if "C_DATE" in mdf.columns:
+            days_agg = mdf.groupby("C_RESOURCE_ID")["C_DATE"].nunique()
+            days_by_id = {str(k): int(v) for k, v in days_agg.items()}
+            window_days = int(mdf["C_DATE"].nunique()) or 1
 
     enriched: list[dict] = []
     for r in inv:
         export_cost = cost_by_id.get(r["id"].lower())
-        entry: dict = {**r, "monthly_cost": export_cost, "cost_source": "export" if export_cost is not None else None}
+        # Project sparse export data to a full 30-day month.
+        # If the export only has N < 28 days, the raw sum understates monthly cost.
+        # Use the per-resource day count (falling back to the window total).
+        export_days = days_by_id.get(r["id"].lower(), window_days) if export_cost is not None else window_days
+        if export_cost is not None and export_days < 28:
+            monthly_projected = round(export_cost / export_days * 30, 2)
+            cost_source = "export_projected"
+        else:
+            monthly_projected = export_cost
+            cost_source = "export" if export_cost is not None else None
+        entry: dict = {
+            **r,
+            "monthly_cost": monthly_projected,
+            "cost_source": cost_source,
+            "export_cost_raw": export_cost,
+            "export_days": export_days if export_cost is not None else None,
+        }
 
         # For VMs, always compute projected monthly from pricing API (hourly_rate × 24 × 30).
         # Export data shows accumulated billing-period cost (could be just 1-2 days), which
@@ -835,7 +858,7 @@ async def _get_live_data() -> list[dict]:
             vm_size_norm = r["vm_size"]
             region_norm = r["location"].lower()
             if export_cost is not None:
-                entry["export_cost"] = export_cost  # preserve actual billing data
+                entry["export_cost"] = export_cost  # preserve actual billing data (raw, not projected)
             if r.get("is_spot"):
                 spot_price = await asyncio.get_event_loop().run_in_executor(
                     None, _fetch_spot_price, vm_size_norm, region_norm
@@ -1468,11 +1491,11 @@ async def api_live_resources() -> JSONResponse:
         resources = await _get_live_data()
 
         # Sum the actual billed export cost for matched ARM resources.
-        # VMs store it in "export_cost" (monthly_cost is overridden by pricing API);
-        # everything else stores it directly in "monthly_cost" when cost_source=="export".
+        # VMs store raw export in "export_cost" (monthly_cost is overridden by pricing API).
+        # Non-VMs use export_cost_raw (raw sum before projection) or monthly_cost for plain "export".
         matched_export_usd = 0.0
         for r in resources:
-            ec = r.get("export_cost")
+            ec = r.get("export_cost") or r.get("export_cost_raw")
             if ec is not None:
                 matched_export_usd += ec
             elif r.get("cost_source") == "export":
