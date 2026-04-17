@@ -28,6 +28,12 @@ variable "container_image" {
   default     = "nginx:latest"
 }
 
+variable "budget_monthly_amount" {
+  description = "Monthly budget cap in USD. Email alerts fire at every $10 increment up to this amount."
+  type        = number
+  default     = 100
+}
+
 variable "tags" {
   description = "Map of tags applied to every resource in this deployment."
   type        = map(string)
