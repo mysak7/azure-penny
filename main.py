@@ -120,6 +120,9 @@ COLUMN_MAP: dict[str, str] = {
     # Resource identity (used by Live Resources tab for cost correlation)
     "ResourceId":            "C_RESOURCE_ID",
     "InstanceId":            "C_RESOURCE_ID",
+    # Meter sub-category (space vs transfer classification)
+    "MeterSubCategory":      "C_SUBCATEGORY",
+    "SubCategory":           "C_SUBCATEGORY",
 }
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
@@ -976,6 +979,77 @@ async def api_compute_machines(period: str = "week", rg: str = "") -> JSONRespon
 async def api_storage(period: str = "week", rg: str = "") -> JSONResponse:
     try:
         return JSONResponse(await _category_api(period, CAT_STORAGE, rg))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# Keywords for classifying storage sub-meters as space vs transfer
+_TRANSFER_KEYWORDS = frozenset([
+    "bandwidth", "transfer", "egress", "geo-redundant replication",
+    "data retrieval", "replication",
+])
+
+
+@app.get("/api/storage/breakdown", tags=["api"])
+async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONResponse:
+    """Storage costs split into space (capacity) vs transfer (bandwidth/egress)."""
+    try:
+        df = await get_cached_dataframe()
+        df = _filter_rg(df, rg)
+        days = _period_days(period)
+
+        all_storage_svcs = CAT_STORAGE | {"Bandwidth"}
+        filtered = _filter_services(_filter_period(df, days), all_storage_svcs)
+
+        fallback = False
+        if period == "day" and filtered.empty and "C_DATE" in df.columns:
+            df_svc = _filter_services(df, all_storage_svcs)
+            if not df_svc.empty:
+                last_date = df_svc["C_DATE"].dropna().max()
+                filtered = df_svc[df_svc["C_DATE"] == last_date]
+                fallback = True
+
+        if filtered.empty or "C_COST" not in filtered.columns:
+            return JSONResponse({
+                "period": period, "total_usd": 0,
+                "space_usd": 0, "transfer_usd": 0,
+                "by_service": [], "fallback": fallback,
+            })
+
+        filtered = filtered.copy()
+        has_sub = "C_SUBCATEGORY" in filtered.columns
+
+        def _row_type(svc: str, sub: str) -> str:
+            combined = (svc + " " + sub).lower()
+            return "transfer" if any(k in combined for k in _TRANSFER_KEYWORDS) else "space"
+
+        if has_sub:
+            filtered["_type"] = filtered.apply(
+                lambda r: _row_type(str(r.get("C_SERVICE", "")), str(r.get("C_SUBCATEGORY", ""))),
+                axis=1,
+            )
+        else:
+            filtered["_type"] = filtered["C_SERVICE"].apply(
+                lambda s: _row_type(str(s), "")
+            )
+
+        space_total = float(filtered[filtered["_type"] == "space"]["C_COST"].sum())
+        transfer_total = float(filtered[filtered["_type"] == "transfer"]["C_COST"].sum())
+
+        by_svc = _cost_by(filtered, "C_SERVICE")
+        data_as_of = None
+        if not filtered.empty and "C_DATE" in filtered.columns:
+            data_as_of = filtered["C_DATE"].dropna().max()
+
+        return JSONResponse({
+            "period": period,
+            "total_usd": round(space_total + transfer_total, 4),
+            "space_usd": round(space_total, 4),
+            "transfer_usd": round(transfer_total, 4),
+            "by_service": [{"service": k, "cost_usd": v} for k, v in by_svc.items()],
+            "data_as_of": data_as_of,
+            "fallback": fallback,
+        })
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 

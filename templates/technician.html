@@ -176,6 +176,7 @@
       <button class="tab-btn active" data-tab="all-services"    onclick="setTab('all-services')">All Services</button>
       <button class="tab-btn"        data-tab="resource-groups" onclick="setTab('resource-groups')">Resource Groups</button>
       <button class="tab-btn"        data-tab="compute"         onclick="setTab('compute')">Compute</button>
+      <button class="tab-btn"        data-tab="storage"         onclick="setTab('storage')">Storage</button>
       <button class="tab-btn"        data-tab="database"        onclick="setTab('database')">Database</button>
       <button class="tab-btn"        data-tab="insights"        onclick="setTab('insights')">Insights</button>
     </div>
@@ -234,6 +235,19 @@
       <div id="cp-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
       <div id="cp-table"></div>
       <div id="cp-error" class="error"></div>
+    </div>
+  </div>
+
+  <!-- ── STORAGE ───────────────────────────────────────────────────────────── -->
+  <div id="section-storage" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Storage Services <span class="az-badge">Space &bull; Transfer &bull; Disks</span></h2>
+        <span id="stor-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="stor-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+      <div id="stor-table"></div>
+      <div id="stor-error" class="error"></div>
     </div>
   </div>
 
@@ -340,7 +354,7 @@ function setTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function(b) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
-  ['all-services','resource-groups','compute','database','insights'].forEach(function(t) {
+  ['all-services','resource-groups','compute','storage','database','insights'].forEach(function(t) {
     document.getElementById('section-' + t).style.display = t === tab ? '' : 'none';
   });
   currentTab = tab;
@@ -369,6 +383,7 @@ function loadCurrentTab() {
     case 'all-services':    loadAllServices();    break;
     case 'resource-groups': loadResourceGroups(); break;
     case 'compute':         loadComputeMachines(); break;
+    case 'storage':         loadStorage(); break;
     case 'database':        loadCategoryDetail('database', '/api/database?period=', 'db',  'purple'); break;
     case 'insights':        loadInsights(); loadBreakdown(); break;
   }
@@ -573,6 +588,63 @@ function loadComputeMachines() {
     .catch(function(err) {
       document.getElementById('cp-kpi').innerHTML = '';
       document.getElementById('cp-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+// ── STORAGE ───────────────────────────────────────────────────────────────────
+function loadStorage() {
+  document.getElementById('stor-badge').textContent = periodLabel();
+  document.getElementById('stor-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('stor-table').innerHTML = '';
+  document.getElementById('stor-error').textContent = '';
+
+  fetch('/api/storage/breakdown?period=' + currentPeriod + rgParam())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+
+      var svcs     = data.by_service || [];
+      var total    = data.total_usd || 0;
+      var spaceUsd = data.space_usd || 0;
+      var xferUsd  = data.transfer_usd || 0;
+
+      if (data.data_as_of) {
+        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
+        document.getElementById('stor-badge').textContent = badge;
+      }
+
+      document.getElementById('stor-kpi').innerHTML =
+        kpiCard('Total Storage', fmtCost(total), 'green') +
+        kpiCard('Space / Capacity', fmtCost(spaceUsd), 'blue', 'data stored, disks, backups') +
+        kpiCard('Transfer / Bandwidth', fmtCost(xferUsd), 'orange', 'egress, replication, retrieval') +
+        kpiCard('Services', svcs.length, '');
+
+      if (!svcs.length) {
+        document.getElementById('stor-table').innerHTML = '<p class="empty">No storage spend for this period.</p>';
+        return;
+      }
+
+      var max  = svcs[0].cost_usd || 1;
+      var rows = svcs.map(function(s) {
+        var pct   = Math.round(s.cost_usd / max * 100);
+        var share = ((s.cost_usd / total) * 100).toFixed(1);
+        var isXfer = /bandwidth|transfer|egress|replication|retrieval/i.test(s.service);
+        var color  = isXfer ? 'orange' : 'green';
+        var tag    = isXfer
+          ? '<span style="font-size:0.65rem;background:#451a03;color:#fcd34d;padding:.1rem .35rem;border-radius:3px;margin-left:.4rem">transfer</span>'
+          : '<span style="font-size:0.65rem;background:#052e16;color:#86efac;padding:.1rem .35rem;border-radius:3px;margin-left:.4rem">space</span>';
+        return '<tr>' +
+          '<td>' + escHtml(s.service) + tag + '</td>' +
+          '<td><div class="bar-cell"><div class="bar ' + color + '" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+          '<span style="font-family:monospace">' + fmtCost(s.cost_usd) + '</span></div></td>' +
+          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
+      }).join('');
+      document.getElementById('stor-table').innerHTML =
+        '<table><tr><th>Service (MeterCategory)</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
+    })
+    .catch(function(err) {
+      document.getElementById('stor-kpi').innerHTML = '';
+      document.getElementById('stor-error').textContent = 'Error: ' + err.message;
     });
 }
 
