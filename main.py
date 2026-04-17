@@ -874,6 +874,13 @@ async def _get_live_data() -> list[dict]:
         else:
             monthly_projected = export_cost
             cost_source = "export" if export_cost is not None else None
+
+        # When there is no export match, preserve any cost/source already set during
+        # inventory enumeration (e.g. file share provisioned-rate estimate).
+        if export_cost is None and monthly_projected is None:
+            monthly_projected = r.get("monthly_cost")
+            cost_source = r.get("cost_source")
+
         entry: dict = {
             **r,
             "monthly_cost": monthly_projected,
