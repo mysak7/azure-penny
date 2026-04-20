@@ -904,8 +904,9 @@ async def _get_live_data() -> list[dict]:
                 else:
                     monthly_projected = window_projected
                     cost_source = "export_projected"
-            elif export_hours_val and export_hours_val > 0:
-                # Use actual billed hours for precise per-hour rate (e.g. VMSS online few hours)
+            elif export_hours_val and export_hours_val > 0 and r.get("category") == "vm":
+                # Hours-based projection only for compute — other resources (disks, storage)
+                # bill Quantity in GB-months or transactions, not hours.
                 hourly_rate = export_cost / export_hours_val
                 monthly_projected = round(hourly_rate * 24 * 30, 2)
                 cost_source = "export_hours"
