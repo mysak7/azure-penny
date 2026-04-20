@@ -726,11 +726,12 @@ def _fetch_resource_inventory() -> list[dict]:
                 try:
                     vmss = cc.virtual_machine_scale_sets.get(rg_name, vmss_res.name)
                     vm_size = (vmss.sku.name or "") if vmss.sku else ""
+                    instance_count = int(vmss.sku.capacity or 1) if vmss.sku else 1
                     vmp = vmss.virtual_machine_profile
                     is_spot = (getattr(vmp, "priority", None) or "").lower() == "spot" if vmp else False
-                    vm_meta[vmss_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": ""}
+                    vm_meta[vmss_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": "", "instance_count": instance_count}
                     vm_states[vmss_res.id.lower()] = "VM running"
-                    log.info("VMSS %s: size=%s spot=%s", vmss_res.name, vm_size, is_spot)
+                    log.info("VMSS %s: size=%s spot=%s instances=%d", vmss_res.name, vm_size, is_spot, instance_count)
                 except Exception as e:
                     log.debug("VMSS SKU error (%s): %s", vmss_res.name, e)
         except Exception as e:
@@ -758,6 +759,7 @@ def _fetch_resource_inventory() -> list[dict]:
             "status": status,
             "vm_size": meta.get("vm_size", ""),
             "is_spot": meta.get("is_spot", False),
+            "instance_count": meta.get("instance_count", 1),
             "private_ip": meta.get("private_ip", ""),
             "provisioned_size_gib": None,
             "parent_storage_account": None,
@@ -940,12 +942,13 @@ async def _get_live_data() -> list[dict]:
         if r.get("vm_size") and r.get("location") and vm_is_active:
             vm_size_norm = r["vm_size"]
             region_norm = r["location"].lower()
+            instances = max(int(r.get("instance_count") or 1), 1)
             if r.get("is_spot"):
                 spot_price = await asyncio.get_event_loop().run_in_executor(
                     None, _fetch_spot_price, vm_size_norm, region_norm
                 )
                 if spot_price is not None:
-                    entry["monthly_cost"] = round(spot_price * 24 * 30, 2)
+                    entry["monthly_cost"] = round(spot_price * 24 * 30 * instances, 2)
                     entry["spot_price_per_hour"] = round(spot_price, 4)
                     entry["cost_source"] = "spot_rate"
                 else:
@@ -955,7 +958,7 @@ async def _get_live_data() -> list[dict]:
                     )
                     if ondemand is not None:
                         spot_est = round(ondemand * 0.4, 4)
-                        entry["monthly_cost"] = round(spot_est * 24 * 30, 2)
+                        entry["monthly_cost"] = round(spot_est * 24 * 30 * instances, 2)
                         entry["spot_price_per_hour"] = spot_est
                         entry["cost_source"] = "spot_rate"
             else:
@@ -963,7 +966,7 @@ async def _get_live_data() -> list[dict]:
                     None, _fetch_ondemand_price, vm_size_norm, region_norm
                 )
                 if ondemand is not None:
-                    entry["monthly_cost"] = round(ondemand * 24 * 30, 2)
+                    entry["monthly_cost"] = round(ondemand * 24 * 30 * instances, 2)
                     entry["cost_source"] = "price_table"
 
         enriched.append(entry)
