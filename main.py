@@ -132,6 +132,9 @@ COLUMN_MAP: dict[str, str] = {
     # Meter sub-category (space vs transfer classification)
     "MeterSubCategory":      "C_SUBCATEGORY",
     "SubCategory":           "C_SUBCATEGORY",
+    # Usage quantity (hours billed) — used for accurate monthly normalization
+    "Quantity":              "C_QUANTITY",
+    "UsageQuantity":         "C_QUANTITY",
 }
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
@@ -657,10 +660,14 @@ def _fetch_resource_inventory() -> list[dict]:
     all_res = list(rc.resources.list())
     log.info("ARM inventory: %d resources found", len(all_res))
 
-    # Collect VMs for individual power-state queries
+    # Collect VMs and VMSS for power-state / SKU queries
     vm_resources = [
         r for r in all_res
         if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachines"
+    ]
+    vmss_resources = [
+        r for r in all_res
+        if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachinescalesets"
     ]
     vm_states: dict[str, str] = {}
     vm_meta: dict[str, dict] = {}  # id.lower() → {"vm_size": str, "is_spot": bool, "private_ip": str}
@@ -708,6 +715,26 @@ def _fetch_resource_inventory() -> list[dict]:
                     vm_states[vm_res.id.lower()] = "Unknown"
         except Exception as e:
             log.warning("Could not fetch VM power states: %s", e)
+
+    # Fetch VMSS SKU (vm_size + spot flag) so pricing API can be used for AKS nodes
+    if vmss_resources:
+        try:
+            cc = _get_compute_mgmt_client()
+            for vmss_res in vmss_resources:
+                parts = vmss_res.id.split("/resourceGroups/")
+                rg_name = parts[1].split("/")[0] if len(parts) > 1 else ""
+                try:
+                    vmss = cc.virtual_machine_scale_sets.get(rg_name, vmss_res.name)
+                    vm_size = (vmss.sku.name or "") if vmss.sku else ""
+                    vmp = vmss.virtual_machine_profile
+                    is_spot = (getattr(vmp, "priority", None) or "").lower() == "spot" if vmp else False
+                    vm_meta[vmss_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": ""}
+                    vm_states[vmss_res.id.lower()] = "VM running"
+                    log.info("VMSS %s: size=%s spot=%s", vmss_res.name, vm_size, is_spot)
+                except Exception as e:
+                    log.debug("VMSS SKU error (%s): %s", vmss_res.name, e)
+        except Exception as e:
+            log.warning("Could not fetch VMSS SKU info: %s", e)
 
     result: list[dict] = []
     for r in all_res:
@@ -799,8 +826,9 @@ async def _get_live_data() -> list[dict]:
     # Cost correlation (outside lock — uses existing cost cache)
     df = await get_cached_dataframe()
     cost_by_id: dict[str, float] = {}
-    days_by_id: dict[str, int] = {}   # distinct days of data per resource
-    window_days: int = 1              # total distinct days in the 30-day window
+    hours_by_id: dict[str, float] = {}   # rid → total billed hours (from C_QUANTITY)
+    days_by_id: dict[str, int] = {}      # rid → distinct billing days in export
+    window_days: int = 1                 # total distinct days in the 30-day window
     if not df.empty and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
         cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
         mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
@@ -841,6 +869,10 @@ async def _get_live_data() -> list[dict]:
             if last_date:
                 ld_agg = mdf[mdf["C_DATE"] == last_date].groupby("C_RESOURCE_ID")["C_COST"].sum()
                 last_day_cost_by_id = {str(k): round(float(v), 4) for k, v in ld_agg.items() if v > 0}
+        # Actual billed hours per resource (most accurate normalization for compute)
+        if "C_QUANTITY" in mdf.columns:
+            qty_agg = mdf.groupby("C_RESOURCE_ID")["C_QUANTITY"].sum()
+            hours_by_id = {str(k): float(v) for k, v in qty_agg.items() if v > 0}
 
     # Pre-compute which storage accounts currently have live file share children.
     sa_with_live_shares: set[str] = {
@@ -854,18 +886,15 @@ async def _get_live_data() -> list[dict]:
         rid = r["id"].lower()
         export_cost = cost_by_id.get(rid)
         export_days = days_by_id.get(rid, window_days) if export_cost is not None else window_days
+        export_hours_val = hours_by_id.get(rid) if export_cost is not None else None
         is_storage_account = (r.get("type") or "").lower() == "microsoft.storage/storageaccounts"
         has_live_shares = is_storage_account and (r.get("name") or "").lower() in sa_with_live_shares
 
         if export_cost is not None and export_days < 28:
             if is_storage_account and not has_live_shares:
-                # No live file shares — export charges are historical (share likely just deleted).
-                # Show the raw period total instead of projecting to avoid misleading the user.
                 monthly_projected = export_cost
                 cost_source = "export_period"
             elif is_storage_account and has_live_shares:
-                # Has live shares: last-day × 30 captures recently-created large shares better
-                # than averaging over days when the share didn't yet exist.
                 window_projected = round(export_cost / export_days * 30, 2)
                 last_day_cost = last_day_cost_by_id.get(rid)
                 last_day_projected = round(last_day_cost * 30, 2) if last_day_cost else 0
@@ -875,6 +904,11 @@ async def _get_live_data() -> list[dict]:
                 else:
                     monthly_projected = window_projected
                     cost_source = "export_projected"
+            elif export_hours_val and export_hours_val > 0:
+                # Use actual billed hours for precise per-hour rate (e.g. VMSS online few hours)
+                hourly_rate = export_cost / export_hours_val
+                monthly_projected = round(hourly_rate * 24 * 30, 2)
+                cost_source = "export_hours"
             else:
                 monthly_projected = round(export_cost / export_days * 30, 2)
                 cost_source = "export_projected"
@@ -894,6 +928,7 @@ async def _get_live_data() -> list[dict]:
             "cost_source": cost_source,
             "export_cost_raw": export_cost,
             "export_days": export_days if export_cost is not None else None,
+            "export_hours": round(export_hours_val, 1) if export_hours_val else None,
         }
 
         # For VMs, always compute projected monthly from pricing API (hourly_rate × 24 × 30).
@@ -904,8 +939,6 @@ async def _get_live_data() -> list[dict]:
         if r.get("vm_size") and r.get("location") and vm_is_active:
             vm_size_norm = r["vm_size"]
             region_norm = r["location"].lower()
-            if export_cost is not None:
-                entry["export_cost"] = export_cost  # preserve actual billing data (raw, not projected)
             if r.get("is_spot"):
                 spot_price = await asyncio.get_event_loop().run_in_executor(
                     None, _fetch_spot_price, vm_size_norm, region_norm
