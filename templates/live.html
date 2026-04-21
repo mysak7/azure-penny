@@ -127,6 +127,10 @@
     /* Per-row destroy button */
     .btn-row-destroy { background: none; border: 1px solid #7f1d1d; color: #f87171; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .btn-row-destroy:hover { background: #7f1d1d; color: #fff; }
+
+    /* Delete All button */
+    .btn-delete-all { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; font-size: 0.8rem; padding: .3rem .85rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all .15s; white-space: nowrap; }
+    .btn-delete-all:hover { background: #991b1b; color: #fff; }
   </style>
 </head>
 <body>
@@ -157,6 +161,7 @@
   <span class="status-item" title="Cost matched to live ARM resources">Live: <strong id="st-live" style="color:#4ade80">&mdash;</strong></span>
   <span class="status-item" title="Cost for deleted or ARM-invisible resources (Billed 30d minus Live)">Deleted/hidden: <strong id="st-orphan" style="color:#f87171">&mdash;</strong></span>
   <button class="reload-btn" onclick="reloadLive()">&#x21BB; Refresh inventory</button>
+  <button class="btn-delete-all" onclick="openDeleteAllModal()">🗑️ Delete All Visible</button>
   <span id="st-error" class="status-item error"></span>
 </div>
 
@@ -196,6 +201,25 @@
     <div class="loading">Loading resources from Azure&hellip;</div>
   </div>
 
+</div>
+
+<!-- Delete All Modal -->
+<div class="modal-overlay" id="delete-all-modal">
+  <div class="modal">
+    <h2>⚠️ Delete All Visible Resources</h2>
+    <div class="modal-meta">
+      <span>Visible resources: <strong id="da-count">&mdash;</strong></span>
+      <span>Resource groups: <strong id="da-rgs">&mdash;</strong></span>
+    </div>
+    <div class="modal-warning">
+      ⚠️ This will permanently delete <strong>all resource groups</strong> listed above and everything inside them. This action cannot be undone.
+    </div>
+    <div id="da-log" class="destroy-log" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="da-cancel-btn" onclick="closeDeleteAllModal()">Cancel</button>
+      <button class="btn-confirm-destroy" id="da-destroy-btn" onclick="confirmDeleteAll()">🗑️ Delete All</button>
+    </div>
+  </div>
 </div>
 
 <!-- Destroy Resource Modal -->
@@ -659,6 +683,102 @@ async function confirmDestroy() {
 // Close on overlay click
 document.getElementById('destroy-modal').addEventListener('click', function(e) {
   if (e.target === this) closeDestroyModal();
+});
+
+// ── Delete All Visible ────────────────────────────────────────────────────────
+function openDeleteAllModal() {
+  var visible = getVisibleResources();
+  var rgs = [...new Set(visible.map(function(r) { return r.resource_group; }).filter(Boolean))];
+
+  document.getElementById('da-count').textContent   = visible.length;
+  document.getElementById('da-rgs').textContent     = rgs.length ? rgs.join(', ') : '—';
+  document.getElementById('da-log').style.display   = 'none';
+  document.getElementById('da-log').innerHTML       = '';
+  document.getElementById('da-cancel-btn').textContent  = 'Cancel';
+  document.getElementById('da-cancel-btn').disabled     = false;
+  document.getElementById('da-destroy-btn').textContent = '🗑️ Delete All';
+  document.getElementById('da-destroy-btn').disabled    = false;
+  document.getElementById('da-destroy-btn').onclick     = confirmDeleteAll;
+  document.getElementById('delete-all-modal').classList.add('active');
+}
+
+function closeDeleteAllModal() {
+  document.getElementById('delete-all-modal').classList.remove('active');
+}
+
+function getVisibleResources() {
+  var minCost = parseFloat(document.getElementById('min-cost').value) || 0;
+  var search  = (document.getElementById('search').value || '').toLowerCase();
+  var rg      = getCurrentRg();
+  return allResources.filter(function(r) {
+    if (currentCat !== 'all' && r.category !== currentCat) return false;
+    if (rg && r.resource_group !== rg) return false;
+    if (r.monthly_cost != null && r.monthly_cost < minCost) return false;
+    if (search && !(r.name||'').toLowerCase().includes(search) && !(r.resource_group||'').toLowerCase().includes(search)) return false;
+    return true;
+  });
+}
+
+async function confirmDeleteAll() {
+  var visible = getVisibleResources();
+  var rgs = [...new Set(visible.map(function(r) { return r.resource_group; }).filter(Boolean))];
+  if (!rgs.length) return;
+
+  var logEl      = document.getElementById('da-log');
+  var cancelBtn  = document.getElementById('da-cancel-btn');
+  var destroyBtn = document.getElementById('da-destroy-btn');
+
+  logEl.style.display = 'block';
+  logEl.innerHTML = '<span class="inf">Starting bulk delete of ' + rgs.length + ' resource group(s)…\n</span>';
+  cancelBtn.disabled  = true;
+  destroyBtn.disabled = true;
+
+  try {
+    var resp = await fetch('/api/resource-groups/all', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rgs)
+    });
+
+    if (!resp.ok) {
+      var txt = await resp.text();
+      logEl.innerHTML += '<span class="err">❌ HTTP ' + resp.status + ': ' + escHtml(txt) + '\n</span>';
+      cancelBtn.disabled = false;
+      return;
+    }
+
+    var reader  = resp.body.getReader();
+    var decoder = new TextDecoder();
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      var text = decoder.decode(chunk.value, { stream: true });
+      text.split('\n').forEach(function(line) {
+        if (!line) return;
+        var cls = line.startsWith('✅') ? 'ok' : line.startsWith('❌') ? 'err' : 'inf';
+        logEl.innerHTML += '<span class="' + cls + '">' + escHtml(line) + '\n</span>';
+        logEl.scrollTop = logEl.scrollHeight;
+      });
+    }
+
+    destroyBtn.textContent = '✅ Done';
+    destroyBtn.disabled    = false;
+    destroyBtn.onclick     = function() { closeDeleteAllModal(); location.reload(); };
+    cancelBtn.style.display = 'none';
+
+    allResources = allResources.filter(function(r) { return !rgs.includes(r.resource_group); });
+    applyFilters();
+
+  } catch (err) {
+    logEl.innerHTML += '<span class="err">❌ ' + escHtml(err.message) + '\n</span>';
+    cancelBtn.disabled  = false;
+    destroyBtn.disabled = false;
+  }
+}
+
+document.getElementById('delete-all-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeDeleteAllModal();
 });
 
 // Boot
