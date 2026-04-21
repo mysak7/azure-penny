@@ -17,6 +17,7 @@ terraform {
     storage_account_name = "azurepennytf3759"
     container_name       = "tfstate"
     key                  = "azure-penny.tfstate"
+    use_azuread_auth     = true  # use OIDC/Azure AD instead of listKeys
   }
 }
 
