@@ -22,7 +22,7 @@ permissions:
   pull-requests: write
 
 env:
-  TF_VERSION: "1.7.0"
+  TF_VERSION: "1.10.0"
   # OIDC — no ARM_CLIENT_SECRET needed
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}

@@ -39,7 +39,7 @@ htmlcov/
 *.tfstate
 *.tfstate.*
 *.tfstate.backup
-.terraform.lock.hcl
+# .terraform.lock.hcl is intentionally tracked for reproducible CI provider downloads
 *.tfvars
 !*.tfvars.example
 crash.log
@@ -48,6 +48,7 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+tfplan
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 .dockerignore
