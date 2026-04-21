@@ -707,14 +707,18 @@ function closeDeleteAllModal() {
 }
 
 function getVisibleResources() {
-  var minCost = parseFloat(document.getElementById('min-cost').value) || 0;
-  var search  = (document.getElementById('search').value || '').toLowerCase();
-  var rg      = getCurrentRg();
+  var minCost  = parseFloat(document.getElementById('min-cost').value) || 0;
+  var search   = (document.getElementById('search').value || '').toLowerCase();
+  var activeRg = getCurrentRg().toLowerCase();
   return allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
-    if (rg && r.resource_group !== rg) return false;
-    if (r.monthly_cost != null && r.monthly_cost < minCost) return false;
-    if (search && !(r.name||'').toLowerCase().includes(search) && !(r.resource_group||'').toLowerCase().includes(search)) return false;
+    var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : 0;
+    if (cost < minCost) return false;
+    if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
+    if (search) {
+      var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
+      if (hay.indexOf(search) === -1) return false;
+    }
     return true;
   });
 }

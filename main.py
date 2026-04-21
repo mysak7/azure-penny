@@ -40,7 +40,7 @@ except ImportError:
     )
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -1756,7 +1756,7 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
 
 
 @app.delete("/api/resource-groups/all", tags=["infrastructure"])
-async def api_delete_all_resource_groups(resource_groups: list[str]) -> StreamingResponse:
+async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...)) -> StreamingResponse:
     """Delete multiple Azure resource groups sequentially.
 
     Accepts a JSON array of resource group names in the request body.
