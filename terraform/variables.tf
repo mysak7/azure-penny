@@ -40,5 +40,6 @@ variable "tags" {
   default = {
     project     = "azure-penny"
     managed_by  = "terraform"
+    environment = "prod"
   }
 }
