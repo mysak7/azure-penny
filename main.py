@@ -1,995 +1,36 @@
 """
-azure-penny — Azure Cost Management dashboard 
+azure-penny — Azure Cost Management dashboard
 FastAPI application that reads Cost Management Parquet exports from Azure Blob
 Storage and exposes aggregated cost data via a REST API.
-
-Expected blob path structure written by Azure Cost Management scheduled exports:
-    {export-name}/{YYYYMMDD-YYYYMMDD}/{guid}/{filename}.parquet
-    {export-name}/{YYYYMMDD-YYYYMMDD}/{guid}/{filename}.csv   (legacy)
-
-The app discovers the most-recent date folder, reads every Parquet (or
-CSV/CSV.GZ) file it finds there, and merges them into a single DataFrame.
-Results are cached in memory for TTL_SECONDS (default 3 600 s / 1 hour).
 """
 
 import asyncio
-import io
-import json as _json
-import logging
-import os
-import re
 import time
-import urllib.parse
-import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.compute import ComputeManagementClient
-from azure.mgmt.resource import ResourceManagementClient
-try:
-    from azure.mgmt.storage import StorageManagementClient
-    _HAS_STORAGE_MGMT = True
-except ImportError:
-    StorageManagementClient = None  # type: ignore[assignment,misc]
-    _HAS_STORAGE_MGMT = False
-    logging.getLogger("azure-penny").warning(
-        "azure-mgmt-storage not installed — Azure Files share enumeration disabled"
-    )
-from azure.storage.blob import BlobServiceClient
-from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-# ---------------------------------------------------------------------------
-# Bootstrap
-# ---------------------------------------------------------------------------
-
-load_dotenv()  # harmless in production; picks up .env in local dev
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-)
-log = logging.getLogger("azure-penny")
-
-# ---------------------------------------------------------------------------
-# Configuration (environment variables)
-# ---------------------------------------------------------------------------
-
-STORAGE_ACCOUNT_NAME: str = os.environ.get("STORAGE_ACCOUNT_NAME", "")
-STORAGE_CONTAINER_NAME: str = os.environ.get("STORAGE_CONTAINER_NAME", "cost-exports")
-AZURE_CLIENT_ID: str | None = os.environ.get("AZURE_CLIENT_ID")  # optional
-AZURE_SUBSCRIPTION_ID: str = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
-TTL_SECONDS: int = int(os.environ.get("CACHE_TTL_SECONDS", "3600"))
-LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))  # 15 min
-
-# ---------------------------------------------------------------------------
-# Azure Blob Storage client (constructed lazily; reused across requests)
-# ---------------------------------------------------------------------------
-
-_blob_client: BlobServiceClient | None = None
-
-
-def get_blob_service_client() -> BlobServiceClient:
-    """Return a cached BlobServiceClient authenticated via DefaultAzureCredential.
-
-    DefaultAzureCredential works transparently in:
-    - Azure Container Apps (user-assigned managed identity via AZURE_CLIENT_ID)
-    - Local dev (Azure CLI / VS Code credential)
-    - CI/CD (service principal via env vars)
-    """
-    global _blob_client
-    if _blob_client is None:
-        if not STORAGE_ACCOUNT_NAME:
-            raise RuntimeError(
-                "STORAGE_ACCOUNT_NAME environment variable is not set."
-            )
-        credential = DefaultAzureCredential(
-            managed_identity_client_id=AZURE_CLIENT_ID or None
-        )
-        account_url = f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
-        _blob_client = BlobServiceClient(
-            account_url=account_url, credential=credential
-        )
-        log.info("BlobServiceClient initialised for account: %s", STORAGE_ACCOUNT_NAME)
-    return _blob_client
-
-
-# ---------------------------------------------------------------------------
-# Column mapping  (Azure Cost Management → internal names)
-# ---------------------------------------------------------------------------
-
-# Azure exports different column names depending on the export type and
-# agreement (EA, MCA, CSP).  The mapping below covers the most common columns.
-# Extend as needed for your specific agreement type.
-COLUMN_MAP: dict[str, str] = {
-    # Cost
-    "CostInBillingCurrency": "C_COST",
-    "Cost":                  "C_COST",        # fallback in some export types
-    "PreTaxCost":            "C_COST",        # EA legacy
-    # Service / meter
-    "MeterCategory":         "C_SERVICE",
-    "ServiceName":           "C_SERVICE",     # MCA alternative
-    # Resource group
-    "ResourceGroup":         "C_NAME",
-    "ResourceGroupName":     "C_NAME",
-    # Subscription
-    "SubscriptionName":      "C_ACCOUNT",
-    "SubscriptionId":        "C_ACCOUNT",     # fallback
-    # Date
-    "Date":                  "C_DATE",
-    "UsageDate":             "C_DATE",
-    # Tags
-    "Tags":                  "C_TAGS",
-    "tag_":                  "C_TAGS",        # prefix match handled in code
-    # Resource identity (used by Live Resources tab for cost correlation)
-    "ResourceId":            "C_RESOURCE_ID",
-    "InstanceId":            "C_RESOURCE_ID",
-    # Meter sub-category (space vs transfer classification)
-    "MeterSubCategory":      "C_SUBCATEGORY",
-    "SubCategory":           "C_SUBCATEGORY",
-    # Usage quantity (hours billed) — used for accurate monthly normalization
-    "Quantity":              "C_QUANTITY",
-    "UsageQuantity":         "C_QUANTITY",
-}
-
-REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
-
-# ---------------------------------------------------------------------------
-# Blob discovery helpers
-# ---------------------------------------------------------------------------
-
-# Azure Cost Management folder date pattern:  20240101-20240131
-_DATE_FOLDER_RE = re.compile(r"^(\d{8})-(\d{8})$")
-
-
-def _discover_latest_blobs(container_name: str) -> list[str]:
-    """Walk the container and return only the most-recently modified export file(s).
-
-    Azure Cost Management export paths look like:
-        <export-name>/<YYYYMMDD-YYYYMMDD>/<guid>/<file>.parquet
-
-    Azure daily exports are CUMULATIVE — each new run in the same date-range
-    folder contains all data from the start of the billing period up to that
-    day.  Reading multiple files from the same folder would double- (or N-times-)
-    count costs.
-
-    Strategy:
-    1. Find the lexicographically latest YYYYMMDD-YYYYMMDD folder.
-    2. Among all data files in that folder, keep only the one with the latest
-       last_modified timestamp (i.e. the most recent export run).
-    """
-    client = get_blob_service_client()
-    container_client = client.get_container_client(container_name)
-
-    # Collect blobs with their last_modified so we can pick the newest run
-    all_blob_props = list(container_client.list_blobs())
-    if not all_blob_props:
-        return []
-
-    log.info("Found %d blob(s) in container '%s'", len(all_blob_props), container_name)
-
-    # Find all date segments present in blob paths
-    date_segments: set[str] = set()
-    for bp in all_blob_props:
-        for part in bp.name.split("/"):
-            if _DATE_FOLDER_RE.match(part):
-                date_segments.add(part)
-
-    _EXPORT_EXTS = (".parquet", ".csv", ".csv.gz")
-
-    if not date_segments:
-        log.warning(
-            "No date-folder segments (YYYYMMDD-YYYYMMDD) found in blob paths. "
-            "Falling back to reading only the newest .parquet/.csv file."
-        )
-        candidates = [bp for bp in all_blob_props if bp.name.endswith(_EXPORT_EXTS)]
-        if not candidates:
-            return []
-        newest = max(candidates, key=lambda bp: bp.last_modified or 0)
-        log.info("Fallback: selected newest blob %s", newest.name)
-        return [newest.name]
-
-    latest_segment = sorted(date_segments)[-1]
-    log.info("Latest export date folder: %s", latest_segment)
-
-    candidates = [
-        bp for bp in all_blob_props
-        if latest_segment in bp.name and bp.name.endswith(_EXPORT_EXTS)
-    ]
-    if not candidates:
-        return []
-
-    if len(candidates) == 1:
-        log.info("Selected 1 file from folder '%s': %s", latest_segment, candidates[0].name)
-        return [candidates[0].name]
-
-    # Multiple files in the same date folder → pick only the most recent export
-    # run to avoid cumulative double-counting.
-    newest = max(candidates, key=lambda bp: bp.last_modified or 0)
-    log.info(
-        "Found %d file(s) in folder '%s'; using only the most-recent: %s (last_modified=%s)",
-        len(candidates), latest_segment, newest.name, newest.last_modified,
-    )
-    return [newest.name]
-
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
-def _read_blob_to_bytes(container_name: str, blob_name: str) -> bytes:
-    client = get_blob_service_client()
-    blob_client = client.get_blob_client(container=container_name, blob=blob_name)
-    stream = blob_client.download_blob()
-    return stream.readall()
-
-
-def _blob_to_dataframe(raw: bytes, blob_name: str) -> pd.DataFrame:
-    """Parse raw bytes into a DataFrame, supporting Parquet and CSV formats."""
-    buf = io.BytesIO(raw)
-    if blob_name.endswith(".parquet"):
-        return pd.read_parquet(buf, engine="pyarrow")
-    if blob_name.endswith(".csv.gz"):
-        return pd.read_csv(buf, compression="gzip")
-    # plain .csv
-    return pd.read_csv(buf)
-
-
-def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename raw Azure Cost Management columns to internal C_* names."""
-    # Build a case-insensitive lookup: lowercase(source) -> internal name
-    lower_map = {k.lower(): v for k, v in COLUMN_MAP.items()}
-
-    rename: dict[str, str] = {}
-    for raw_col in df.columns:
-        internal = lower_map.get(raw_col.lower())
-        if internal and internal not in rename.values():
-            rename[raw_col] = internal
-        # Handle tag_ prefix (Azure sometimes flattens tags as tag_<key> columns)
-        elif raw_col.lower().startswith("tag_") and "C_TAGS" not in rename.values():
-            rename[raw_col] = "C_TAGS"
-
-    df = df.rename(columns=rename)
-
-    # Ensure C_COST is numeric
-    if "C_COST" in df.columns:
-        df["C_COST"] = pd.to_numeric(df["C_COST"], errors="coerce").fillna(0.0)
-
-    # Normalise C_DATE to string (YYYY-MM-DD)
-    if "C_DATE" in df.columns:
-        df["C_DATE"] = pd.to_datetime(df["C_DATE"], errors="coerce").dt.strftime(
-            "%Y-%m-%d"
-        )
-
-    return df
-
-
-def _load_dataframe() -> pd.DataFrame:
-    """Download and merge all Parquet/CSV files from the latest export folder."""
-    blob_names = _discover_latest_blobs(STORAGE_CONTAINER_NAME)
-    if not blob_names:
-        raise ValueError(
-            f"No cost export files found in container '{STORAGE_CONTAINER_NAME}'."
-        )
-
-    frames: list[pd.DataFrame] = []
-    for name in blob_names:
-        log.info("Loading blob: %s", name)
-        raw = _read_blob_to_bytes(STORAGE_CONTAINER_NAME, name)
-        df = _blob_to_dataframe(raw, name)
-        frames.append(df)
-
-    merged = pd.concat(frames, ignore_index=True)
-    merged = _apply_column_map(merged)
-
-    missing = REQUIRED_INTERNAL_COLS - set(merged.columns)
-    if missing:
-        log.warning(
-            "The following expected columns were not found after mapping: %s. "
-            "Check COLUMN_MAP against your export schema.",
-            missing,
-        )
-
-    log.info(
-        "DataFrame loaded: %d rows, %d columns", len(merged), len(merged.columns)
-    )
-    return merged
-
-
-# ---------------------------------------------------------------------------
-# In-memory cache with async lock
-# ---------------------------------------------------------------------------
-
-_lock: asyncio.Lock = asyncio.Lock()
-_cache: dict[str, Any] = {}  # keys: "df", "loaded_at"
-
-
-async def get_cached_dataframe() -> pd.DataFrame:
-    """Return the cached DataFrame, refreshing if expired or absent.
-
-    Returns an empty DataFrame (with expected columns) when no export files
-    exist yet — this is normal for a new setup before the first Cost Management
-    export runs.
-    """
-    async with _lock:
-        now = time.monotonic()
-        loaded_at: float = _cache.get("loaded_at", 0.0)
-
-        if "df" not in _cache or (now - loaded_at) > TTL_SECONDS:
-            log.info("Cache miss — loading data from Azure Blob Storage …")
-            try:
-                df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
-            except ValueError as exc:
-                # No export files yet — return empty DataFrame so the dashboard
-                # renders with zero costs rather than a hard 500 error.
-                log.warning("%s — returning empty DataFrame.", exc)
-                df = pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))
-            _cache["df"] = df
-            _cache["loaded_at"] = now
-            log.info("Cache refreshed at %.0f", now)
-
-        return _cache["df"]
-
-
-# ---------------------------------------------------------------------------
-# Azure Resource Management clients (Live Resources tab)
-# ---------------------------------------------------------------------------
-
-_resource_mgmt_client: ResourceManagementClient | None = None
-_compute_mgmt_client: ComputeManagementClient | None = None
-_storage_mgmt_client: StorageManagementClient | None = None
-
-
-def _get_resource_mgmt_client() -> ResourceManagementClient:
-    global _resource_mgmt_client
-    if _resource_mgmt_client is None:
-        if not AZURE_SUBSCRIPTION_ID:
-            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
-        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
-        _resource_mgmt_client = ResourceManagementClient(credential, AZURE_SUBSCRIPTION_ID)
-    return _resource_mgmt_client
-
-
-def _get_compute_mgmt_client() -> ComputeManagementClient:
-    global _compute_mgmt_client
-    if _compute_mgmt_client is None:
-        if not AZURE_SUBSCRIPTION_ID:
-            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
-        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
-        _compute_mgmt_client = ComputeManagementClient(credential, AZURE_SUBSCRIPTION_ID)
-    return _compute_mgmt_client
-
-
-def _get_storage_mgmt_client() -> StorageManagementClient:
-    global _storage_mgmt_client
-    if _storage_mgmt_client is None:
-        if not AZURE_SUBSCRIPTION_ID:
-            raise RuntimeError("AZURE_SUBSCRIPTION_ID environment variable is not set.")
-        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
-        _storage_mgmt_client = StorageManagementClient(credential, AZURE_SUBSCRIPTION_ID)
-    return _storage_mgmt_client
-
-
-# Approximate Azure Files Premium LRS price ($/GiB/month) by region — used when Retail API is unreachable
-_FILES_PREMIUM_PRICES: dict[str, float] = {
-    "eastus": 0.21, "eastus2": 0.21, "westus": 0.21, "westus2": 0.21, "westus3": 0.21,
-    "centralus": 0.21, "northcentralus": 0.21, "southcentralus": 0.21,
-    "northeurope": 0.22, "westeurope": 0.22, "uksouth": 0.22, "ukwest": 0.22,
-    "swedencentral": 0.21, "switzerlandnorth": 0.25,
-    "japaneast": 0.23, "japanwest": 0.23,
-    "southeastasia": 0.23, "eastasia": 0.24,
-    "australiaeast": 0.25, "australiasoutheast": 0.25,
-    "brazilsouth": 0.28,
-}
-_FILES_PRICE_CACHE: dict[str, float] = {}
-
-
-def _fetch_files_premium_price(region: str) -> float:
-    """Return Azure Files Premium LRS price in $/GiB/month. Tries Retail API, falls back to table."""
-    region_lc = region.lower()
-    if region_lc in _FILES_PRICE_CACHE:
-        return _FILES_PRICE_CACHE[region_lc]
-
-    filter_str = (
-        f"armRegionName eq '{region_lc}'"
-        " and serviceName eq 'Storage'"
-        " and priceType eq 'Consumption'"
-    )
-    url = (
-        "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&$filter="
-        + urllib.parse.quote(filter_str)
-    )
-    try:
-        with urllib.request.urlopen(url, timeout=8) as resp:
-            data = _json.loads(resp.read())
-        for item in (data.get("Items") or []):
-            sku  = (item.get("skuName") or "").lower()
-            meter = (item.get("meterName") or "").lower()
-            if "premium" in sku and "file" in sku and "data stored" in meter and "lrs" in sku:
-                price = float(item.get("retailPrice") or item.get("unitPrice") or 0)
-                if price > 0:
-                    _FILES_PRICE_CACHE[region_lc] = price
-                    log.info("Azure Files Premium LRS price %s: $%.4f/GiB/mo (live API)", region, price)
-                    return price
-    except Exception as exc:
-        log.debug("Files pricing API error for %s: %s", region, exc)
-
-    fallback = _FILES_PREMIUM_PRICES.get(region_lc, 0.21)
-    _FILES_PRICE_CACHE[region_lc] = fallback
-    log.info("Azure Files Premium LRS price %s: $%.4f/GiB/mo (table)", region, fallback)
-    return fallback
-
-
-# Resource type (lowercase ARM type string) → UI category
-_RTYPE_CATEGORY: dict[str, str] = {
-    "microsoft.compute/virtualmachines":            "vm",
-    "microsoft.compute/virtualmachinescalesets":    "vm",
-    "microsoft.compute/disks":                      "storage",
-    "microsoft.compute/snapshots":                  "storage",
-    "microsoft.storage/storageaccounts":                        "storage",
-    "microsoft.storage/storageaccounts/fileservices/shares":    "storage",
-    "microsoft.netapp/netappaccounts":                          "storage",
-    "microsoft.network/virtualnetworks":            "network",
-    "microsoft.network/publicipaddresses":          "network",
-    "microsoft.network/loadbalancers":              "network",
-    "microsoft.network/applicationgateways":        "network",
-    "microsoft.network/bastionhosts":               "network",
-    "microsoft.network/azurefirewalls":             "network",
-    "microsoft.network/vpngateways":                "network",
-    "microsoft.network/dnszones":                   "network",
-    "microsoft.network/privatednszones":            "network",
-    "microsoft.network/trafficmanagerprofiles":     "network",
-    "microsoft.network/frontdoors":                 "network",
-    "microsoft.sql/servers":                        "database",
-    "microsoft.sql/managedinstances":               "database",
-    "microsoft.documentdb/databaseaccounts":        "database",
-    "microsoft.cache/redis":                        "database",
-    "microsoft.dbformysql/servers":                 "database",
-    "microsoft.dbformysql/flexibleservers":         "database",
-    "microsoft.dbforpostgresql/servers":            "database",
-    "microsoft.dbforpostgresql/flexibleservers":    "database",
-    "microsoft.synapse/workspaces":                 "database",
-    "microsoft.containerregistry/registries":       "container",
-    "microsoft.app/containerapps":                  "container",
-    "microsoft.app/managedenvironments":            "container",
-    "microsoft.containerservice/managedclusters":   "container",
-    "microsoft.web/sites":                          "container",
-    "microsoft.web/serverfarms":                    "container",
-}
-
-
-def _resource_category(rtype: str) -> str:
-    return _RTYPE_CATEGORY.get(rtype.lower(), "other")
-
-
-# ---------------------------------------------------------------------------
-# Spot price lookup — hardcoded for common VMs (approx as of Apr 2026)
-# Falls back to 40% of on-demand rate if VM not in table
-# ---------------------------------------------------------------------------
-
-_SPOT_PRICE_CACHE: dict[str, float] = {}  # "{vm_size}:{region}" → $/hr
-
-# Approximate spot prices ($/hr) for common VM families, by region
-# Data source: Azure Retail Prices API (cached locally since container can't reach external APIs)
-# These are representative Sept 2025–Apr 2026 spot rates; actual rates vary
-_SPOT_PRICES: dict[str, dict[str, float]] = {
-    "Standard_D2s_v3": {
-        "eastus": 0.0380, "westus": 0.0380, "westus2": 0.0380, "centralus": 0.0360,
-        "northeurope": 0.0420, "westeurope": 0.0410,
-        "swedencentral": 0.0400, "japaneast": 0.0390, "southeastasia": 0.0380,
-        "australiaeast": 0.0420, "uksouth": 0.0410, "eastasia": 0.0390,
-    },
-    "Standard_D4s_v3": {
-        "eastus": 0.0760, "westus": 0.0760, "westus2": 0.0760, "centralus": 0.0720,
-        "northeurope": 0.0840, "westeurope": 0.0820,
-        "swedencentral": 0.0800, "japaneast": 0.0780, "southeastasia": 0.0760,
-        "australiaeast": 0.0840, "uksouth": 0.0820, "eastasia": 0.0780,
-    },
-    "Standard_D8s_v3": {
-        "eastus": 0.1520, "westus": 0.1520, "westus2": 0.1520, "centralus": 0.1440,
-        "northeurope": 0.1680, "westeurope": 0.1640,
-        "swedencentral": 0.1600, "japaneast": 0.1560, "southeastasia": 0.1520,
-    },
-    "Standard_E4s_v3": {
-        "eastus": 0.0852, "westus": 0.0852, "westus2": 0.0852, "centralus": 0.0808,
-        "northeurope": 0.0945, "westeurope": 0.0924,
-        "swedencentral": 0.0900, "japaneast": 0.0876,
-    },
-    # Standard_F1als_v7: ~$0.0095/hr on-demand; spot ~35% of on-demand
-    "Standard_F1als_v7": {
-        "eastus": 0.0033, "westus": 0.0033, "westus2": 0.0033, "westus3": 0.0033,
-        "centralus": 0.0031, "northeurope": 0.0036, "westeurope": 0.0035,
-        "swedencentral": 0.0034, "japaneast": 0.0034, "southeastasia": 0.0033,
-        "australiaeast": 0.0036, "uksouth": 0.0035, "eastasia": 0.0034,
-    },
-}
-
-# On-demand rates for fallback when spot not listed ($/hr, Compute)
-_ONDEMAND_PRICES: dict[str, dict[str, float]] = {
-    "Standard_D2s_v3": {
-        "eastus": 0.0960, "westus": 0.0960, "westus2": 0.0960, "centralus": 0.0960,
-        "northeurope": 0.1056, "westeurope": 0.1056,
-        "swedencentral": 0.1056, "japaneast": 0.1008, "southeastasia": 0.1008,
-        "australiaeast": 0.1072, "uksouth": 0.1056, "eastasia": 0.1008,
-    },
-    "Standard_D4s_v3": {
-        "eastus": 0.1920, "westus": 0.1920, "westus2": 0.1920, "centralus": 0.1920,
-        "northeurope": 0.2112, "westeurope": 0.2112,
-        "swedencentral": 0.2112, "japaneast": 0.2016, "southeastasia": 0.2016,
-        "australiaeast": 0.2144, "uksouth": 0.2112, "eastasia": 0.2016,
-    },
-    "Standard_D8s_v3": {
-        "eastus": 0.3840, "westus": 0.3840, "westus2": 0.3840, "centralus": 0.3840,
-        "northeurope": 0.4224, "westeurope": 0.4224,
-        "swedencentral": 0.4224, "japaneast": 0.4032, "southeastasia": 0.4032,
-    },
-    "Standard_E4s_v3": {
-        "eastus": 0.2133, "westus": 0.2133, "westus2": 0.2133, "centralus": 0.2133,
-        "northeurope": 0.2346, "westeurope": 0.2346,
-        "swedencentral": 0.2346, "japaneast": 0.2240,
-    },
-    # Standard_F1als_v7: 1 vCPU, 2 GiB RAM — Fasv7 series
-    "Standard_F1als_v7": {
-        "eastus": 0.0095, "westus": 0.0095, "westus2": 0.0095, "westus3": 0.0095,
-        "centralus": 0.0090, "northeurope": 0.0104, "westeurope": 0.0101,
-        "swedencentral": 0.0099, "japaneast": 0.0098, "southeastasia": 0.0097,
-        "australiaeast": 0.0104, "uksouth": 0.0101, "eastasia": 0.0098,
-    },
-}
-
-
-def _fetch_retail_price(vm_size: str, region: str, price_type: str = "Consumption") -> float | None:
-    """Query the Azure Retail Prices API for a VM price.
-
-    price_type: 'Consumption' for on-demand/spot, 'DevTestConsumption' for dev/test.
-    NOTE: The Azure Retail Prices API does NOT support priceType='Spot'. Spot rows use
-    priceType='Consumption' with ' Spot' in the skuName. Pass price_type='Spot' as a
-    sentinel — this function translates it to the correct Consumption+skuName filter.
-    Returns $/hr or None if not found / unreachable.
-    """
-    want_spot = price_type == "Spot"
-    api_price_type = "Consumption" if want_spot else price_type
-
-    filter_str = (
-        f"armRegionName eq '{region.lower()}'"
-        f" and armSkuName eq '{vm_size}'"
-        f" and priceType eq '{api_price_type}'"
-        " and serviceName eq 'Virtual Machines'"
-    )
-    url = (
-        "https://prices.azure.com/api/retail/prices?api-version=2023-01-01-preview&$filter="
-        + urllib.parse.quote(filter_str)
-    )
-    try:
-        with urllib.request.urlopen(url, timeout=8) as resp:
-            data = _json.loads(resp.read())
-        items = data.get("Items") or []
-        if want_spot:
-            # Spot rows have ' Spot' in skuName; exclude Windows and Low Priority
-            spot_items = [
-                i for i in items
-                if "spot" in (i.get("skuName") or "").lower()
-                and "windows" not in (i.get("skuName") or "").lower()
-                and "low priority" not in (i.get("skuName") or "").lower()
-            ]
-            for item in spot_items:
-                price = item.get("retailPrice") or item.get("unitPrice")
-                if price:
-                    return float(price)
-        else:
-            # Prefer non-Windows, non-Low Priority, non-Spot rows
-            for item in items:
-                sku = (item.get("skuName") or "").lower()
-                if "windows" in sku or "low priority" in sku or "spot" in sku:
-                    continue
-                price = item.get("retailPrice") or item.get("unitPrice")
-                if price:
-                    return float(price)
-            # Fallback: return first available price
-            if items:
-                return float(items[0].get("retailPrice") or items[0].get("unitPrice") or 0) or None
-    except Exception as exc:
-        log.debug("Retail Prices API unavailable for %s/%s: %s", vm_size, region, exc)
-    return None
-
-
-def _fetch_spot_price(vm_size: str, region: str) -> float | None:
-    """Return spot price $/hr for a VM. Tries live API, falls back to table."""
-    cache_key = f"spot:{vm_size.lower()}:{region.lower()}"
-    if cache_key in _SPOT_PRICE_CACHE:
-        return _SPOT_PRICE_CACHE[cache_key]
-
-    # Try live API first
-    price = _fetch_retail_price(vm_size, region, price_type="Spot")
-    if price is not None:
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ Spot price %s (%s): $%.4f/hr (live API)", vm_size, region, price)
-        return price
-
-    # Fall back to hardcoded table
-    region_norm = region.lower()
-    if vm_size in _SPOT_PRICES and region_norm in _SPOT_PRICES[vm_size]:
-        price = _SPOT_PRICES[vm_size][region_norm]
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ Spot price %s (%s): $%.4f/hr (table)", vm_size, region_norm, price)
-        return price
-
-    if vm_size in _ONDEMAND_PRICES and region_norm in _ONDEMAND_PRICES[vm_size]:
-        price = round(_ONDEMAND_PRICES[vm_size][region_norm] * 0.4, 4)
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ Spot price %s (%s): $%.4f/hr (40%% on-demand table)", vm_size, region_norm, price)
-        return price
-
-    log.warning("✗ No spot price found for %s in %s", vm_size, region)
-    return None
-
-
-def _fetch_ondemand_price(vm_size: str, region: str) -> float | None:
-    """Return on-demand price $/hr for a VM. Tries live API, falls back to table."""
-    cache_key = f"ondemand:{vm_size.lower()}:{region.lower()}"
-    if cache_key in _SPOT_PRICE_CACHE:
-        return _SPOT_PRICE_CACHE[cache_key]
-
-    # Try live API first
-    price = _fetch_retail_price(vm_size, region, price_type="Consumption")
-    if price is not None:
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ On-demand price %s (%s): $%.4f/hr (live API)", vm_size, region, price)
-        return price
-
-    # Fall back to hardcoded table
-    region_norm = region.lower()
-    if vm_size in _ONDEMAND_PRICES and region_norm in _ONDEMAND_PRICES[vm_size]:
-        price = _ONDEMAND_PRICES[vm_size][region_norm]
-        _SPOT_PRICE_CACHE[cache_key] = price
-        log.info("✓ On-demand price %s (%s): $%.4f/hr (table)", vm_size, region_norm, price)
-        return price
-
-    log.warning("✗ No on-demand price found for %s in %s", vm_size, region)
-    return None
-
-
-def _fetch_resource_inventory() -> list[dict]:
-    """Enumerate all ARM resources with VM power states (runs in executor)."""
-    rc = _get_resource_mgmt_client()
-    all_res = list(rc.resources.list())
-    log.info("ARM inventory: %d resources found", len(all_res))
-
-    # Collect VMs and VMSS for power-state / SKU queries
-    vm_resources = [
-        r for r in all_res
-        if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachines"
-    ]
-    vmss_resources = [
-        r for r in all_res
-        if r.id and (r.type or "").lower() == "microsoft.compute/virtualmachinescalesets"
-    ]
-    vm_states: dict[str, str] = {}
-    vm_meta: dict[str, dict] = {}  # id.lower() → {"vm_size": str, "is_spot": bool, "private_ip": str}
-    if vm_resources:
-        try:
-            cc = _get_compute_mgmt_client()
-            for vm_res in vm_resources:
-                parts = vm_res.id.split("/resourceGroups/")
-                rg = parts[1].split("/")[0] if len(parts) > 1 else ""
-                try:
-                    inst = cc.virtual_machines.get(rg, vm_res.name, expand="instanceView")
-                    statuses = inst.instance_view.statuses if inst.instance_view else []
-                    power = next(
-                        (s.display_status for s in statuses
-                         if s.code.startswith("PowerState/")),
-                        "Unknown",
-                    )
-                    vm_states[vm_res.id.lower()] = power
-                    vm_size = (inst.hardware_profile.vm_size or "") if inst.hardware_profile else ""
-                    # Fallback: read vm_size from ARM resource properties if Compute didn't return it
-                    if not vm_size:
-                        try:
-                            arm_res = rc.resources.get_by_id(vm_res.id, api_version="2024-03-01")
-                            props = arm_res.properties or {}
-                            vm_size = (props.get("hardwareProfile") or {}).get("vmSize", "")
-                        except Exception:
-                            pass
-                    # Use ARM priority field only — name heuristic is unreliable
-                    is_spot = (getattr(inst, "priority", None) or "").lower() == "spot"
-                    # Resolve private IP from the first NIC
-                    private_ip = ""
-                    try:
-                        nics = (inst.network_profile.network_interfaces or []) if inst.network_profile else []
-                        if nics:
-                            nic_res = rc.resources.get_by_id(nics[0].id, api_version="2024-05-01")
-                            nic_props = nic_res.properties or {}
-                            ip_cfgs = nic_props.get("ipConfigurations") or []
-                            if ip_cfgs:
-                                private_ip = (ip_cfgs[0].get("properties") or {}).get("privateIPAddress", "")
-                    except Exception:
-                        pass
-                    vm_meta[vm_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": private_ip}
-                except Exception as e:
-                    log.debug("VM power state error (%s): %s", vm_res.name, e)
-                    vm_states[vm_res.id.lower()] = "Unknown"
-        except Exception as e:
-            log.warning("Could not fetch VM power states: %s", e)
-
-    # Fetch VMSS SKU (vm_size + spot flag) so pricing API can be used for AKS nodes
-    if vmss_resources:
-        try:
-            cc = _get_compute_mgmt_client()
-            for vmss_res in vmss_resources:
-                parts = vmss_res.id.split("/resourceGroups/")
-                rg_name = parts[1].split("/")[0] if len(parts) > 1 else ""
-                try:
-                    vmss = cc.virtual_machine_scale_sets.get(rg_name, vmss_res.name)
-                    vm_size = (vmss.sku.name or "") if vmss.sku else ""
-                    instance_count = int(vmss.sku.capacity or 1) if vmss.sku else 1
-                    vmp = vmss.virtual_machine_profile
-                    is_spot = (getattr(vmp, "priority", None) or "").lower() == "spot" if vmp else False
-                    vm_meta[vmss_res.id.lower()] = {"vm_size": vm_size, "is_spot": is_spot, "private_ip": "", "instance_count": instance_count}
-                    vm_states[vmss_res.id.lower()] = "VM running"
-                    log.info("VMSS %s: size=%s spot=%s instances=%d", vmss_res.name, vm_size, is_spot, instance_count)
-                except Exception as e:
-                    log.debug("VMSS SKU error (%s): %s", vmss_res.name, e)
-        except Exception as e:
-            log.warning("Could not fetch VMSS SKU info: %s", e)
-
-    result: list[dict] = []
-    for r in all_res:
-        if not r.id:
-            continue
-        rtype = r.type or ""
-        cat = _resource_category(rtype)
-        parts = r.id.split("/resourceGroups/")
-        rg = parts[1].split("/")[0] if len(parts) > 1 else ""
-        status = vm_states.get(r.id.lower(), "Active") if cat == "vm" else "Active"
-        if status.lower() in ("deallocated", "vm deallocated", "stopped", "vm stopped"):
-            continue
-        meta = vm_meta.get(r.id.lower(), {})
-        result.append({
-            "id": r.id,
-            "name": r.name or "",
-            "type": rtype,
-            "category": cat,
-            "resource_group": rg,
-            "location": r.location or "",
-            "status": status,
-            "vm_size": meta.get("vm_size", ""),
-            "is_spot": meta.get("is_spot", False),
-            "instance_count": meta.get("instance_count", 1),
-            "private_ip": meta.get("private_ip", ""),
-            "provisioned_size_gib": None,
-            "parent_storage_account": None,
-        })
-
-    # Enumerate Azure Files shares (sub-resources not returned by resources.list())
-    storage_accounts = [r for r in all_res if (r.type or "").lower() == "microsoft.storage/storageaccounts"]
-    if storage_accounts and _HAS_STORAGE_MGMT:
-        try:
-            sc = _get_storage_mgmt_client()
-            for sa in storage_accounts:
-                sa_parts = sa.id.split("/resourceGroups/")
-                sa_rg = sa_parts[1].split("/")[0] if len(sa_parts) > 1 else ""
-                try:
-                    shares = list(sc.file_shares.list(sa_rg, sa.name))
-                    for share in shares:
-                        quota_gib = share.share_quota or 0
-                        price_per_gib = _fetch_files_premium_price(sa.location or "eastus")
-                        monthly_est = round(quota_gib * price_per_gib, 2)
-                        share_id = f"{sa.id}/fileServices/default/shares/{share.name}"
-                        result.append({
-                            "id": share_id,
-                            "name": share.name or "",
-                            "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
-                            "category": "storage",
-                            "resource_group": sa_rg,
-                            "location": sa.location or "",
-                            "status": "Active",
-                            "vm_size": "",
-                            "is_spot": False,
-                            "private_ip": "",
-                            "provisioned_size_gib": quota_gib,
-                            "parent_storage_account": sa.name or "",
-                            "monthly_cost": monthly_est,
-                            "cost_source": "files_rate",
-                        })
-                        log.info(
-                            "File share: %s/%s  quota=%d GiB  est=$%.2f/mo",
-                            sa.name, share.name, quota_gib, monthly_est,
-                        )
-                except Exception as e:
-                    log.debug("File shares enum error for %s: %s", sa.name, e)
-        except Exception as e:
-            log.warning("StorageManagementClient error during file share enumeration: %s", e)
-
-    return result
-
-
-_live_lock: asyncio.Lock = asyncio.Lock()
-_live_cache: dict[str, Any] = {}
-
-
-async def _get_live_data() -> list[dict]:
-    """Live resource inventory merged with 30-day cost data (cached)."""
-    async with _live_lock:
-        now = time.monotonic()
-        if "inv" not in _live_cache or (now - _live_cache.get("ts", 0.0)) > LIVE_CACHE_TTL:
-            log.info("Live inventory cache miss — fetching from ARM…")
-            inv = await asyncio.get_event_loop().run_in_executor(
-                None, _fetch_resource_inventory
-            )
-            _live_cache["inv"] = inv
-            _live_cache["ts"] = now
-        inv: list[dict] = _live_cache["inv"]
-
-    # Cost correlation (outside lock — uses existing cost cache)
-    df = await get_cached_dataframe()
-    cost_by_id: dict[str, float] = {}
-    hours_by_id: dict[str, float] = {}   # rid → total billed hours (from C_QUANTITY)
-    days_by_id: dict[str, int] = {}      # rid → distinct billing days in export
-    window_days: int = 1                 # total distinct days in the 30-day window
-    if not df.empty and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
-        cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
-        mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
-        # Normalize ResourceId to lowercase BEFORE aggregation (case differences in cost export)
-        mdf = mdf.copy()
-        mdf["C_RESOURCE_ID"] = mdf["C_RESOURCE_ID"].str.lower()
-
-        # Sub-resources (e.g. file shares: .../storageAccounts/x/fileServices/default/shares/y)
-        # are billed separately but only the parent storage account appears in the ARM inventory.
-        # Roll sub-resource costs up to the nearest top-level ARM resource ID so the cost
-        # correlation in _get_live_data matches the live inventory.
-        _SUBRESOURCE_STRIP_RE = re.compile(
-            r"(/providers/[^/]+/[^/]+/[^/]+)"  # keep up to /<type>/<name>
-            r"(?:/(?:fileservices|blobservices|queueservices|tableservices|managementpolicies"
-            r"|encryptionscopes|objectreplicationpolicies|privateendpointconnections"
-            r"|inventorypolicies|shares|containers|queues|tables).*)$"
-        )
-
-        def _normalize_rid(rid: str) -> str:
-            m = _SUBRESOURCE_STRIP_RE.search(rid)
-            return rid[: m.end(1)] if m else rid
-
-        mdf["C_RESOURCE_ID"] = mdf["C_RESOURCE_ID"].apply(_normalize_rid)
-        agg = mdf.groupby("C_RESOURCE_ID")["C_COST"].sum()
-        cost_by_id = {
-            str(k): round(float(v), 4)
-            for k, v in agg.items()
-            if v > 0
-        }
-        # How many distinct days of data does each resource have?
-        # Also track the most recent day's cost for storage-account fallback.
-        last_day_cost_by_id: dict[str, float] = {}
-        if "C_DATE" in mdf.columns:
-            days_agg = mdf.groupby("C_RESOURCE_ID")["C_DATE"].nunique()
-            days_by_id = {str(k): int(v) for k, v in days_agg.items()}
-            window_days = int(mdf["C_DATE"].nunique()) or 1
-            last_date = mdf["C_DATE"].max()
-            if last_date:
-                ld_agg = mdf[mdf["C_DATE"] == last_date].groupby("C_RESOURCE_ID")["C_COST"].sum()
-                last_day_cost_by_id = {str(k): round(float(v), 4) for k, v in ld_agg.items() if v > 0}
-        # Actual billed hours per resource (most accurate normalization for compute)
-        if "C_QUANTITY" in mdf.columns:
-            qty_agg = mdf.groupby("C_RESOURCE_ID")["C_QUANTITY"].sum()
-            hours_by_id = {str(k): float(v) for k, v in qty_agg.items() if v > 0}
-
-    # Pre-compute which storage accounts currently have live file share children.
-    sa_with_live_shares: set[str] = {
-        (r.get("parent_storage_account") or "").lower()
-        for r in inv
-        if (r.get("type") or "").lower() == "microsoft.storage/storageaccounts/fileservices/shares"
-    }
-
-    enriched: list[dict] = []
-    for r in inv:
-        rid = r["id"].lower()
-        export_cost = cost_by_id.get(rid)
-        export_days = days_by_id.get(rid, window_days) if export_cost is not None else window_days
-        export_hours_val = hours_by_id.get(rid) if export_cost is not None else None
-        is_storage_account = (r.get("type") or "").lower() == "microsoft.storage/storageaccounts"
-        has_live_shares = is_storage_account and (r.get("name") or "").lower() in sa_with_live_shares
-
-        if export_cost is not None and export_days < 28:
-            if is_storage_account and not has_live_shares:
-                monthly_projected = export_cost
-                cost_source = "export_period"
-            elif is_storage_account and has_live_shares:
-                window_projected = round(export_cost / export_days * 30, 2)
-                last_day_cost = last_day_cost_by_id.get(rid)
-                last_day_projected = round(last_day_cost * 30, 2) if last_day_cost else 0
-                if last_day_projected > window_projected:
-                    monthly_projected = last_day_projected
-                    cost_source = "export_last_day"
-                else:
-                    monthly_projected = window_projected
-                    cost_source = "export_projected"
-            elif export_hours_val and export_hours_val > 0 and r.get("category") == "vm":
-                # Hours-based projection only for compute — other resources (disks, storage)
-                # bill Quantity in GB-months or transactions, not hours.
-                hourly_rate = export_cost / export_hours_val
-                monthly_projected = round(hourly_rate * 24 * 30, 2)
-                cost_source = "export_hours"
-            else:
-                monthly_projected = round(export_cost / export_days * 30, 2)
-                cost_source = "export_projected"
-        else:
-            monthly_projected = export_cost
-            cost_source = "export" if export_cost is not None else None
-
-        # When there is no export match, preserve any cost/source already set during
-        # inventory enumeration (e.g. file share provisioned-rate estimate).
-        if export_cost is None and monthly_projected is None:
-            monthly_projected = r.get("monthly_cost")
-            cost_source = r.get("cost_source")
-
-        entry: dict = {
-            **r,
-            "monthly_cost": monthly_projected,
-            "cost_source": cost_source,
-            "export_cost_raw": export_cost,
-            "export_days": export_days if export_cost is not None else None,
-            "export_hours": round(export_hours_val, 1) if export_hours_val else None,
-        }
-
-        # For VMs, always compute projected monthly from pricing API (hourly_rate × 24 × 30).
-        # Export data shows accumulated billing-period cost (could be just 1-2 days), which
-        # is misleading in a "Monthly Cost" column. We keep export_cost for reference.
-        # Deallocated/stopped VMs don't accrue compute charges — skip pricing lookup.
-        vm_is_active = (r.get("status") or "").lower() not in ("deallocated", "stopped", "vm deallocated", "vm stopped")
-        if r.get("vm_size") and r.get("location") and vm_is_active:
-            vm_size_norm = r["vm_size"]
-            region_norm = r["location"].lower()
-            instances = max(int(r.get("instance_count") or 1), 1)
-            if r.get("is_spot"):
-                spot_price = await asyncio.get_event_loop().run_in_executor(
-                    None, _fetch_spot_price, vm_size_norm, region_norm
-                )
-                if spot_price is not None:
-                    entry["monthly_cost"] = round(spot_price * 24 * 30 * instances, 2)
-                    entry["spot_price_per_hour"] = round(spot_price, 4)
-                    entry["cost_source"] = "spot_rate"
-                else:
-                    # Last resort: use on-demand × 0.4 as spot estimate
-                    ondemand = await asyncio.get_event_loop().run_in_executor(
-                        None, _fetch_ondemand_price, vm_size_norm, region_norm
-                    )
-                    if ondemand is not None:
-                        spot_est = round(ondemand * 0.4, 4)
-                        entry["monthly_cost"] = round(spot_est * 24 * 30 * instances, 2)
-                        entry["spot_price_per_hour"] = spot_est
-                        entry["cost_source"] = "spot_rate"
-            else:
-                ondemand = await asyncio.get_event_loop().run_in_executor(
-                    None, _fetch_ondemand_price, vm_size_norm, region_norm
-                )
-                if ondemand is not None:
-                    entry["monthly_cost"] = round(ondemand * 24 * 30 * instances, 2)
-                    entry["cost_source"] = "price_table"
-
-        enriched.append(entry)
-
-    # For storage accounts that have Azure Files share children, suppress the account-level
-    # cost (show —) to avoid double-counting — the cost is already visible on each share row.
-    sa_with_shares: set[str] = {
-        e["parent_storage_account"].lower()
-        for e in enriched
-        if e.get("cost_source") == "files_rate" and e.get("parent_storage_account")
-    }
-    for e in enriched:
-        if (e.get("type") or "").lower() == "microsoft.storage/storageaccounts":
-            if (e.get("name") or "").lower() in sa_with_shares:
-                e["monthly_cost"] = None
-                e["cost_source"] = "in_shares"
-
-    return enriched
-
+from config import AZURE_SUBSCRIPTION_ID, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
+from live_resources import _get_live_data, _live_cache, _live_lock
+from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
 # ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+app = FastAPI(
+    title="azure-penny",
+    description="Azure Cost Management dashboard — reads Cost exports from Blob Storage.",
+    version="1.0.0",
+)
+
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 # ---------------------------------------------------------------------------
 # Azure service categories  (MeterCategory values)
@@ -1015,8 +56,13 @@ CAT_DATABASE = {
 }
 
 # ---------------------------------------------------------------------------
-# Category filtering helpers
+# Filtering / aggregation helpers
 # ---------------------------------------------------------------------------
+
+_TRANSFER_KEYWORDS = frozenset([
+    "bandwidth", "transfer", "egress", "geo-redundant replication",
+    "data retrieval", "replication",
+])
 
 
 def _period_days(period: str) -> int:
@@ -1024,7 +70,6 @@ def _period_days(period: str) -> int:
 
 
 def _filter_period(df: pd.DataFrame, days: int) -> pd.DataFrame:
-    """Filter rows to the last *days* calendar days using C_DATE."""
     if "C_DATE" not in df.columns:
         return df
     cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -1032,7 +77,6 @@ def _filter_period(df: pd.DataFrame, days: int) -> pd.DataFrame:
 
 
 def _filter_services(df: pd.DataFrame, services: set[str]) -> pd.DataFrame:
-    """Keep only rows whose C_SERVICE matches the given set (case-insensitive)."""
     if "C_SERVICE" not in df.columns:
         return df
     lower = {s.lower() for s in services}
@@ -1040,7 +84,6 @@ def _filter_services(df: pd.DataFrame, services: set[str]) -> pd.DataFrame:
 
 
 def _filter_rg(df: pd.DataFrame, rg: str) -> pd.DataFrame:
-    """Keep only rows belonging to the given resource group (case-insensitive). Empty string = no filter."""
     if not rg or "C_NAME" not in df.columns:
         return df
     return df[df["C_NAME"].str.lower() == rg.lower()]
@@ -1059,7 +102,6 @@ async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
     days = _period_days(period)
     filtered = _filter_services(_filter_period(df, days), services)
 
-    # Fallback: if day period is empty, use latest available day
     fallback = False
     if period == "day" and filtered.empty and "C_DATE" in df.columns:
         df_svc = _filter_services(df, services)
@@ -1084,19 +126,8 @@ async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# FastAPI application
+# Page routes
 # ---------------------------------------------------------------------------
-
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
-
-app = FastAPI(
-    title="azure-penny",
-    description="Azure Cost Management dashboard — reads Cost exports from Blob Storage.",
-    version="1.0.0",
-)
-
-templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
-
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root(request: Request):
@@ -1127,14 +158,12 @@ async def live_view(request: Request):
 
 @app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
-    return JSONResponse(
-        {
-            "status": "ok",
-            "service": "azure-penny",
-            "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
-            "container": STORAGE_CONTAINER_NAME,
-        }
-    )
+    return JSONResponse({
+        "status": "ok",
+        "service": "azure-penny",
+        "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
+        "container": STORAGE_CONTAINER_NAME,
+    })
 
 
 # ── Status / reload ───────────────────────────────────────────────────────────
@@ -1150,16 +179,14 @@ async def api_status() -> JSONResponse:
         if dates:
             dates.sort()
             periods = [dates[0], dates[-1]]
-    return JSONResponse(
-        {
-            "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
-            "container": STORAGE_CONTAINER_NAME,
-            "row_count": len(cached_df) if cached_df is not None else None,
-            "date_range": periods,
-            "cache_age_s": cache_age_s,
-            "no_data": cached_df is not None and cached_df.empty,
-        }
-    )
+    return JSONResponse({
+        "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
+        "container": STORAGE_CONTAINER_NAME,
+        "row_count": len(cached_df) if cached_df is not None else None,
+        "date_range": periods,
+        "cache_age_s": cache_age_s,
+        "no_data": cached_df is not None and cached_df.empty,
+    })
 
 
 @app.post("/api/reload", tags=["api"])
@@ -1187,7 +214,6 @@ async def api_compute(period: str = "week", rg: str = "") -> JSONResponse:
 
 @app.get("/api/compute/machines", tags=["api"])
 async def api_compute_machines(period: str = "week", rg: str = "") -> JSONResponse:
-    """Cost breakdown per individual machine (resource name) for compute services."""
     try:
         df = await get_cached_dataframe()
         df = _filter_rg(df, rg)
@@ -1227,16 +253,8 @@ async def api_storage(period: str = "week", rg: str = "") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-# Keywords for classifying storage sub-meters as space vs transfer
-_TRANSFER_KEYWORDS = frozenset([
-    "bandwidth", "transfer", "egress", "geo-redundant replication",
-    "data retrieval", "replication",
-])
-
-
 @app.get("/api/storage/breakdown", tags=["api"])
 async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONResponse:
-    """Storage costs split into space (capacity) vs transfer (bandwidth/egress)."""
     try:
         df = await get_cached_dataframe()
         df = _filter_rg(df, rg)
@@ -1273,13 +291,10 @@ async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONRespo
                 axis=1,
             )
         else:
-            filtered["_type"] = filtered["C_SERVICE"].apply(
-                lambda s: _row_type(str(s), "")
-            )
+            filtered["_type"] = filtered["C_SERVICE"].apply(lambda s: _row_type(str(s), ""))
 
         space_total = float(filtered[filtered["_type"] == "space"]["C_COST"].sum())
         transfer_total = float(filtered[filtered["_type"] == "transfer"]["C_COST"].sum())
-
         by_svc = _cost_by(filtered, "C_SERVICE")
         data_as_of = None
         if not filtered.empty and "C_DATE" in filtered.columns:
@@ -1318,7 +333,6 @@ async def api_database(period: str = "week", rg: str = "") -> JSONResponse:
 
 @app.get("/costs", tags=["costs"])
 async def get_costs() -> JSONResponse:
-    """Aggregated cost data grouped by service, resource group, and date."""
     try:
         df = await get_cached_dataframe()
     except Exception as exc:
@@ -1344,7 +358,6 @@ async def get_costs() -> JSONResponse:
 
 @app.get("/costs/summary", tags=["costs"])
 async def get_costs_summary() -> JSONResponse:
-    """Total cost, top-5 services, and top-5 resource groups."""
     try:
         df = await get_cached_dataframe()
     except Exception as exc:
@@ -1370,18 +383,15 @@ async def get_costs_summary() -> JSONResponse:
             .to_dict(orient="records")
         )
 
-    return JSONResponse(
-        {
-            "total_cost": total,
-            "top_services": top5("C_SERVICE"),
-            "top_resource_groups": top5("C_NAME"),
-        }
-    )
+    return JSONResponse({
+        "total_cost": total,
+        "top_services": top5("C_SERVICE"),
+        "top_resource_groups": top5("C_NAME"),
+    })
 
 
 @app.get("/costs/refresh", tags=["costs"])
 async def refresh_cache() -> JSONResponse:
-    """Clear the cache and reload from Azure Blob Storage."""
     async with _lock:
         _cache.clear()
     try:
@@ -1394,15 +404,12 @@ async def refresh_cache() -> JSONResponse:
 
 @app.get("/api/debug", tags=["api"])
 async def api_debug() -> JSONResponse:
-    """Diagnostic endpoint: shows raw columns, actual service names, and date range."""
     try:
         client = get_blob_service_client()
         container_client = client.get_container_client(STORAGE_CONTAINER_NAME)
         all_blobs = [b.name for b in container_client.list_blobs()]
-        blob_paths = all_blobs[:20]  # first 20 only
 
         df = await get_cached_dataframe()
-        raw_cols = list(df.columns)
 
         date_range = None
         if "C_DATE" in df.columns:
@@ -1422,9 +429,9 @@ async def api_debug() -> JSONResponse:
 
         return JSONResponse({
             "blob_count": len(all_blobs),
-            "blob_paths_sample": blob_paths,
+            "blob_paths_sample": all_blobs[:20],
             "row_count": len(df),
-            "columns": raw_cols,
+            "columns": list(df.columns),
             "date_range": date_range,
             "total_cost": total_cost,
             "top_services": top_services,
@@ -1435,12 +442,10 @@ async def api_debug() -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-
-# ── Technician API endpoints ──────────────────────────────────────────────────
+# ── Technician / services ─────────────────────────────────────────────────────
 
 @app.get("/api/services", tags=["api"])
 async def api_services(period: str = "week", rg: str = "") -> JSONResponse:
-    """All services grouped by MeterCategory for the given period."""
     try:
         df = await get_cached_dataframe()
         df = _filter_rg(df, rg)
@@ -1471,11 +476,6 @@ async def api_services(period: str = "week", rg: str = "") -> JSONResponse:
 
 @app.get("/api/live-services", tags=["api"])
 async def api_live_services() -> JSONResponse:
-    """Service-level costs grouped by MeterCategory for the last 30 days.
-
-    These are aggregate summaries shown in the Services tab. Individual
-    resource costs are shown per ARM resource in /api/live-resources.
-    """
     try:
         df = await get_cached_dataframe()
         if df.empty or "C_SERVICE" not in df.columns or "C_COST" not in df.columns:
@@ -1484,15 +484,9 @@ async def api_live_services() -> JSONResponse:
         cutoff = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
         mdf = df[df["C_DATE"] >= cutoff] if "C_DATE" in df.columns else df
 
-        # Group by service and sum costs
         by_svc = mdf.groupby("C_SERVICE")["C_COST"].sum().sort_values(ascending=False)
-
         services = [
-            {
-                "name": str(svc),
-                "monthly_cost": round(float(cost), 2),
-                "category": "service",
-            }
+            {"name": str(svc), "monthly_cost": round(float(cost), 2), "category": "service"}
             for svc, cost in by_svc.items()
             if cost > 0
         ]
@@ -1509,13 +503,11 @@ async def api_live_services() -> JSONResponse:
 
 @app.get("/api/cost-search", tags=["api"])
 async def api_cost_search(q: str) -> JSONResponse:
-    """Search cost export for rows matching a resource name pattern."""
     try:
         df = await get_cached_dataframe()
         if df.empty or "C_NAME" not in df.columns:
             return JSONResponse({"results": [], "count": 0})
 
-        # Search by resource name (case-insensitive substring match)
         mask = df["C_NAME"].str.contains(q, case=False, na=False)
         matches = df[mask][["C_NAME", "C_RESOURCE_ID", "C_COST", "C_DATE"]].drop_duplicates(subset=["C_RESOURCE_ID"]).to_dict("records")
 
@@ -1530,7 +522,7 @@ async def api_cost_search(q: str) -> JSONResponse:
                     "date": str(r.get("C_DATE", "")),
                 }
                 for r in matches
-            ]
+            ],
         })
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -1538,7 +530,6 @@ async def api_cost_search(q: str) -> JSONResponse:
 
 @app.get("/api/resource-groups", tags=["api"])
 async def api_resource_groups(period: str = "week", rg: str = "") -> JSONResponse:
-    """Cost grouped by resource group (C_NAME) for the given period."""
     try:
         df = await get_cached_dataframe()
         df = _filter_rg(df, rg)
@@ -1562,16 +553,11 @@ async def api_resource_groups(period: str = "week", rg: str = "") -> JSONRespons
 
 @app.get("/api/resource-groups-list", tags=["api"])
 async def api_resource_groups_list() -> JSONResponse:
-    """All resource groups sorted by total cost (all-time). Used to populate the global RG filter dropdown."""
     try:
         df = await get_cached_dataframe()
         if df.empty or "C_NAME" not in df.columns or "C_COST" not in df.columns:
             return JSONResponse({"resource_groups": []})
-        by_rg = (
-            df.groupby("C_NAME", dropna=False)["C_COST"]
-            .sum()
-            .sort_values(ascending=False)
-        )
+        by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum().sort_values(ascending=False)
         rgs = [
             {"name": str(k), "total_cost": round(float(v), 2)}
             for k, v in by_rg.items()
@@ -1582,15 +568,13 @@ async def api_resource_groups_list() -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+# ── Live resources ────────────────────────────────────────────────────────────
+
 @app.get("/api/live-resources", tags=["api"])
 async def api_live_resources() -> JSONResponse:
-    """All live Azure resources with 30-day cost from Cost Management exports."""
     try:
         resources = await _get_live_data()
 
-        # Sum the actual billed export cost for matched ARM resources.
-        # VMs store raw export in "export_cost" (monthly_cost is overridden by pricing API).
-        # Non-VMs use export_cost_raw (raw sum before projection) or monthly_cost for plain "export".
         matched_export_usd = 0.0
         for r in resources:
             ec = r.get("export_cost") or r.get("export_cost_raw")
@@ -1612,7 +596,6 @@ async def api_live_resources() -> JSONResponse:
 
 @app.post("/api/live-reload", tags=["api"])
 async def api_live_reload() -> JSONResponse:
-    """Clear the live resource cache and re-fetch from ARM."""
     async with _live_lock:
         _live_cache.clear()
     try:
@@ -1622,21 +605,20 @@ async def api_live_reload() -> JSONResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+# ── Infrastructure mutation ───────────────────────────────────────────────────
+
 @app.delete("/api/resource", tags=["infrastructure"])
 async def api_delete_resource(resource_id: str) -> StreamingResponse:
-    """Delete a live Azure resource by its full ARM resource ID.
-
-    Streams status log lines as plain text while the operation runs.
-    resource_id example:
-        /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/myvm
-    """
+    """Delete a live Azure resource by its full ARM resource ID."""
     if not resource_id.lower().startswith("/subscriptions/"):
         raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
 
     log.warning("⚠️  DELETE resource initiated: %s", resource_id)
 
-    def _get_api_version(client: ResourceManagementClient, namespace: str, rtype: str) -> str:
-        """Return the latest non-preview API version for a resource type."""
+    from live_resources import _get_resource_mgmt_client
+    from azure.mgmt.resource import ResourceManagementClient as _RMC
+
+    def _get_api_version(client: _RMC, namespace: str, rtype: str) -> str:
         FALLBACKS: dict[str, str] = {
             "microsoft.compute":              "2024-03-01",
             "microsoft.storage":              "2023-05-01",
@@ -1667,8 +649,6 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
         try:
             yield f"[INFO] Resource: {resource_id}\n"
 
-            # Parse provider namespace + resource type from the ARM ID
-            # /subscriptions/{s}/resourceGroups/{rg}/providers/{ns}/{type}/{name}[/...]
             parts = resource_id.strip("/").split("/")
             try:
                 prov_idx = [p.lower() for p in parts].index("providers")
@@ -1690,10 +670,8 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
             poller = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: client.resources.begin_delete_by_id(resource_id, api_version)
             )
-
             yield "[INFO] Delete operation accepted. Waiting for completion...\n"
 
-            # Poll every 5 s and stream status
             elapsed = 0
             while not poller.done():
                 await asyncio.sleep(5)
@@ -1713,15 +691,14 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
 
 @app.delete("/api/resource-group", tags=["infrastructure"])
 async def api_delete_resource_group(resource_group_name: str) -> StreamingResponse:
-    """Delete all resources in an Azure resource group by deleting the group itself.
-
-    Streams status log lines as plain text while the operation runs.
-    """
+    """Delete all resources in an Azure resource group by deleting the group itself."""
     if not resource_group_name or not resource_group_name.strip():
         raise HTTPException(status_code=400, detail="resource_group_name is required")
 
     rg = resource_group_name.strip()
     log.warning("⚠️  DELETE resource group initiated: %s", rg)
+
+    from live_resources import _get_resource_mgmt_client
 
     async def log_streamer():
         try:
@@ -1729,13 +706,11 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
             yield "[INFO] This will delete ALL resources inside the group.\n"
 
             client = _get_resource_mgmt_client()
-
             yield "[INFO] Sending delete request to Azure Resource Manager...\n"
 
             poller = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: client.resource_groups.begin_delete(rg)
             )
-
             yield "[INFO] Delete operation accepted. Waiting for completion...\n"
 
             elapsed = 0
@@ -1757,15 +732,13 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
 
 @app.delete("/api/resource-groups/all", tags=["infrastructure"])
 async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...)) -> StreamingResponse:
-    """Delete multiple Azure resource groups sequentially.
-
-    Accepts a JSON array of resource group names in the request body.
-    Streams progress for each group as plain text.
-    """
+    """Delete multiple Azure resource groups sequentially."""
     if not resource_groups:
         raise HTTPException(status_code=400, detail="resource_groups list is empty")
 
     log.warning("⚠️  BULK DELETE resource groups initiated: %s", resource_groups)
+
+    from live_resources import _get_resource_mgmt_client
 
     async def log_streamer():
         client = _get_resource_mgmt_client()
@@ -1803,21 +776,22 @@ async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...))
     return StreamingResponse(log_streamer(), media_type="text/plain")
 
 
+# ── Debug / diagnostics ───────────────────────────────────────────────────────
+
 @app.get("/api/spot-price-debug", tags=["api"])
 async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
-    """Debug endpoint: test spot price lookup for a given VM size + region."""
+    from live_resources import _fetch_spot_price
     try:
         price = await asyncio.get_event_loop().run_in_executor(
             None, _fetch_spot_price, vm_size, region
         )
         if price is None:
             return JSONResponse({"vm_size": vm_size, "region": region, "price": None, "status": "not_found"})
-        monthly = round(price * 24 * 30, 2)
         return JSONResponse({
             "vm_size": vm_size,
             "region": region,
             "hourly_usd": round(price, 4),
-            "monthly_usd": monthly,
+            "monthly_usd": round(price * 24 * 30, 2),
             "status": "found",
         })
     except Exception as exc:
@@ -1826,7 +800,6 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
 
 @app.get("/api/daily", tags=["api"])
 async def api_daily(days: int = 30, rg: str = "") -> JSONResponse:
-    """Daily spend totals for the last N days."""
     try:
         df = await get_cached_dataframe()
         df = _filter_rg(df, rg)
