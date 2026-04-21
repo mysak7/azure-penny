@@ -25,6 +25,7 @@ env:
   TF_VERSION: "1.10.0"
   # OIDC — no ARM_CLIENT_SECRET needed
   ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"   # data-plane blob calls use Azure AD, not storage keys
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
