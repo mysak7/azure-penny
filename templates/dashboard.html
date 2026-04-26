@@ -255,7 +255,7 @@ function loadRgList() {
       var rgs = data.resource_groups || [];
       sel.innerHTML = '<option value="">All</option>' + rgs.map(function(rg) {
         return '<option value="' + escAttr(rg.name) + '"' + (rg.name === current ? ' selected' : '') + '>' +
-               escHtml(rg.name) + ' (' + fmtCost(rg.total_cost) + ')</option>';
+               escHtml(rg.name) + '</option>';
       }).join('');
       sel.classList.toggle('filtered', !!current);
     })
