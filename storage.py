@@ -170,6 +170,9 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     if "C_DATE" in df.columns:
         df["C_DATE"] = pd.to_datetime(df["C_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
 
+    if "C_NAME" in df.columns:
+        df["C_NAME"] = df["C_NAME"].str.lower()
+
     return df
 
 
