@@ -97,16 +97,16 @@ def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
 
 
 async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
-    df = await get_cached_dataframe()
-    df = _filter_rg(df, rg)
+    full_df = await get_cached_dataframe()
+    df = _filter_rg(full_df, rg)
     days = _period_days(period)
     filtered = _filter_services(_filter_period(df, days), services)
 
     fallback = False
-    if period == "day" and filtered.empty and "C_DATE" in df.columns:
+    if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
         df_svc = _filter_services(df, services)
         if not df_svc.empty:
-            last_date = df_svc["C_DATE"].dropna().max()
+            last_date = full_df["C_DATE"].dropna().max()
             filtered = df_svc[df_svc["C_DATE"] == last_date]
             fallback = True
 
@@ -215,16 +215,16 @@ async def api_compute(period: str = "week", rg: str = "") -> JSONResponse:
 @app.get("/api/compute/machines", tags=["api"])
 async def api_compute_machines(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        df = await get_cached_dataframe()
-        df = _filter_rg(df, rg)
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
         days = _period_days(period)
         filtered = _filter_services(_filter_period(df, days), CAT_COMPUTE)
 
         fallback = False
-        if period == "day" and filtered.empty and "C_DATE" in df.columns:
+        if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
             df_svc = _filter_services(df, CAT_COMPUTE)
             if not df_svc.empty:
-                last_date = df_svc["C_DATE"].dropna().max()
+                last_date = full_df["C_DATE"].dropna().max()
                 filtered = df_svc[df_svc["C_DATE"] == last_date]
                 fallback = True
 
@@ -256,18 +256,18 @@ async def api_storage(period: str = "week", rg: str = "") -> JSONResponse:
 @app.get("/api/storage/breakdown", tags=["api"])
 async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        df = await get_cached_dataframe()
-        df = _filter_rg(df, rg)
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
         days = _period_days(period)
 
         all_storage_svcs = CAT_STORAGE | {"Bandwidth"}
         filtered = _filter_services(_filter_period(df, days), all_storage_svcs)
 
         fallback = False
-        if period == "day" and filtered.empty and "C_DATE" in df.columns:
+        if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
             df_svc = _filter_services(df, all_storage_svcs)
             if not df_svc.empty:
-                last_date = df_svc["C_DATE"].dropna().max()
+                last_date = full_df["C_DATE"].dropna().max()
                 filtered = df_svc[df_svc["C_DATE"] == last_date]
                 fallback = True
 
@@ -447,14 +447,14 @@ async def api_debug() -> JSONResponse:
 @app.get("/api/services", tags=["api"])
 async def api_services(period: str = "week", rg: str = "") -> JSONResponse:
     try:
-        df = await get_cached_dataframe()
-        df = _filter_rg(df, rg)
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
         fallback = False
-        if period == "day" and filtered.empty and "C_DATE" in df.columns and not df.empty:
-            last_date = df["C_DATE"].dropna().max()
+        if period == "day" and filtered.empty and "C_DATE" in full_df.columns and not df.empty:
+            last_date = full_df["C_DATE"].dropna().max()
             filtered = df[df["C_DATE"] == last_date]
             fallback = True
 
