@@ -21,12 +21,12 @@ resource "azurerm_consumption_budget_subscription" "alert_per_10usd" {
     start_date = formatdate("YYYY-MM-01'T'00:00:00'Z'", timestamp())
   }
 
-  # Fire at every $10 increment up to the monthly budget
+  # Fire at 20%, 40%, 60%, 80%, 100% of budget (Azure limits to 5 Actual notifications)
   dynamic "notification" {
-    for_each = range(1, floor(var.budget_monthly_amount / 10) + 1)
+    for_each = [20, 40, 60, 80, 100]
     content {
       operator       = "GreaterThanOrEqualTo"
-      threshold      = notification.value * 10
+      threshold      = notification.value
       threshold_type = "Actual"
       contact_groups = [azurerm_monitor_action_group.budget_email.id]
     }
