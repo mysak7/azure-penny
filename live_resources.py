@@ -501,6 +501,12 @@ def _normalize_rid(rid: str) -> str:
     return rid[: m.end(1)] if m else rid
 
 
+def list_resource_groups() -> list[str]:
+    """Return all resource group names in the subscription via ARM."""
+    rc = _get_resource_mgmt_client()
+    return [rg.name for rg in rc.resource_groups.list() if rg.name]
+
+
 async def _get_live_data() -> list[dict]:
     """Live resource inventory merged with 30-day cost data (cached)."""
     async with _live_lock:

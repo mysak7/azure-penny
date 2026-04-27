@@ -21,8 +21,4 @@ resource "azurerm_role_assignment" "subscription_contributor" {
   role_definition_name = "Contributor"
   principal_id         = azurerm_user_assigned_identity.main.principal_id
 
-  # Ignore if role assignment already exists (may have been created outside of Terraform)
-  lifecycle {
-    ignore_changes = all
-  }
 }
