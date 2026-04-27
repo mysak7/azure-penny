@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>azure-penny — Presentation</title>
+<style>
+  :root {
+    --azure-blue: #0078d4;
+    --azure-dark: #003966;
+    --azure-light: #50e6ff;
+    --azure-teal: #008575;
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1f2937;
+    --text: #f0f4ff;
+    --muted: #8b9ab2;
+    --accent: #50e6ff;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ── Deck ── */
+  #deck {
+    width: 100%;
+    height: 100%;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateX(60px);
+  }
+  .slide.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .slide.prev {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+
+  /* ── Nav ── */
+  #nav {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 100;
+    background: rgba(17,24,39,0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 40px;
+    padding: 10px 20px;
+  }
+  #nav button {
+    background: none;
+    border: 1px solid rgba(80,230,255,0.3);
+    color: var(--accent);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #nav button:hover { background: rgba(80,230,255,0.12); border-color: var(--accent); }
+  #nav button:disabled { opacity: 0.3; cursor: default; }
+  #counter { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
+  #dots { display: flex; gap: 6px; }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(80,230,255,0.2);
+    transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
+  }
+  .dot.on { background: var(--accent); transform: scale(1.3); }
+
+  /* ── Typography ── */
+  .slide-title {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--azure-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .slide-subtitle {
+    font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .tag-blue { background: rgba(0,120,212,0.25); color: var(--azure-light); border: 1px solid rgba(0,120,212,0.4); }
+  .tag-green { background: rgba(74,222,128,0.15); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
+  .tag-purple { background: rgba(167,139,250,0.15); color: var(--purple); border: 1px solid rgba(167,139,250,0.3); }
+
+  /* ── Cards ── */
+  .cards {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+    max-width: 1000px;
+  }
+  .cards-2 { grid-template-columns: 1fr 1fr; }
+  .cards-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cards-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid rgba(80,230,255,0.1);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: rgba(80,230,255,0.35); transform: translateY(-2px); }
+  .card-icon { font-size: 28px; margin-bottom: 10px; }
+  .card-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+  .card-body { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+  /* ── Two-column layout ── */
+  .two-col {
+    display: flex;
+    gap: 48px;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 1060px;
+  }
+  .col { flex: 1; }
+  .col-narrow { flex: 0 0 auto; }
+
+  /* ── Lists ── */
+  .flow-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .flow-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .flow-list li .step-num {
+    flex: 0 0 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0,120,212,0.35);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── Pill badges ── */
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: rgba(31,41,55,1);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+  }
+  .pill.hi { border-color: rgba(80,230,255,0.3); color: var(--accent); }
+
+  /* ── Table ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+  .data-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--accent);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(80,230,255,0.2);
+  }
+  .data-table td {
+    padding: 8px 12px;
+    color: var(--muted);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: top;
+  }
+  .data-table tr:hover td { background: rgba(80,230,255,0.03); }
+  .data-table td:first-child { color: var(--text); font-family: 'Courier New', monospace; font-size: 0.78rem; }
+
+  /* ── Code block ── */
+  .code-block {
+    background: #0d1117;
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    color: #a5d6ff;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* ── Divider ── */
+  hr.dim { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 16px 0; }
+
+  /* ─────────────────────────────────────────────────
+     SVG ARCHITECTURE DIAGRAMS — embedded inline
+  ───────────────────────────────────────────────── */
+
+  .diagram-wrap {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+  .diagram-wrap svg { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 1 — Title
+  ══════════════════════════════════════════════════ -->
+  <div class="slide active" id="s1">
+    <div style="text-align:center; max-width:780px;">
+      <!-- Azure penny coin logo SVG -->
+      <svg width="90" height="90" viewBox="0 0 90 90" style="margin-bottom:24px;" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="45" cy="45" r="44" stroke="#0078d4" stroke-width="2" fill="rgba(0,120,212,0.08)"/>
+        <circle cx="45" cy="45" r="35" fill="rgba(0,120,212,0.15)" stroke="rgba(80,230,255,0.3)" stroke-width="1"/>
+        <!-- Azure-style wave/flag mark -->
+        <path d="M28 54 C28 54 32 38 45 35 C58 32 62 54 62 54" stroke="#50e6ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path d="M32 54 L58 54" stroke="#0078d4" stroke-width="2" stroke-linecap="round"/>
+        <!-- Penny cent sign -->
+        <text x="45" y="50" text-anchor="middle" font-size="18" font-weight="700" fill="#50e6ff" font-family="Segoe UI,sans-serif">₵</text>
+      </svg>
+
+      <h1 style="font-size: clamp(2.2rem,5vw,3.8rem); font-weight:800; background:linear-gradient(135deg,#50e6ff,#0078d4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:16px;">
+        azure-penny
+      </h1>
+      <p style="font-size:clamp(1rem,2vw,1.35rem); color:#8b9ab2; margin-bottom:32px; line-height:1.6;">
+        A serverless Azure cost-visibility dashboard.<br>
+        Reads Cost Management exports from Blob Storage<br>
+        and serves interactive dashboards via FastAPI on Container Apps.
+      </p>
+
+      <div class="pill-row" style="justify-content:center; gap:10px;">
+        <span class="pill hi">FastAPI</span>
+        <span class="pill hi">Azure Container Apps</span>
+        <span class="pill hi">Blob Storage</span>
+        <span class="pill hi">Managed Identity</span>
+        <span class="pill hi">Terraform</span>
+        <span class="pill hi">Scale to Zero</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 2 — Problem / Why
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s2">
+    <div class="slide-title">The Problem It Solves</div>
+    <div class="slide-subtitle">Azure billing is powerful but opaque — azure-penny makes it instant and actionable</div>
+
+    <div class="cards cards-3" style="max-width:960px;">
+      <div class="card">
+        <div class="card-icon">🔍</div>
+        <div class="card-title">Cost Visibility</div>
+        <div class="card-body">Azure Cost Management exports daily CSV files to Blob Storage. azure-penny aggregates them into a live, filterable dashboard — no portal login needed.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🏗️</div>
+        <div class="card-title">Resource Group Drill-down</div>
+        <div class="card-body">Filter costs by any resource group, time period (day / week / month), and service category. Spot which team or project is driving the bill.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <div class="card-title">Live Resource Inventory</div>
+        <div class="card-body">A second tab lists every live Azure resource, its monthly cost, and potential spot-price savings — cross-referenced with the export data.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🗑️</div>
+        <div class="card-title">One-click Cleanup</div>
+        <div class="card-body">Delete individual resources or entire resource groups directly from the UI — streaming real-time progress back over HTTP.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">💰</div>
+        <div class="card-title">Zero Idle Cost</div>
+        <div class="card-body">Container App scales to zero when nobody is looking. A cost dashboard that costs nothing when you're not using it.</div>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔒</div>
+        <div class="card-title">No Secrets, Ever</div>
+        <div class="card-body">Managed Identity + DefaultAzureCredential — no connection strings, SAS tokens, or service principal secrets in the codebase or CI.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 3 — High-Level Architecture
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s3">
+    <div class="slide-title">High-Level Architecture</div>
+    <div class="slide-subtitle">Everything inside one Azure resource group, managed by Terraform</div>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 900 420" width="900" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#50e6ff"/>
+          </marker>
+          <marker id="arrg" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/>
+          </marker>
+          <marker id="arro" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#fb923c"/>
+          </marker>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- ── Resource Group outer box ── -->
+        <rect x="200" y="20" width="680" height="380" rx="14" fill="rgba(0,120,212,0.05)" stroke="rgba(0,120,212,0.35)" stroke-width="1.5" stroke-dasharray="6,3"/>
+        <text x="217" y="44" font-size="12" fill="#0078d4" font-weight="600">azure-penny-rg  (Resource Group)</text>
+
+        <!-- ── Azure Cost Management (outside RG) ── -->
+        <rect x="10" y="155" width="160" height="70" rx="10" fill="rgba(167,139,250,0.12)" stroke="rgba(167,139,250,0.4)" stroke-width="1.5"/>
+        <text x="90" y="181" text-anchor="middle" font-size="10" font-weight="700" fill="#a78bfa">Azure Cost</text>
+        <text x="90" y="196" text-anchor="middle" font-size="10" fill="#a78bfa">Management</text>
+        <text x="90" y="211" text-anchor="middle" font-size="9" fill="#6b7280">daily CSV export</text>
+
+        <!-- ── Blob Storage ── -->
+        <rect x="240" y="145" width="155" height="90" rx="10" fill="rgba(0,120,212,0.12)" stroke="rgba(80,230,255,0.4)" stroke-width="1.5"/>
+        <!-- cylinder top -->
+        <ellipse cx="317" cy="170" rx="30" ry="9" fill="rgba(80,230,255,0.2)" stroke="rgba(80,230,255,0.6)" stroke-width="1"/>
+        <rect x="287" y="170" width="60" height="24" fill="rgba(80,230,255,0.1)"/>
+        <ellipse cx="317" cy="194" rx="30" ry="9" fill="rgba(80,230,255,0.2)" stroke="rgba(80,230,255,0.6)" stroke-width="1"/>
+        <text x="317" y="219" text-anchor="middle" font-size="10" font-weight="700" fill="#50e6ff">Blob Storage</text>
+        <text x="317" y="231" text-anchor="middle" font-size="9" fill="#6b7280">cost-exports container</text>
+
+        <!-- ── ACR ── -->
+        <rect x="240" y="290" width="155" height="80" rx="10" fill="rgba(0,133,117,0.12)" stroke="rgba(0,133,117,0.45)" stroke-width="1.5"/>
+        <text x="317" y="326" text-anchor="middle" font-size="22" fill="#4ade80">⬡</text>
+        <text x="317" y="347" text-anchor="middle" font-size="10" font-weight="700" fill="#4ade80">Container Registry</text>
+        <text x="317" y="361" text-anchor="middle" font-size="9" fill="#6b7280">ACR (Standard)</text>
+
+        <!-- ── Container App box ── -->
+        <rect x="475" y="100" width="220" height="240" rx="14" fill="rgba(0,120,212,0.08)" stroke="rgba(0,120,212,0.5)" stroke-width="2"/>
+        <text x="585" y="128" text-anchor="middle" font-size="11" font-weight="700" fill="#50e6ff">Azure Container App</text>
+        <text x="585" y="143" text-anchor="middle" font-size="9" fill="#6b7280">scales 0 → 1 replica</text>
+        <!-- App icon -->
+        <rect x="555" y="156" width="60" height="50" rx="8" fill="rgba(0,120,212,0.25)" stroke="rgba(80,230,255,0.4)" stroke-width="1"/>
+        <text x="585" y="178" text-anchor="middle" font-size="18">🪙</text>
+        <text x="585" y="196" text-anchor="middle" font-size="9" fill="#50e6ff">azure-penny</text>
+        <!-- FastAPI label -->
+        <text x="585" y="218" text-anchor="middle" font-size="9" fill="#6b7280">FastAPI + uvicorn</text>
+        <!-- Managed Identity badge -->
+        <rect x="510" y="233" width="150" height="36" rx="8" fill="rgba(251,146,60,0.1)" stroke="rgba(251,146,60,0.35)" stroke-width="1"/>
+        <text x="540" y="249" font-size="9" fill="#fb923c">🔑  User-Assigned MI</text>
+        <text x="540" y="262" font-size="8" fill="#6b7280">DefaultAzureCredential</text>
+        <!-- In/Out labels -->
+        <text x="585" y="318" text-anchor="middle" font-size="9" fill="#6b7280">HTTP/S — public FQDN</text>
+
+        <!-- ── Log Analytics / ACA Environment ── -->
+        <rect x="460" y="60" width="250" height="310" rx="16" fill="none" stroke="rgba(80,230,255,0.12)" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <text x="476" y="76" font-size="10" fill="#374151">ACA Environment</text>
+
+        <!-- ── GitHub Actions ── -->
+        <rect x="745" y="60" width="130" height="110" rx="10" fill="rgba(31,41,55,0.8)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5"/>
+        <text x="810" y="90" text-anchor="middle" font-size="20">🐙</text>
+        <text x="810" y="110" text-anchor="middle" font-size="10" font-weight="700" fill="#f0f4ff">GitHub Actions</text>
+        <text x="810" y="125" text-anchor="middle" font-size="9" fill="#6b7280">CI / CD / Terraform</text>
+        <text x="810" y="138" text-anchor="middle" font-size="9" fill="#6b7280">OIDC auth</text>
+        <text x="810" y="155" text-anchor="middle" font-size="9" fill="#6b7280">no stored secrets</text>
+
+        <!-- ── User ── -->
+        <circle cx="810" cy="290" r="28" fill="rgba(74,222,128,0.1)" stroke="rgba(74,222,128,0.35)" stroke-width="1.5"/>
+        <text x="810" y="285" text-anchor="middle" font-size="20">👤</text>
+        <text x="810" y="302" text-anchor="middle" font-size="9" fill="#4ade80">Browser</text>
+        <text x="810" y="314" text-anchor="middle" font-size="8" fill="#6b7280">HTTPS</text>
+
+        <!-- ── Arrows ── -->
+        <!-- Cost Mgmt → Blob Storage -->
+        <line x1="170" y1="190" x2="237" y2="190" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="203" y="183" text-anchor="middle" font-size="8" fill="#a78bfa">daily export</text>
+
+        <!-- Blob Storage → Container App (reads) -->
+        <line x1="395" y1="190" x2="472" y2="200" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="433" y="183" text-anchor="middle" font-size="8" fill="#50e6ff">reads blobs</text>
+
+        <!-- ACR → Container App (image pull) -->
+        <line x1="395" y1="330" x2="472" y2="280" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrg)"/>
+        <text x="433" y="325" text-anchor="middle" font-size="8" fill="#4ade80">AcrPull</text>
+
+        <!-- GitHub → ACR (push image) -->
+        <line x1="745" y1="115" x2="398" y2="320" stroke="#4ade80" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arrg)"/>
+        <text x="590" y="238" text-anchor="middle" font-size="8" fill="#4ade80">push image</text>
+
+        <!-- GitHub → Container App (deploy) -->
+        <line x1="745" y1="125" x2="698" y2="190" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arro)"/>
+        <text x="728" y="158" text-anchor="middle" font-size="8" fill="#fb923c">deploy</text>
+
+        <!-- User → Container App -->
+        <line x1="782" y1="280" x2="698" y2="240" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrg)"/>
+
+        <!-- MI arrow (identity) -->
+        <path d="M585 270 Q585 380 395 355" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="4,3" fill="none" marker-end="url(#arro)"/>
+        <text x="510" y="372" font-size="8" fill="#fb923c">Storage Blob Data Reader</text>
+
+        <!-- Legend -->
+        <rect x="220" y="390" width="650" height="22" rx="4" fill="rgba(17,24,39,0.6)"/>
+        <line x1="240" y1="401" x2="265" y2="401" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="270" y="404" font-size="9" fill="#8b9ab2">data flow</text>
+        <line x1="330" y1="401" x2="355" y2="401" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrg)"/>
+        <text x="360" y="404" font-size="9" fill="#8b9ab2">image deploy</text>
+        <line x1="440" y1="401" x2="465" y2="401" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arro)"/>
+        <text x="470" y="404" font-size="9" fill="#8b9ab2">identity / RBAC</text>
+        <line x1="570" y1="401" x2="595" y2="401" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="600" y="404" font-size="9" fill="#8b9ab2">cost export</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 4 — Infrastructure (Terraform)
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s4">
+    <div class="slide-title">Infrastructure — Terraform</div>
+    <div class="slide-subtitle">All resources declared in <code style="color:#50e6ff;font-size:0.9em;">terraform/</code> · State stored remotely in Azure Blob</div>
+
+    <div class="two-col" style="max-width:980px; gap:32px;">
+      <div class="col">
+        <table class="data-table">
+          <thead>
+            <tr><th>Resource</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>resource_group.tf</td><td>Isolates all azure-penny resources</td></tr>
+            <tr><td>storage.tf</td><td>Storage Account + <code>cost-exports</code> container (BlobStorage, LRS, TLS 1.2, versioning + 7-day soft delete)</td></tr>
+            <tr><td>acr.tf</td><td>Azure Container Registry (Standard, admin disabled) + AcrPull role</td></tr>
+            <tr><td>identity.tf</td><td>User-Assigned Managed Identity + Storage Blob Data Reader + Contributor roles</td></tr>
+            <tr><td>container_app.tf</td><td>Log Analytics workspace · ACA Environment · Container App (min 0, max 1)</td></tr>
+            <tr><td>cost_export.tf</td><td>Scheduled daily MonthToDate CSV export via Cost Management</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col">
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:8px;">Key Design Decisions</div>
+          <ul class="flow-list">
+            <li><span class="step-num">1</span><span><strong style="color:#f0f4ff;">Scale to zero</strong> — min_replicas=0, max_replicas=1. Cold-start is acceptable for a dashboard checked once or twice a day.</span></li>
+            <li><span class="step-num">2</span><span><strong style="color:#f0f4ff;">Single revision mode</strong> — one active revision at a time. Blue/green is unnecessary for this workload.</span></li>
+            <li><span class="step-num">3</span><span><strong style="color:#f0f4ff;">LRS replication</strong> — exports are re-created daily; geo-redundancy would be wasted spend.</span></li>
+            <li><span class="step-num">4</span><span><strong style="color:#f0f4ff;">Blob versioning + soft delete (7d)</strong> — guards against accidental deletion at negligible cost.</span></li>
+            <li><span class="step-num">5</span><span><strong style="color:#f0f4ff;">CSV export format</strong> — the azurerm provider doesn't support Parquet at subscription scope; app handles both for forward compatibility.</span></li>
+          </ul>
+        </div>
+        <div class="code-block"># Remote backend (dedicated storage account)
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "azure-penny-tfstate-rg"
+    storage_account_name = "azurepennytf3759"
+    container_name       = "tfstate"
+    key                  = "azure-penny.tfstate"
+  }
+}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 5 — Authentication — Managed Identity
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s5">
+    <div class="slide-title">Authentication — Zero Secrets</div>
+    <div class="slide-subtitle">User-Assigned Managed Identity + <code style="color:#50e6ff;font-size:0.9em;">DefaultAzureCredential</code> everywhere · No passwords, ever</div>
+
+    <div class="two-col" style="max-width:1000px;">
+      <div class="col">
+        <!-- Auth flow diagram -->
+        <svg viewBox="0 0 420 340" width="420" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <defs>
+            <marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#50e6ff"/>
+            </marker>
+            <marker id="a2g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/>
+            </marker>
+            <marker id="a2o" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#fb923c"/>
+            </marker>
+          </defs>
+
+          <!-- Managed Identity central hub -->
+          <circle cx="210" cy="145" r="55" fill="rgba(251,146,60,0.12)" stroke="rgba(251,146,60,0.5)" stroke-width="2"/>
+          <text x="210" y="135" text-anchor="middle" font-size="22">🔑</text>
+          <text x="210" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#fb923c">User-Assigned</text>
+          <text x="210" y="170" text-anchor="middle" font-size="10" fill="#fb923c">Managed Identity</text>
+
+          <!-- Container App -->
+          <rect x="10" y="60" width="135" height="60" rx="8" fill="rgba(0,120,212,0.12)" stroke="rgba(80,230,255,0.4)" stroke-width="1.5"/>
+          <text x="77" y="84" text-anchor="middle" font-size="16">🪙</text>
+          <text x="77" y="101" text-anchor="middle" font-size="10" font-weight="600" fill="#50e6ff">Container App</text>
+          <text x="77" y="114" text-anchor="middle" font-size="8" fill="#6b7280">AZURE_CLIENT_ID env var</text>
+
+          <!-- Blob Storage -->
+          <rect x="280" y="10" width="130" height="55" rx="8" fill="rgba(0,120,212,0.12)" stroke="rgba(80,230,255,0.4)" stroke-width="1.5"/>
+          <text x="345" y="33" text-anchor="middle" font-size="14">🗄️</text>
+          <text x="345" y="50" text-anchor="middle" font-size="10" font-weight="600" fill="#50e6ff">Blob Storage</text>
+          <text x="345" y="61" text-anchor="middle" font-size="8" fill="#4ade80">Storage Blob Data Reader</text>
+
+          <!-- ACR -->
+          <rect x="280" y="120" width="130" height="55" rx="8" fill="rgba(0,133,117,0.12)" stroke="rgba(74,222,128,0.4)" stroke-width="1.5"/>
+          <text x="345" y="143" text-anchor="middle" font-size="14">⬡</text>
+          <text x="345" y="160" text-anchor="middle" font-size="10" font-weight="600" fill="#4ade80">Container Registry</text>
+          <text x="345" y="171" text-anchor="middle" font-size="8" fill="#4ade80">AcrPull role</text>
+
+          <!-- Azure Resource Manager -->
+          <rect x="280" y="230" width="130" height="55" rx="8" fill="rgba(167,139,250,0.1)" stroke="rgba(167,139,250,0.4)" stroke-width="1.5"/>
+          <text x="345" y="253" text-anchor="middle" font-size="14">🏗️</text>
+          <text x="345" y="270" text-anchor="middle" font-size="10" font-weight="600" fill="#a78bfa">ARM / Resources</text>
+          <text x="345" y="281" text-anchor="middle" font-size="8" fill="#a78bfa">Contributor (subscription)</text>
+
+          <!-- MI → ACA attachment -->
+          <line x1="157" y1="118" x2="210" y2="100" stroke="#fb923c" stroke-width="1.5" marker-end="url(#a2o)"/>
+          <text x="178" y="107" text-anchor="middle" font-size="7.5" fill="#fb923c">attached to</text>
+
+          <!-- MI → Blob -->
+          <line x1="255" y1="110" x2="295" y2="55" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#a2)"/>
+
+          <!-- MI → ACR -->
+          <line x1="264" y1="145" x2="280" y2="147" stroke="#4ade80" stroke-width="1.5" marker-end="url(#a2g)"/>
+
+          <!-- MI → ARM -->
+          <line x1="250" y1="178" x2="295" y2="248" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#a2)"/>
+
+          <!-- Environments -->
+          <text x="210" y="230" text-anchor="middle" font-size="10" font-weight="600" fill="#6b7280">Resolves automatically in:</text>
+
+          <rect x="20" y="248" width="100" height="34" rx="6" fill="rgba(31,41,55,0.8)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+          <text x="70" y="263" text-anchor="middle" font-size="9" fill="#f0f4ff">Production</text>
+          <text x="70" y="276" text-anchor="middle" font-size="8" fill="#6b7280">IMDS endpoint</text>
+
+          <rect x="140" y="248" width="100" height="34" rx="6" fill="rgba(31,41,55,0.8)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+          <text x="190" y="263" text-anchor="middle" font-size="9" fill="#f0f4ff">Local Dev</text>
+          <text x="190" y="276" text-anchor="middle" font-size="8" fill="#6b7280">az login</text>
+
+          <rect x="20" y="292" width="220" height="34" rx="6" fill="rgba(31,41,55,0.8)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+          <text x="130" y="307" text-anchor="middle" font-size="9" fill="#f0f4ff">GitHub Actions CI/CD</text>
+          <text x="130" y="320" text-anchor="middle" font-size="8" fill="#6b7280">OIDC federated identity (no secrets stored)</text>
+        </svg>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">Why Not a Service Principal Secret?</div>
+        <ul class="flow-list" style="margin-bottom:24px;">
+          <li><span class="step-num">✗</span><span style="color:#6b7280;">Secrets rotate, expire, and leak — introducing a full secret-management lifecycle.</span></li>
+          <li><span class="step-num">✗</span><span style="color:#6b7280;">SAS tokens expire and hard-coded tokens are a security risk.</span></li>
+          <li><span class="step-num">✗</span><span style="color:#6b7280;">Connection strings give full storage access — over-privileged by default.</span></li>
+          <li><span class="step-num">✓</span><span><strong style="color:#4ade80;">Managed Identity</strong> removes the secret-management lifecycle at zero extra cost. Works identically in ACA, local dev, and CI/CD.</span></li>
+        </ul>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">RBAC Assignments</div>
+        <table class="data-table">
+          <thead><tr><th>Role</th><th>Scope</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td>Storage Blob Data Reader</td><td>Storage Account</td><td>Read cost-export CSVs</td></tr>
+            <tr><td>AcrPull</td><td>Container Registry</td><td>Pull Docker image</td></tr>
+            <tr><td>Contributor</td><td>Subscription</td><td>List/delete resources (Live tab)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 6 — Data Flow
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s6">
+    <div class="slide-title">Data Flow — From Export to Dashboard</div>
+    <div class="slide-subtitle">Azure Cost Management writes daily; the app discovers, reads, and caches in memory</div>
+
+    <div class="two-col" style="max-width:1000px; align-items:center;">
+      <div class="col">
+        <!-- Data flow diagram -->
+        <svg viewBox="0 0 380 480" width="340" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <defs>
+            <marker id="adown" markerWidth="8" markerHeight="8" refX="3" refY="6" orient="auto">
+              <path d="M0,0 L6,0 L3,8 z" fill="#50e6ff"/>
+            </marker>
+          </defs>
+
+          <!-- Step boxes -->
+          <!-- 1 -->
+          <rect x="40" y="10" width="300" height="52" rx="10" fill="rgba(167,139,250,0.1)" stroke="rgba(167,139,250,0.4)" stroke-width="1.5"/>
+          <text x="190" y="33" text-anchor="middle" font-size="11" font-weight="700" fill="#a78bfa">Azure Cost Management</text>
+          <text x="190" y="50" text-anchor="middle" font-size="9" fill="#6b7280">writes daily cumulative CSV to Blob Storage</text>
+          <text x="50" y="35" font-size="14">📅</text>
+
+          <line x1="190" y1="62" x2="190" y2="82" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#adown)"/>
+
+          <!-- 2 -->
+          <rect x="40" y="84" width="300" height="60" rx="10" fill="rgba(0,120,212,0.1)" stroke="rgba(80,230,255,0.35)" stroke-width="1.5"/>
+          <text x="190" y="106" text-anchor="middle" font-size="11" font-weight="700" fill="#50e6ff">_discover_latest_blobs()</text>
+          <text x="190" y="120" text-anchor="middle" font-size="8.5" fill="#6b7280">Find newest YYYYMMDD-YYYYMMDD folder</text>
+          <text x="190" y="134" text-anchor="middle" font-size="8.5" fill="#6b7280">Keep file with latest last_modified (avoid double-count)</text>
+          <text x="50" y="108" font-size="14">🔍</text>
+
+          <line x1="190" y1="144" x2="190" y2="164" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#adown)"/>
+
+          <!-- 3 -->
+          <rect x="40" y="166" width="300" height="52" rx="10" fill="rgba(0,120,212,0.1)" stroke="rgba(80,230,255,0.35)" stroke-width="1.5"/>
+          <text x="190" y="188" text-anchor="middle" font-size="11" font-weight="700" fill="#50e6ff">_blob_to_dataframe()</text>
+          <text x="190" y="205" text-anchor="middle" font-size="8.5" fill="#6b7280">Download via Managed Identity → BytesIO → pandas DataFrame</text>
+          <text x="50" y="190" font-size="14">📥</text>
+
+          <line x1="190" y1="218" x2="190" y2="238" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#adown)"/>
+
+          <!-- 4 -->
+          <rect x="40" y="240" width="300" height="60" rx="10" fill="rgba(0,120,212,0.1)" stroke="rgba(80,230,255,0.35)" stroke-width="1.5"/>
+          <text x="190" y="262" text-anchor="middle" font-size="11" font-weight="700" fill="#50e6ff">_apply_column_map()</text>
+          <text x="190" y="277" text-anchor="middle" font-size="8.5" fill="#6b7280">Normalise Azure column variants → internal C_* names</text>
+          <text x="190" y="291" text-anchor="middle" font-size="8.5" fill="#6b7280">CostInBillingCurrency → C_COST · ResourceGroup → C_NAME …</text>
+          <text x="50" y="264" font-size="14">🗺️</text>
+
+          <line x1="190" y1="300" x2="190" y2="320" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#adown)"/>
+
+          <!-- 5 -->
+          <rect x="40" y="322" width="300" height="52" rx="10" fill="rgba(251,146,60,0.1)" stroke="rgba(251,146,60,0.35)" stroke-width="1.5"/>
+          <text x="190" y="344" text-anchor="middle" font-size="11" font-weight="700" fill="#fb923c">In-Memory Cache</text>
+          <text x="190" y="361" text-anchor="middle" font-size="8.5" fill="#6b7280">asyncio.Lock · TTL 3600s · run_in_executor (non-blocking)</text>
+          <text x="50" y="346" font-size="14">⚡</text>
+
+          <line x1="190" y1="374" x2="190" y2="394" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#adown)"/>
+
+          <!-- 6 -->
+          <rect x="40" y="396" width="300" height="52" rx="10" fill="rgba(74,222,128,0.08)" stroke="rgba(74,222,128,0.35)" stroke-width="1.5"/>
+          <text x="190" y="418" text-anchor="middle" font-size="11" font-weight="700" fill="#4ade80">FastAPI Routes</text>
+          <text x="190" y="435" text-anchor="middle" font-size="8.5" fill="#6b7280">HTML dashboards · JSON API · streaming delete logs</text>
+          <text x="50" y="420" font-size="14">🌐</text>
+        </svg>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Column Mapping (COLUMN_MAP)</div>
+        <table class="data-table" style="margin-bottom:20px;">
+          <thead><tr><th>Azure export column</th><th>Internal name</th></tr></thead>
+          <tbody>
+            <tr><td>CostInBillingCurrency / Cost</td><td><span style="color:#4ade80;">C_COST</span></td></tr>
+            <tr><td>MeterCategory / ServiceName</td><td><span style="color:#4ade80;">C_SERVICE</span></td></tr>
+            <tr><td>ResourceGroup / ResourceGroupName</td><td><span style="color:#4ade80;">C_NAME</span></td></tr>
+            <tr><td>SubscriptionName / SubscriptionId</td><td><span style="color:#4ade80;">C_ACCOUNT</span></td></tr>
+            <tr><td>Date / UsageDate</td><td><span style="color:#4ade80;">C_DATE</span></td></tr>
+            <tr><td>ResourceId / InstanceId</td><td><span style="color:#4ade80;">C_RESOURCE_ID</span></td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Export Path Convention</div>
+        <div class="code-block">{export-name}/
+  {YYYYMMDD-YYYYMMDD}/     ← date range folder
+    {guid}/
+      {filename}.csv        ← cumulative file</div>
+
+        <div style="margin-top:16px; font-size:0.82rem; color:#6b7280; line-height:1.6;">
+          Exports are <strong style="color:#f0f4ff;">cumulative within a billing period</strong> — each run overwrites or adds a new file in the same date-range folder. Reading multiple files from the same folder would multiply costs, so only the file with the latest <code style="color:#50e6ff;">last_modified</code> timestamp is loaded.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 7 — Application Endpoints
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s7">
+    <div class="slide-title">Application — API Endpoints</div>
+    <div class="slide-subtitle">FastAPI serves three views and a full JSON API · auto-generated OpenAPI docs at <code style="color:#50e6ff;">/docs</code></div>
+
+    <div class="two-col" style="max-width:1020px; gap:32px;">
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Page Routes</div>
+        <table class="data-table" style="margin-bottom:20px;">
+          <thead><tr><th>Route</th><th>View</th></tr></thead>
+          <tbody>
+            <tr><td>/  &nbsp;/dashboard</td><td>Manager dashboard — totals, trends, category breakdown</td></tr>
+            <tr><td>/technician</td><td>Technician view — service-level detail, per-RG cost</td></tr>
+            <tr><td>/live</td><td>Live resource inventory with spot-price savings</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Cost API</div>
+        <table class="data-table">
+          <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>GET /api/compute</td><td>Compute costs (VMs, AKS, Functions…)</td></tr>
+            <tr><td>GET /api/storage</td><td>Storage + transfer costs breakdown</td></tr>
+            <tr><td>GET /api/network</td><td>Network services costs</td></tr>
+            <tr><td>GET /api/database</td><td>Database services costs</td></tr>
+            <tr><td>GET /api/services</td><td>All services ranked by cost</td></tr>
+            <tr><td>GET /api/resource-groups</td><td>Cost by resource group</td></tr>
+            <tr><td>GET /api/daily</td><td>Daily cost time-series</td></tr>
+            <tr><td>GET /costs/summary</td><td>Top-5 services + resource groups</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Infrastructure Mutation</div>
+        <table class="data-table" style="margin-bottom:20px;">
+          <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>DELETE /api/resource</td><td>Delete single Azure resource by ARM ID — streams log output</td></tr>
+            <tr><td>DELETE /api/resource-group</td><td>Delete entire resource group — streams progress</td></tr>
+            <tr><td>DELETE /api/resource-groups/all</td><td>Bulk delete multiple RGs sequentially</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Cache &amp; Health</div>
+        <table class="data-table">
+          <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>GET /health</td><td>Liveness check — returns storage config</td></tr>
+            <tr><td>GET /api/status</td><td>Cache age, row count, date range</td></tr>
+            <tr><td>POST /api/reload</td><td>Force-clear cache and reload from blob</td></tr>
+            <tr><td>GET /api/debug</td><td>Raw blob list + DataFrame diagnostics</td></tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:14px; font-size:0.8rem; color:#6b7280;">
+          All cost endpoints accept <code style="color:#50e6ff;">?period=day|week|month</code> and <code style="color:#50e6ff;">?rg=&lt;name&gt;</code> query params. Day-period falls back to the latest available date if today has no data yet.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 8 — CI/CD Pipeline
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s8">
+    <div class="slide-title">CI/CD — Three GitHub Actions Workflows</div>
+    <div class="slide-subtitle">OIDC authentication · No stored secrets in the repository</div>
+
+    <div class="diagram-wrap" style="margin-bottom:20px;">
+      <svg viewBox="0 0 860 260" width="860" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+        <defs>
+          <marker id="ac" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#50e6ff"/>
+          </marker>
+        </defs>
+
+        <!-- ── Triggers ── -->
+        <rect x="10" y="50" width="120" height="48" rx="8" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <text x="70" y="70" text-anchor="middle" font-size="10" font-weight="600" fill="#f0f4ff">Pull Request</text>
+        <text x="70" y="85" text-anchor="middle" font-size="9" fill="#6b7280">→ main</text>
+        <text x="70" y="97" text-anchor="middle" font-size="9" fill="#6b7280">any file</text>
+
+        <rect x="10" y="115" width="120" height="48" rx="8" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <text x="70" y="135" text-anchor="middle" font-size="10" font-weight="600" fill="#f0f4ff">Push to main</text>
+        <text x="70" y="150" text-anchor="middle" font-size="9" fill="#6b7280">any file</text>
+
+        <rect x="10" y="180" width="120" height="48" rx="8" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+        <text x="70" y="200" text-anchor="middle" font-size="10" font-weight="600" fill="#f0f4ff">Push to main</text>
+        <text x="70" y="215" text-anchor="middle" font-size="9" fill="#6b7280">terraform/**</text>
+        <text x="70" y="227" text-anchor="middle" font-size="8" fill="#6b7280">or manual</text>
+
+        <!-- Workflow labels -->
+        <text x="175" y="30" font-size="11" font-weight="700" fill="#4ade80">ci.yml</text>
+        <text x="390" y="30" font-size="11" font-weight="700" fill="#50e6ff">cd.yml</text>
+        <text x="620" y="30" font-size="11" font-weight="700" fill="#a78bfa">terraform.yml</text>
+
+        <!-- CI workflow -->
+        <rect x="150" y="38" width="195" height="75" rx="10" fill="rgba(74,222,128,0.08)" stroke="rgba(74,222,128,0.4)" stroke-width="1.5"/>
+        <text x="247" y="58" text-anchor="middle" font-size="10" fill="#4ade80">ruff check + ruff format</text>
+        <text x="247" y="73" text-anchor="middle" font-size="10" fill="#4ade80">terraform fmt + validate</text>
+        <text x="247" y="88" text-anchor="middle" font-size="10" fill="#4ade80">docker build (no push)</text>
+        <text x="247" y="104" text-anchor="middle" font-size="8" fill="#6b7280">fast feedback on PRs</text>
+
+        <!-- CD workflow -->
+        <rect x="360" y="103" width="215" height="90" rx="10" fill="rgba(0,120,212,0.08)" stroke="rgba(80,230,255,0.4)" stroke-width="1.5"/>
+        <text x="467" y="125" text-anchor="middle" font-size="10" fill="#50e6ff">az login (OIDC)</text>
+        <text x="467" y="141" text-anchor="middle" font-size="10" fill="#50e6ff">docker build + push → ACR</text>
+        <text x="467" y="157" text-anchor="middle" font-size="10" fill="#50e6ff">az containerapp update</text>
+        <text x="467" y="174" text-anchor="middle" font-size="10" fill="#50e6ff">tagged: sha + latest</text>
+        <text x="467" y="188" text-anchor="middle" font-size="8" fill="#6b7280">production environment gate</text>
+
+        <!-- Terraform workflow -->
+        <rect x="590" y="168" width="215" height="72" rx="10" fill="rgba(167,139,250,0.08)" stroke="rgba(167,139,250,0.4)" stroke-width="1.5"/>
+        <text x="697" y="190" text-anchor="middle" font-size="10" fill="#a78bfa">terraform plan (PR comment)</text>
+        <text x="697" y="206" text-anchor="middle" font-size="10" fill="#a78bfa">terraform apply (merge)</text>
+        <text x="697" y="222" text-anchor="middle" font-size="10" fill="#a78bfa">remote state in Azure Blob</text>
+        <text x="697" y="234" text-anchor="middle" font-size="8" fill="#6b7280">production environment gate</text>
+
+        <!-- Arrows: triggers → workflows -->
+        <line x1="130" y1="74" x2="148" y2="74" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ac)"/>
+        <line x1="130" y1="139" x2="357" y2="148" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ac)"/>
+        <line x1="130" y1="204" x2="587" y2="210" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ac)"/>
+
+        <!-- Outputs -->
+        <rect x="815" y="60" width="35" height="175" rx="8" fill="rgba(31,41,55,0.6)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+        <text x="832" y="100" text-anchor="middle" font-size="9" fill="#6b7280" transform="rotate(-90,832,100)">Azure Resources Updated</text>
+      </svg>
+    </div>
+
+    <div class="cards cards-3" style="max-width:860px;">
+      <div class="card" style="padding:14px 16px;">
+        <div class="card-title">No Stored Secrets</div>
+        <div class="card-body">GitHub variables hold only non-secret IDs (client_id, tenant_id, subscription_id). OIDC federated credentials eliminate password rotation.</div>
+      </div>
+      <div class="card" style="padding:14px 16px;">
+        <div class="card-title">Production Gate</div>
+        <div class="card-body">CD and Terraform apply require the <code style="color:#50e6ff;">production</code> GitHub environment — enabling manual approval if configured.</div>
+      </div>
+      <div class="card" style="padding:14px 16px;">
+        <div class="card-title">Image Tagging</div>
+        <div class="card-body">Every push creates a new image tagged with both <code style="color:#50e6ff;">github.sha</code> and <code style="color:#50e6ff;">latest</code> — enabling rollback to any commit.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 9 — Tech Stack & Alternatives
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s9">
+    <div class="slide-title">Tech Stack &amp; Alternatives Considered</div>
+    <div class="slide-subtitle">Every choice made intentionally — favouring simplicity over complexity</div>
+
+    <div class="two-col" style="max-width:1000px; gap:32px;">
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Chosen Stack</div>
+        <table class="data-table" style="margin-bottom:20px;">
+          <thead><tr><th>Layer</th><th>Choice</th><th>Reason</th></tr></thead>
+          <tbody>
+            <tr><td>Hosting</td><td style="color:#4ade80;">Azure Container Apps</td><td>Scale to zero, no cluster management, native container support</td></tr>
+            <tr><td>Storage</td><td style="color:#4ade80;">Blob + pandas in-memory</td><td>Daily CSVs ≤ tens of MB — no extra services needed</td></tr>
+            <tr><td>Auth</td><td style="color:#4ade80;">Managed Identity</td><td>Zero secrets, no rotation lifecycle</td></tr>
+            <tr><td>IaC</td><td style="color:#4ade80;">Terraform (azurerm)</td><td>Remote state, mature module ecosystem, CI validation</td></tr>
+            <tr><td>Export format</td><td style="color:#4ade80;">CSV</td><td>Parquet not supported at subscription scope by provider</td></tr>
+            <tr><td>Web framework</td><td style="color:#4ade80;">FastAPI + Jinja2</td><td>Async-native, auto OpenAPI docs, minimal overhead</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Rejected Alternatives</div>
+        <table class="data-table">
+          <thead><tr><th>Alternative</th><th>Why rejected</th></tr></thead>
+          <tbody>
+            <tr><td>Azure App Service</td><td>Always-on minimum instance — higher baseline cost</td></tr>
+            <tr><td>AKS</td><td>Massive ops overhead for a single-container app</td></tr>
+            <tr><td>Azure Functions</td><td>Cold-start too slow for pandas + pyarrow (~500 MB image)</td></tr>
+            <tr><td>Synapse / SQL</td><td>Overkill for append-only daily files</td></tr>
+            <tr><td>Cost Mgmt API</td><td>Rate-limited, paginated, 1-month-at-a-time limit</td></tr>
+            <tr><td>Bicep / ARM</td><td>Less portable; Terraform ecosystem more mature</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">Python Dependencies</div>
+        <div class="code-block">fastapi
+uvicorn[standard]
+jinja2
+pandas
+pyarrow
+azure-storage-blob
+azure-identity
+azure-mgmt-resource
+azure-mgmt-compute
+httpx</div>
+
+        <div style="margin-top:20px; font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Environment Variables</div>
+        <table class="data-table">
+          <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>STORAGE_ACCOUNT_NAME</td><td><em style="color:#6b7280;">required</em></td><td>Storage holding exports</td></tr>
+            <tr><td>STORAGE_CONTAINER_NAME</td><td>cost-exports</td><td>Blob container name</td></tr>
+            <tr><td>AZURE_CLIENT_ID</td><td>—</td><td>MI client ID</td></tr>
+            <tr><td>AZURE_SUBSCRIPTION_ID</td><td>—</td><td>Azure subscription</td></tr>
+            <tr><td>CACHE_TTL_SECONDS</td><td>3600</td><td>Cost data cache TTL</td></tr>
+            <tr><td>LIVE_CACHE_TTL_SECONDS</td><td>900</td><td>Live data cache TTL</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 10 — Summary / Deploy
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s10">
+    <div class="slide-title">Deploy &amp; Start Saving</div>
+    <div class="slide-subtitle">From zero to live cost dashboard in three commands</div>
+
+    <div class="two-col" style="max-width:960px; gap:40px; align-items:flex-start;">
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px;">1. Bootstrap Terraform state backend</div>
+        <div class="code-block">bash scripts/bootstrap-tfstate.sh</div>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px; margin-top:16px;">2. Provision infrastructure</div>
+        <div class="code-block">cd terraform
+terraform init
+terraform apply \
+  -var="container_image=placeholder"</div>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:10px; margin-top:16px;">3. Push code → CI/CD does the rest</div>
+        <div class="code-block">git push origin main
+# → CI validates
+# → CD builds + pushes image to ACR
+# → deploys to Container App</div>
+
+        <div style="margin-top:16px; font-size:0.8rem; color:#6b7280; line-height:1.6;">
+          Cost Management will start exporting on its daily schedule. Force an early check with <code style="color:#50e6ff;">POST /api/reload</code>.
+        </div>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">Key Terraform Outputs</div>
+        <table class="data-table" style="margin-bottom:20px;">
+          <thead><tr><th>Output</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td>container_app_url</td><td>Public HTTPS URL of the dashboard</td></tr>
+            <tr><td>acr_login_server</td><td>Tag images for push</td></tr>
+            <tr><td>managed_identity_client_id</td><td>Set as AZURE_CLIENT_ID in app</td></tr>
+            <tr><td>storage_account_name</td><td>Configure Cost Management export target</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">Summary</div>
+        <ul class="flow-list">
+          <li><span class="step-num">✓</span><span>Fully serverless — <strong style="color:#4ade80;">scale to zero</strong>, pay for zero when idle</span></li>
+          <li><span class="step-num">✓</span><span>No secrets anywhere — <strong style="color:#4ade80;">Managed Identity</strong> end-to-end</span></li>
+          <li><span class="step-num">✓</span><span>All infrastructure as code — <strong style="color:#4ade80;">Terraform reproducible</strong></span></li>
+          <li><span class="step-num">✓</span><span>Automated CI/CD — <strong style="color:#4ade80;">OIDC, no credential rotation</strong></span></li>
+          <li><span class="step-num">✓</span><span>Three dashboards — Manager · Technician · Live Resources</span></li>
+          <li><span class="step-num">✓</span><span>Delete resources directly from the UI with streaming output</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<!-- ── Navigation ── -->
+<div id="nav">
+  <button id="prevBtn" onclick="go(-1)" disabled>&#8592;</button>
+  <div id="dots"></div>
+  <span id="counter">1 / 10</span>
+  <button id="nextBtn" onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let cur = 0;
+
+  const dotsEl = document.getElementById('dots');
+  const counterEl = document.getElementById('counter');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+
+  // Build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => show(i);
+    dotsEl.appendChild(d);
+  });
+
+  function show(n) {
+    const dots = dotsEl.querySelectorAll('.dot');
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur < n ? cur : n + 1]?.classList.remove('prev'), 420);
+    dots[cur].classList.remove('on');
+    cur = n;
+    slides[cur].classList.add('active');
+    slides[cur].classList.remove('prev');
+    dots[cur].classList.add('on');
+    counterEl.textContent = `${cur + 1} / ${total}`;
+    prevBtn.disabled = cur === 0;
+    nextBtn.disabled = cur === total - 1;
+  }
+
+  function go(dir) {
+    const n = cur + dir;
+    if (n >= 0 && n < total) show(n);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                     { e.preventDefault(); go(-1); }
+    if (e.key === 'Home')  show(0);
+    if (e.key === 'End')   show(total - 1);
+  });
+</script>
+
+</body>
+</html>
