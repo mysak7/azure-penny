@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from config import AZURE_SUBSCRIPTION_ID, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
-from live_resources import _get_live_data, _live_cache, _live_lock
+from live_resources import _get_live_data, _live_cache, _live_lock, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
 # ---------------------------------------------------------------------------
@@ -555,15 +555,19 @@ async def api_resource_groups(period: str = "week", rg: str = "") -> JSONRespons
 async def api_resource_groups_list() -> JSONResponse:
     try:
         df = await get_cached_dataframe()
-        if df.empty or "C_NAME" not in df.columns or "C_COST" not in df.columns:
-            return JSONResponse({"resource_groups": []})
-        by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum().sort_values(ascending=False)
-        rgs = [
-            {"name": str(k), "total_cost": round(float(v), 2)}
-            for k, v in by_rg.items()
-            if v > 0 and str(k).strip()
-        ]
-        return JSONResponse({"resource_groups": rgs})
+        if not df.empty and "C_NAME" in df.columns and "C_COST" in df.columns:
+            by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum().sort_values(ascending=False)
+            rgs = [
+                {"name": str(k), "total_cost": round(float(v), 2)}
+                for k, v in by_rg.items()
+                if v > 0 and str(k).strip()
+            ]
+            return JSONResponse({"resource_groups": rgs})
+
+        # No cost export data yet — fall back to ARM resource group list
+        names = await asyncio.get_event_loop().run_in_executor(None, list_resource_groups)
+        rgs = [{"name": n, "total_cost": None} for n in sorted(names) if n.strip()]
+        return JSONResponse({"resource_groups": rgs, "source": "arm"})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
