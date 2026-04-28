@@ -54,6 +54,8 @@ tfplan
 .dockerignore
 
 # ── OS / editor ───────────────────────────────────────────────────────────────
+~$*
+~*
 .DS_Store
 Thumbs.db
 .idea/
