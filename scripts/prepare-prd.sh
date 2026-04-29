@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 # One-time: creates Terraform remote state storage for the prd environment.
-# Values must match scripts/init-prd.sh.
+# Values must match scripts/init-prd.sh and the backend-config in terraform.yml.
 set -euo pipefail
 
+TFSTATE_RG="azure-penny-tfstate-rg"
+TFSTATE_SA="azurepennytf3759"
+TFSTATE_CONTAINER="tfstate"
+LOCATION="eastus"
+
 az group create \
-    --name rg-prd-terraform-tfstate \
-    --location eastus
+    --name "$TFSTATE_RG" \
+    --location "$LOCATION" \
+    --output none
 
 az storage account create \
-    --name stprdterraformtfstate \
-    --resource-group rg-prd-terraform-tfstate \
-    --location eastus \
-    --sku Standard_LRS
+    --name "$TFSTATE_SA" \
+    --resource-group "$TFSTATE_RG" \
+    --location "$LOCATION" \
+    --sku Standard_LRS \
+    --kind StorageV2 \
+    --min-tls-version TLS1_2 \
+    --allow-blob-public-access false \
+    --output none
 
 az storage container create \
-    --name tfstate-penny \
-    --account-name stprdterraformtfstate \
-    --auth-mode login
+    --name "$TFSTATE_CONTAINER" \
+    --account-name "$TFSTATE_SA" \
+    --auth-mode login \
+    --output none
+
+echo "Done. State backend: ${TFSTATE_SA}/${TFSTATE_CONTAINER}"
