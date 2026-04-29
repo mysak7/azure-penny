@@ -1,0 +1,11 @@
+subscription_id       = ""
+environment           = "dev"
+location              = "swedencentral"
+location_short        = "sc"
+budget_monthly_amount = 20
+container_image       = "crdevscpenny.azurecr.io/penny:latest"
+tags = {
+  project     = "penny"
+  managed_by  = "terraform"
+  environment = "dev"
+}

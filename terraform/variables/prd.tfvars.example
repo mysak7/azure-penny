@@ -1,0 +1,11 @@
+subscription_id       = ""
+environment           = "prd"
+location              = "eastus"
+location_short        = "eus"
+budget_monthly_amount = 100
+container_image       = "crprdeusspenny.azurecr.io/penny:latest"
+tags = {
+  project     = "penny"
+  managed_by  = "terraform"
+  environment = "prd"
+}
