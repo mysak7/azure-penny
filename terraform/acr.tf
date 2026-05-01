@@ -14,3 +14,10 @@ resource "azurerm_role_assignment" "acr_pull" {
   role_definition_name = "AcrPull"
   principal_id         = azurerm_user_assigned_identity.this.principal_id
 }
+
+# Allow the GitHub Actions OIDC service principal to push images
+resource "azurerm_role_assignment" "acr_push_cicd" {
+  scope                = azurerm_container_registry.this.id
+  role_definition_name = "AcrPush"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
