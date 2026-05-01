@@ -65,18 +65,6 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Configure ACR registry with managed identity
-        run: |
-          IDENTITY_ID=$(az containerapp show \
-            --name "${{ vars.CONTAINER_APP_NAME }}" \
-            --resource-group "${{ vars.RESOURCE_GROUP_NAME }}" \
-            --query "identity.userAssignedIdentities | keys(@) | [0]" -o tsv)
-          az containerapp registry set \
-            --name "${{ vars.CONTAINER_APP_NAME }}" \
-            --resource-group "${{ vars.RESOURCE_GROUP_NAME }}" \
-            --server "${{ vars.ACR_LOGIN_SERVER }}" \
-            --identity "$IDENTITY_ID"
-
       - name: Update Container App image
         run: |
           az containerapp update \
