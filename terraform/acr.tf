@@ -2,7 +2,7 @@ resource "azurerm_container_registry" "this" {
   name                = "cr${var.environment}${var.location_short}penny"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
-  sku                 = "Standard"
+  sku                 = "Basic"
   admin_enabled       = false
 
   tags = var.tags
