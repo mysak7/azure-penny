@@ -68,6 +68,24 @@ resource "azurerm_container_app" "this" {
         name  = "LIVE_CACHE_TTL_SECONDS"
         value = "900"
       }
+
+      startup_probe {
+        transport               = "HTTP"
+        path                    = "/health"
+        port                    = 8000
+        interval_seconds        = 5
+        timeout                 = 3
+        failure_count_threshold = 30 # allow up to 150 s cold-start
+      }
+
+      liveness_probe {
+        transport               = "HTTP"
+        path                    = "/health"
+        port                    = 8000
+        interval_seconds        = 30
+        timeout                 = 5
+        failure_count_threshold = 3
+      }
     }
   }
 
@@ -79,6 +97,7 @@ resource "azurerm_container_app" "this" {
   ingress {
     external_enabled = true
     target_port      = 8000
+    transport        = "http" # force HTTP/1.1 — avoids HTTP/2 framing issues with streaming responses
 
     traffic_weight {
       percentage      = 100
