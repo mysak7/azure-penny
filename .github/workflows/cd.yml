@@ -39,11 +39,16 @@ jobs:
 
       - name: Login to ACR
         run: |
-          az acr get-login-password --name ${{ vars.ACR_NAME }} \
-            | docker login \
-                --username 00000000-0000-0000-0000-000000000000 \
-                --password-stdin \
-                ${{ vars.ACR_LOGIN_SERVER }}
+          ACCESS_TOKEN=$(az account get-access-token \
+            --resource https://management.azure.com \
+            --query accessToken -o tsv)
+          REFRESH_TOKEN=$(curl -sSf -X POST \
+            "https://${{ vars.ACR_LOGIN_SERVER }}/oauth2/exchange" \
+            -d "grant_type=access_token&service=${{ vars.ACR_LOGIN_SERVER }}&tenant=${{ vars.AZURE_TENANT_ID }}&access_token=${ACCESS_TOKEN}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['refresh_token'])")
+          echo "$REFRESH_TOKEN" | docker login "${{ vars.ACR_LOGIN_SERVER }}" \
+            --username "00000000-0000-0000-0000-000000000000" \
+            --password-stdin
 
       - name: Build and push
         uses: docker/build-push-action@v5
