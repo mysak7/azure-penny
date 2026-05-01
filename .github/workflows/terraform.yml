@@ -70,6 +70,20 @@ jobs:
             -backend-config="key=azure-penny.tfstate" \
             -backend-config="use_azuread_auth=true"
 
+      - name: Write prd.tfvars
+        run: |
+          cat > variables/prd.tfvars <<'EOF'
+          environment           = "prd"
+          location              = "eastus"
+          location_short        = "eus"
+          budget_monthly_amount = 100
+          tags = {
+            project     = "penny"
+            managed_by  = "terraform"
+            environment = "prd"
+          }
+          EOF
+
       - name: Terraform Plan
         id: plan
         run: |
