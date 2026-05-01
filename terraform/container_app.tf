@@ -30,7 +30,7 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 1
 
     http_scale_rule {
@@ -69,19 +69,11 @@ resource "azurerm_container_app" "this" {
         value = "900"
       }
 
-      startup_probe {
-        transport               = "HTTP"
-        path                    = "/health"
-        port                    = 8000
-        interval_seconds        = 5
-        timeout                 = 3
-        failure_count_threshold = 30 # allow up to 150 s cold-start
-      }
-
       liveness_probe {
         transport               = "HTTP"
         path                    = "/health"
         port                    = 8000
+        initial_delay           = 10
         interval_seconds        = 30
         timeout                 = 5
         failure_count_threshold = 3
