@@ -3,7 +3,8 @@ resource "azurerm_log_analytics_workspace" "this" {
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   sku                 = "PerGB2018"
-  retention_in_days   = 30
+  retention_in_days   = 31
+  daily_quota_gb      = 1
   tags                = var.tags
 }
 
