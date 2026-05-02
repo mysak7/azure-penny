@@ -90,27 +90,6 @@ resource "azurerm_container_app" "this" {
     }
   }
 
-  auth_settings_v2 {
-    auth_enabled           = true
-    require_authentication = true
-    unauthenticated_action = "RedirectToLoginPage"
-    default_provider       = "azureactivedirectory"
-
-    active_directory_v2 {
-      client_id                  = azuread_application.penny.client_id
-      tenant_auth_endpoint       = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
-      client_secret_setting_name = "auth-client-secret"
-      allowed_audiences = [
-        "api://${azuread_application.penny.client_id}",
-        azuread_application.penny.client_id,
-      ]
-    }
-
-    login {
-      token_store_enabled = true
-    }
-  }
-
   tags = var.tags
 
   depends_on = [

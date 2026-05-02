@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/azuread"
       version = "~> 3.0"
     }
+    azapi = {
+      source  = "azure/azapi"
+      version = "~> 2.0"
+    }
     random = {
       source  = "hashicorp/random"
       version = "3.8.1"
@@ -17,6 +21,7 @@ terraform {
 }
 
 provider "azuread" {}
+provider "azapi" {}
 
 provider "azurerm" {
   features {}

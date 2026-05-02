@@ -41,3 +41,43 @@ resource "azuread_app_role_assignment" "owner" {
   principal_object_id = azuread_invitation.owner.user_id
   resource_object_id  = azuread_service_principal.penny.object_id
 }
+
+# auth_settings_v2 is not supported on azurerm_container_app — configure Easy Auth via ARM API directly.
+resource "azapi_resource" "penny_auth" {
+  type      = "Microsoft.App/containerApps/authConfigs@2024-03-01"
+  name      = "current"
+  parent_id = azurerm_container_app.this.id
+
+  body = {
+    properties = {
+      platform = {
+        enabled = true
+      }
+      globalValidation = {
+        redirectToProvider          = "azureactivedirectory"
+        unauthenticatedClientAction = "RedirectToLoginPage"
+      }
+      identityProviders = {
+        azureActiveDirectory = {
+          enabled = true
+          registration = {
+            clientId                = azuread_application.penny.client_id
+            clientSecretSettingName = "auth-client-secret"
+            openIdIssuer            = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
+          }
+          validation = {
+            allowedAudiences = [
+              "api://${azuread_application.penny.client_id}",
+              azuread_application.penny.client_id,
+            ]
+          }
+        }
+      }
+      login = {
+        tokenStore = {
+          enabled = true
+        }
+      }
+    }
+  }
+}
