@@ -1,0 +1,173 @@
+name: Bootstrap Easy Auth (one-time)
+
+# Run once after granting the CI/CD SP these Graph API permissions:
+#   Application.ReadWrite.OwnedBy  (18a4783c-866b-4cc7-a460-3d5e5662c884)
+#   AppRoleAssignment.ReadWrite.All (06b708a9-e830-4db3-a914-8e69da51d44f)
+#   User.Invite.All                (09850681-111b-4a89-9bed-3f2cae46d706)
+#
+# Grant them with:
+#   SP_APP_ID=$(az ad sp show --id 79b8035e-2830-4acc-b30f-03b721eae5da --query appId -o tsv)
+#   az ad app permission add --id $SP_APP_ID \
+#     --api 00000003-0000-0000-c000-000000000000 \
+#     --api-permissions 18a4783c-866b-4cc7-a460-3d5e5662c884=Role \
+#                       06b708a9-e830-4db3-a914-8e69da51d44f=Role \
+#                       09850681-111b-4a89-9bed-3f2cae46d706=Role
+#   az ad app permission admin-consent --id $SP_APP_ID
+#
+# After this workflow succeeds, copy its output into GitHub:
+#   Settings → Variables → AUTH_APP_CLIENT_ID
+#   Settings → Secrets  → AUTH_CLIENT_SECRET
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment (prd)"
+        required: true
+        default: prd
+      location_short:
+        description: "Location short (eus)"
+        required: true
+        default: eus
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  bootstrap:
+    name: Create AAD app, SP, secret, invite guest
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Container App FQDN
+        id: fqdn
+        env:
+          ENV: ${{ inputs.environment }}
+          LOC: ${{ inputs.location_short }}
+        run: |
+          DOMAIN=$(az containerapp env show \
+            --name "cae-${ENV}-${LOC}-penny" \
+            --resource-group "rg-${ENV}-${LOC}-penny" \
+            --query defaultDomain -o tsv)
+          echo "fqdn=ca-${ENV}-${LOC}-penny.${DOMAIN}" >> "$GITHUB_OUTPUT"
+
+      - name: Create app registration
+        id: app
+        env:
+          ENV: ${{ inputs.environment }}
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
+        run: |
+          APP_NAME="penny-${ENV}"
+          # Idempotent: reuse if already exists
+          EXISTING=$(az ad app list --filter "displayName eq '${APP_NAME}'" --query "[0].appId" -o tsv)
+          if [ -n "${EXISTING}" ] && [ "${EXISTING}" != "null" ]; then
+            echo "Reusing existing app: ${EXISTING}"
+            APP_ID="${EXISTING}"
+          else
+            APP_ID=$(az ad app create \
+              --display-name "${APP_NAME}" \
+              --sign-in-audience AzureADMyOrg \
+              --web-redirect-uris "https://${FQDN}/.auth/login/aad/callback" \
+              --enable-id-token-issuance true \
+              --query appId -o tsv)
+            echo "Created app: ${APP_ID}"
+          fi
+          echo "app-id=${APP_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Create service principal
+        id: sp
+        env:
+          APP_ID: ${{ steps.app.outputs.app-id }}
+        run: |
+          EXISTING=$(az ad sp list --filter "appId eq '${APP_ID}'" --query "[0].id" -o tsv)
+          if [ -n "${EXISTING}" ] && [ "${EXISTING}" != "null" ]; then
+            SP_OID="${EXISTING}"
+          else
+            SP_OID=$(az ad sp create --id "${APP_ID}" --query id -o tsv)
+            az ad sp update --id "${SP_OID}" --set appRoleAssignmentRequired=true
+          fi
+          echo "sp-oid=${SP_OID}" >> "$GITHUB_OUTPUT"
+
+      - name: Create client secret
+        id: secret
+        env:
+          APP_ID: ${{ steps.app.outputs.app-id }}
+        run: |
+          SECRET_VALUE=$(az ad app credential reset \
+            --id "${APP_ID}" \
+            --display-name "easy-auth" \
+            --years 2 \
+            --query password -o tsv)
+          echo "::add-mask::${SECRET_VALUE}"
+          echo "secret=${SECRET_VALUE}" >> "$GITHUB_OUTPUT"
+
+      - name: Invite / resolve guest user
+        id: user
+        env:
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
+          OWNER_EMAIL: michal.burdik@gmail.com
+        run: |
+          USER_OID=$(az ad user list --filter "mail eq '${OWNER_EMAIL}'" --query "[0].id" -o tsv)
+          if [ -z "${USER_OID}" ] || [ "${USER_OID}" = "null" ]; then
+            USER_OID=$(az rest \
+              --method POST \
+              --uri "https://graph.microsoft.com/v1.0/invitations" \
+              --headers "Content-Type=application/json" \
+              --body "{
+                \"invitedUserEmailAddress\": \"${OWNER_EMAIL}\",
+                \"inviteRedirectUrl\": \"https://${FQDN}\",
+                \"sendInvitationMessage\": true
+              }" \
+              --query invitedUser.id -o tsv)
+            echo "Invited ${OWNER_EMAIL}: ${USER_OID}"
+          else
+            echo "User already exists: ${USER_OID}"
+          fi
+          echo "user-oid=${USER_OID}" >> "$GITHUB_OUTPUT"
+
+      - name: Assign app role to guest
+        env:
+          SP_OID: ${{ steps.sp.outputs.sp-oid }}
+          USER_OID: ${{ steps.user.outputs.user-oid }}
+        run: |
+          EXISTING=$(az rest \
+            --method GET \
+            --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${SP_OID}/appRoleAssignedTo" \
+            --query "value[?principalId=='${USER_OID}'].id | [0]" -o tsv)
+          if [ -n "${EXISTING}" ] && [ "${EXISTING}" != "null" ]; then
+            echo "Role already assigned"
+          else
+            az rest \
+              --method POST \
+              --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${SP_OID}/appRoleAssignedTo" \
+              --headers "Content-Type=application/json" \
+              --body "{
+                \"principalId\": \"${USER_OID}\",
+                \"resourceId\": \"${SP_OID}\",
+                \"appRoleId\": \"00000000-0000-0000-0000-000000000000\"
+              }"
+          fi
+
+      - name: Print GitHub Actions settings
+        env:
+          APP_ID: ${{ steps.app.outputs.app-id }}
+          SECRET: ${{ steps.secret.outputs.secret }}
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Add these to GitHub Actions settings:"
+          echo ""
+          echo "  Variable  AUTH_APP_CLIENT_ID = ${APP_ID}"
+          echo "  Secret    AUTH_CLIENT_SECRET = (see masked value above)"
+          echo ""
+          echo "Then re-run the Terraform pipeline — auth will auto-enable."
+          echo "=========================================="
