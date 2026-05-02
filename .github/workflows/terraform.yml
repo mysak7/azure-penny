@@ -16,6 +16,10 @@ on:
         type: choice
         options: [plan, apply]
 
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write  # Required for OIDC
