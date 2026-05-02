@@ -29,12 +29,9 @@ resource "azurerm_container_app" "this" {
     identity_ids = [azurerm_user_assigned_identity.this.id]
   }
 
-  dynamic "secret" {
-    for_each = var.enable_easy_auth ? [1] : []
-    content {
-      name  = "auth-client-secret"
-      value = var.auth_client_secret
-    }
+  secret {
+    name  = "auth-client-secret"
+    value = azuread_application_password.penny.value
   }
 
   template {

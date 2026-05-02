@@ -49,21 +49,8 @@ variable "cicd_principal_object_id" {
   default     = "79b8035e-2830-4acc-b30f-03b721eae5da"
 }
 
-variable "enable_easy_auth" {
-  description = "Enable Entra ID Easy Auth on the Container App. Requires app registration and guest user to be pre-created via scripts/bootstrap-auth.sh."
-  type        = bool
-  default     = false
-}
-
-variable "auth_app_client_id" {
-  description = "Client ID of the pre-created AAD app registration for Easy Auth. Run scripts/bootstrap-auth.sh to obtain."
+variable "owner_email" {
+  description = "Email address of the user granted access via Easy Auth. Invited as a guest if not already in the tenant."
   type        = string
-  default     = ""
-}
-
-variable "auth_client_secret" {
-  description = "Client secret for the Easy Auth app registration. Run scripts/bootstrap-auth.sh to obtain."
-  type        = string
-  sensitive   = true
-  default     = ""
+  default     = "michal.burdik@gmail.com"
 }
