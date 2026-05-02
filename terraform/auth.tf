@@ -1,8 +1,9 @@
 data "azuread_client_config" "current" {}
 
 locals {
-  # Stable app-level FQDN (not revision-specific)
-  container_app_fqdn = "${azurerm_container_app.this.name}.${azurerm_container_app_environment.this.default_domain}"
+  # Constructed from variables to avoid a cycle:
+  # azuread_application → container_app_fqdn → container_app → azuread_application_password → azuread_application
+  container_app_fqdn = "ca-${var.environment}-${var.location_short}-penny.${azurerm_container_app_environment.this.default_domain}"
 }
 
 resource "azuread_application" "penny" {
