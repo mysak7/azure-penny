@@ -33,20 +33,17 @@ resource "azuread_application_password" "penny" {
   end_date       = "2028-01-01T00:00:00Z"
 }
 
-# Invite the owner as a guest if they are not already in the tenant.
-# If the user already exists the provider imports them without sending a new invite.
-resource "azuread_invitation" "owner" {
-  user_email_address = var.owner_email
-  redirect_url       = "https://${local.container_app_fqdn}"
-
-  message {
-    language = "en-US"
+# The guest user was created in a prior run. Stop managing the invitation in
+# Terraform (destroy=false keeps the actual user in the tenant).
+removed {
+  from = azuread_invitation.owner
+  lifecycle {
+    destroy = false
   }
 }
 
 data "azuread_user" "owner" {
-  mail       = var.owner_email
-  depends_on = [azuread_invitation.owner]
+  mail = var.owner_email
 }
 
 resource "azuread_app_role_assignment" "owner" {
@@ -87,7 +84,7 @@ resource "azapi_resource" "penny_auth" {
       }
       login = {
         tokenStore = {
-          enabled = true
+          enabled = false
         }
       }
     }
