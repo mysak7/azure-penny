@@ -383,7 +383,7 @@
         <rect x="240" y="290" width="155" height="80" rx="10" fill="rgba(0,133,117,0.12)" stroke="rgba(0,133,117,0.45)" stroke-width="1.5"/>
         <text x="317" y="326" text-anchor="middle" font-size="22" fill="#4ade80">⬡</text>
         <text x="317" y="347" text-anchor="middle" font-size="10" font-weight="700" fill="#4ade80">Container Registry</text>
-        <text x="317" y="361" text-anchor="middle" font-size="9" fill="#6b7280">ACR (Standard)</text>
+        <text x="317" y="361" text-anchor="middle" font-size="9" fill="#6b7280">ACR (Basic)</text>
 
         <!-- ── Container App box ── -->
         <rect x="475" y="100" width="220" height="240" rx="14" fill="rgba(0,120,212,0.08)" stroke="rgba(0,120,212,0.5)" stroke-width="2"/>
@@ -478,10 +478,11 @@
           <tbody>
             <tr><td>resource_group.tf</td><td>Isolates all azure-penny resources</td></tr>
             <tr><td>storage.tf</td><td>Storage Account + <code>cost-exports</code> container (BlobStorage, LRS, TLS 1.2, versioning + 7-day soft delete)</td></tr>
-            <tr><td>acr.tf</td><td>Azure Container Registry (Standard, admin disabled) + AcrPull role</td></tr>
+            <tr><td>acr.tf</td><td>Azure Container Registry (Basic, admin disabled) + AcrPull role (MI) + AcrPush role (GitHub OIDC SP)</td></tr>
             <tr><td>identity.tf</td><td>User-Assigned Managed Identity + Storage Blob Data Reader + Contributor roles</td></tr>
-            <tr><td>container_app.tf</td><td>Log Analytics workspace · ACA Environment · Container App (min 0, max 1)</td></tr>
+            <tr><td>container_app.tf</td><td>Log Analytics workspace (31-day retention, 1 GB/day cap) · ACA Environment · Container App (min 0, max 1)</td></tr>
             <tr><td>cost_export.tf</td><td>Scheduled daily MonthToDate CSV export via Cost Management</td></tr>
+            <tr><td>budget_alert.tf</td><td>Monthly subscription budget + action group — email alerts at 20 / 40 / 60 / 80 / 100% thresholds</td></tr>
           </tbody>
         </table>
       </div>
@@ -601,13 +602,20 @@ terraform {
           <li><span class="step-num">✓</span><span><strong style="color:#4ade80;">Managed Identity</strong> removes the secret-management lifecycle at zero extra cost. Works identically in ACA, local dev, and CI/CD.</span></li>
         </ul>
 
-        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">RBAC Assignments</div>
-        <table class="data-table">
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:12px;">RBAC Assignments — Managed Identity</div>
+        <table class="data-table" style="margin-bottom:14px;">
           <thead><tr><th>Role</th><th>Scope</th><th>Used for</th></tr></thead>
           <tbody>
             <tr><td>Storage Blob Data Reader</td><td>Storage Account</td><td>Read cost-export CSVs</td></tr>
-            <tr><td>AcrPull</td><td>Container Registry</td><td>Pull Docker image</td></tr>
+            <tr><td>AcrPull</td><td>Container Registry</td><td>Pull Docker image at runtime</td></tr>
             <tr><td>Contributor</td><td>Subscription</td><td>List/delete resources (Live tab)</td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:0.85rem; font-weight:600; color:var(--accent); margin-bottom:8px;">RBAC Assignments — GitHub Actions (OIDC SP)</div>
+        <table class="data-table">
+          <thead><tr><th>Role</th><th>Scope</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td>AcrPush</td><td>Container Registry</td><td>Push Docker images from CI/CD pipeline</td></tr>
           </tbody>
         </table>
       </div>
@@ -874,6 +882,7 @@ terraform {
             <tr><td>Storage</td><td style="color:#4ade80;">Blob + pandas in-memory</td><td>Daily CSVs ≤ tens of MB — no extra services needed</td></tr>
             <tr><td>Auth</td><td style="color:#4ade80;">Managed Identity</td><td>Zero secrets, no rotation lifecycle</td></tr>
             <tr><td>IaC</td><td style="color:#4ade80;">Terraform (azurerm)</td><td>Remote state, mature module ecosystem, CI validation</td></tr>
+            <tr><td>ACR SKU</td><td style="color:#4ade80;">Basic</td><td>Sufficient throughput for single-image CI/CD; saves cost vs Standard during active development</td></tr>
             <tr><td>Export format</td><td style="color:#4ade80;">CSV</td><td>Parquet not supported at subscription scope by provider</td></tr>
             <tr><td>Web framework</td><td style="color:#4ade80;">FastAPI + Jinja2</td><td>Async-native, auto OpenAPI docs, minimal overhead</td></tr>
           </tbody>
