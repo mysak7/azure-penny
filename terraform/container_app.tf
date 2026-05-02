@@ -29,9 +29,12 @@ resource "azurerm_container_app" "this" {
     identity_ids = [azurerm_user_assigned_identity.this.id]
   }
 
-  secret {
-    name  = "auth-client-secret"
-    value = azuread_application_password.penny.value
+  dynamic "secret" {
+    for_each = var.enable_easy_auth ? [1] : []
+    content {
+      name  = "auth-client-secret"
+      value = var.auth_client_secret
+    }
   }
 
   template {
@@ -95,6 +98,5 @@ resource "azurerm_container_app" "this" {
   depends_on = [
     azurerm_role_assignment.storage_blob_reader,
     azurerm_role_assignment.acr_pull,
-    azuread_service_principal.penny,
   ]
 }

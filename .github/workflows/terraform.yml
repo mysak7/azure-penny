@@ -71,8 +71,13 @@ jobs:
             -backend-config="use_azuread_auth=true"
 
       - name: Write prd.tfvars
+        env:
+          AUTH_APP_CLIENT_ID: ${{ vars.AUTH_APP_CLIENT_ID }}
+          AUTH_CLIENT_SECRET: ${{ secrets.AUTH_CLIENT_SECRET }}
         run: |
-          cat > variables/prd.tfvars <<'EOF'
+          ENABLE_AUTH="false"
+          if [ -n "${AUTH_APP_CLIENT_ID}" ]; then ENABLE_AUTH="true"; fi
+          cat > variables/prd.tfvars <<EOF
           environment           = "prd"
           location              = "eastus"
           location_short        = "eus"
@@ -82,6 +87,9 @@ jobs:
             managed_by  = "terraform"
             environment = "prd"
           }
+          enable_easy_auth   = ${ENABLE_AUTH}
+          auth_app_client_id = "${AUTH_APP_CLIENT_ID}"
+          auth_client_secret = "${AUTH_CLIENT_SECRET}"
           EOF
 
       - name: Terraform Plan
