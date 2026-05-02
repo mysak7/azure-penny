@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>azure-penny — Architecture Analysis</title>
+<style>
+  :root {
+    --azure-blue: #0078d4;
+    --azure-dark: #003966;
+    --azure-light: #50e6ff;
+    --azure-teal: #008575;
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1f2937;
+    --text: #f0f4ff;
+    --muted: #8b9ab2;
+    --accent: #50e6ff;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --red: #f87171;
+    --yellow: #facc15;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 44px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateX(60px);
+    overflow: hidden;
+  }
+  .slide.active  { opacity: 1; pointer-events: auto; transform: translateX(0); }
+  .slide.prev    { opacity: 0; transform: translateX(-60px); }
+
+  /* nav */
+  #nav {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 16px; z-index: 100;
+    background: rgba(17,24,39,0.85); backdrop-filter: blur(8px);
+    border: 1px solid rgba(80,230,255,0.15); border-radius: 40px; padding: 10px 20px;
+  }
+  #nav button {
+    background: none; border: 1px solid rgba(80,230,255,0.3); color: var(--accent);
+    border-radius: 50%; width: 36px; height: 36px; font-size: 18px; cursor: pointer;
+    transition: background .2s, border-color .2s; display: flex; align-items: center; justify-content: center;
+  }
+  #nav button:hover { background: rgba(80,230,255,0.12); border-color: var(--accent); }
+  #nav button:disabled { opacity: .3; cursor: default; }
+  #counter { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
+  #dots { display: flex; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(80,230,255,0.2); transition: background .2s, transform .2s; cursor: pointer; }
+  .dot.on { background: var(--accent); transform: scale(1.3); }
+
+  /* typography */
+  .slide-title {
+    font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--azure-blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 12px; text-align: center;
+  }
+  .slide-subtitle { font-size: clamp(0.9rem, 1.5vw, 1.1rem); color: var(--muted); text-align: center; margin-bottom: 32px; }
+
+  .tag {
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .tag-blue   { background: rgba(0,120,212,.25);  color: var(--azure-light); border: 1px solid rgba(0,120,212,.4); }
+  .tag-green  { background: rgba(74,222,128,.15);  color: var(--green);       border: 1px solid rgba(74,222,128,.3); }
+  .tag-orange { background: rgba(251,146,60,.15);  color: var(--orange);      border: 1px solid rgba(251,146,60,.3); }
+  .tag-red    { background: rgba(248,113,113,.15); color: var(--red);         border: 1px solid rgba(248,113,113,.3); }
+  .tag-purple { background: rgba(167,139,250,.15); color: var(--purple);      border: 1px solid rgba(167,139,250,.3); }
+  .tag-yellow { background: rgba(250,204,21,.15);  color: var(--yellow);      border: 1px solid rgba(250,204,21,.3); }
+
+  /* cards */
+  .cards { display: grid; gap: 14px; width: 100%; max-width: 1040px; }
+  .cards-2 { grid-template-columns: 1fr 1fr; }
+  .cards-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cards-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface); border: 1px solid rgba(80,230,255,0.1);
+    border-radius: 12px; padding: 18px;
+    transition: border-color .2s, transform .2s;
+  }
+  .card:hover { border-color: rgba(80,230,255,0.35); transform: translateY(-2px); }
+  .card.green-border  { border-color: rgba(74,222,128,.25); }
+  .card.orange-border { border-color: rgba(251,146,60,.25); }
+  .card.red-border    { border-color: rgba(248,113,113,.25); }
+  .card.purple-border { border-color: rgba(167,139,250,.25); }
+
+  .card-icon  { font-size: 26px; margin-bottom: 8px; }
+  .card-title { font-size: .92rem; font-weight: 600; margin-bottom: 5px; color: var(--text); }
+  .card-body  { font-size: .78rem; color: var(--muted); line-height: 1.55; }
+
+  /* two-col */
+  .two-col { display: flex; gap: 40px; align-items: flex-start; width: 100%; max-width: 1060px; }
+  .col { flex: 1; }
+
+  /* flow list */
+  .flow-list { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+  .flow-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: .84rem; color: var(--muted); line-height: 1.5;
+  }
+  .flow-list li .step-num {
+    flex: 0 0 22px; height: 22px; border-radius: 50%;
+    background: rgba(0,120,212,.35); color: var(--accent);
+    font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .flow-list li .ico { flex: 0 0 20px; font-size: 16px; }
+
+  /* pro/con list */
+  .procon { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .procon li { font-size: .82rem; color: var(--muted); line-height: 1.5; display: flex; gap: 8px; align-items: flex-start; }
+  .procon li .mark { flex: 0 0 16px; font-size: 14px; margin-top: 1px; }
+
+  /* table */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .comp-table th {
+    text-align: left; padding: 9px 12px; color: var(--accent);
+    border-bottom: 1px solid rgba(80,230,255,0.2); font-weight: 600; font-size: .75rem; letter-spacing: .05em; text-transform: uppercase;
+  }
+  .comp-table td { padding: 8px 12px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+  .comp-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .comp-table .best { color: var(--green); font-weight: 600; }
+  .comp-table .warn { color: var(--orange); }
+  .comp-table .bad  { color: var(--red); }
+
+  /* arch diagram */
+  .arch-box {
+    background: var(--surface); border: 1px solid rgba(80,230,255,0.18);
+    border-radius: 10px; padding: 12px 16px; text-align: center; font-size: .78rem; font-weight: 600;
+  }
+  .arch-arrow { text-align: center; color: var(--muted); font-size: 18px; line-height: 1; }
+  .arch-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .arch-flow .arch-box { flex: 0 0 auto; }
+  .arch-flow .arrow { color: var(--muted); font-size: 14px; }
+
+  /* score bar */
+  .score-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); margin-top: 6px; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+  .fill-green  { background: var(--green); }
+  .fill-orange { background: var(--orange); }
+  .fill-red    { background: var(--red); }
+  .fill-blue   { background: var(--azure-blue); }
+
+  /* section label */
+  .section-label {
+    font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--azure-blue); margin-bottom: 6px;
+  }
+
+  /* hero slide bg */
+  .hero-bg {
+    position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+  }
+  .hero-bg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  /* pill */
+  .pill-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .pill {
+    padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 500;
+    background: rgba(31,41,55,1); border: 1px solid rgba(255,255,255,.08); color: var(--muted);
+  }
+
+  /* rating stars */
+  .stars { color: var(--yellow); letter-spacing: -2px; font-size: 14px; }
+  .stars-muted { color: rgba(255,255,255,0.15); letter-spacing: -2px; font-size: 14px; }
+
+  /* numbered badge */
+  .nbadge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0,120,212,0.3); color: var(--accent);
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .rec-row { display: flex; gap: 14px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .rec-row:last-child { border-bottom: none; }
+  .rec-body { font-size: .82rem; }
+  .rec-title { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .rec-desc  { color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══════════════════════════════ SLIDE 1 — TITLE ═══════════════════════════════ -->
+<div class="slide active" id="s1">
+  <div class="hero-bg">
+    <svg viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="glow1" cx="20%" cy="30%" r="50%">
+          <stop offset="0%" stop-color="#0078d4" stop-opacity=".18"/>
+          <stop offset="100%" stop-color="#0078d4" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="glow2" cx="80%" cy="70%" r="45%">
+          <stop offset="0%" stop-color="#50e6ff" stop-opacity=".1"/>
+          <stop offset="100%" stop-color="#50e6ff" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="1200" height="700" fill="url(#glow1)"/>
+      <rect width="1200" height="700" fill="url(#glow2)"/>
+      <circle cx="180" cy="140" r="120" fill="none" stroke="#0078d4" stroke-opacity=".08" stroke-width="1"/>
+      <circle cx="180" cy="140" r="200" fill="none" stroke="#0078d4" stroke-opacity=".05" stroke-width="1"/>
+      <circle cx="1020" cy="560" r="150" fill="none" stroke="#50e6ff" stroke-opacity=".06" stroke-width="1"/>
+      <circle cx="1020" cy="560" r="250" fill="none" stroke="#50e6ff" stroke-opacity=".03" stroke-width="1"/>
+    </svg>
+  </div>
+  <div style="position:relative;text-align:center;max-width:800px;">
+    <div style="font-size:3.5rem;margin-bottom:16px;">🔍</div>
+    <div class="slide-title" style="font-size:clamp(2rem,4vw,3rem);margin-bottom:16px;">azure-penny</div>
+    <div style="font-size:clamp(1rem,2vw,1.4rem);font-weight:600;color:var(--accent);margin-bottom:20px;">Architecture Analysis & Implementation Review</div>
+    <div class="slide-subtitle" style="max-width:560px;margin:0 auto 32px;">A critical evaluation of design decisions, trade-offs, alternative approaches, and prioritised improvement recommendations.</div>
+    <div class="pill-row" style="justify-content:center;">
+      <span class="pill">Terraform IaC</span>
+      <span class="pill">Azure Container Apps</span>
+      <span class="pill">FastAPI</span>
+      <span class="pill">Cost Management</span>
+      <span class="pill">Managed Identity</span>
+      <span class="pill">OIDC CI/CD</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 2 — SYSTEM OVERVIEW ═══════════════════════════════ -->
+<div class="slide" id="s2">
+  <div class="slide-title">System at a Glance</div>
+  <div class="slide-subtitle">What azure-penny is and what it does</div>
+  <div class="cards cards-3" style="max-width:960px;">
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Cost Dashboard</div>
+      <div class="card-body">FastAPI application serving three HTML dashboards (Dashboard, Technician, Live) that visualise Azure cost exports and live resource inventory.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏗️</div>
+      <div class="card-title">Serverless Hosting</div>
+      <div class="card-body">Azure Container Apps with scale-to-zero (0→1 replicas). Single revision, 0.5 vCPU / 1 GiB RAM. No baseline compute cost when idle.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔐</div>
+      <div class="card-title">Zero-Secret Auth</div>
+      <div class="card-body">User-Assigned Managed Identity for all Azure SDK calls. GitHub Actions uses OIDC federation. Easy Auth (Entra ID) guards the public URL.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📁</div>
+      <div class="card-title">Data Pipeline</div>
+      <div class="card-body">Cost Management exports daily CSVs to Blob Storage. App discovers the latest date-range folder, reads into pandas, caches 1 hour in memory.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔭</div>
+      <div class="card-title">Live Inventory</div>
+      <div class="card-body">ARM SDK enumerates all resources, fetches VM power states, correlates with cost export data, projects monthly spend per resource.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">Full IaC</div>
+      <div class="card-body">100% Terraform-managed: Resource Group, Storage, ACR, ACA Environment, Budget Alert, Entra App, Easy Auth — with remote state in Blob.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 3 — ARCHITECTURE DIAGRAM ═══════════════════════════════ -->
+<div class="slide" id="s3">
+  <div class="slide-title">Architecture Topology</div>
+  <div class="slide-subtitle">Data flows, authentication paths, and deployment pipeline</div>
+  <div style="width:100%;max-width:1000px;display:grid;grid-template-rows:auto auto auto;gap:16px;">
+
+    <!-- Row 1: External → Auth → App -->
+    <div style="display:grid;grid-template-columns:1fr 40px 1fr 40px 1fr 40px 1fr;align-items:center;gap:0;">
+      <div class="arch-box" style="border-color:rgba(167,139,250,.35);background:rgba(167,139,250,.08);">
+        <div style="font-size:20px;margin-bottom:4px;">🌐</div>
+        <div>User Browser</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px;">HTTPS</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(0,120,212,.35);background:rgba(0,120,212,.08);">
+        <div style="font-size:20px;margin-bottom:4px;">🔐</div>
+        <div>Easy Auth</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px;">Entra ID (ACA built-in)</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(80,230,255,.35);background:rgba(80,230,255,.05);">
+        <div style="font-size:20px;margin-bottom:4px;">🐍</div>
+        <div>Container App</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px;">FastAPI · port 8000</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(74,222,128,.35);background:rgba(74,222,128,.05);">
+        <div style="font-size:20px;margin-bottom:4px;">📁</div>
+        <div>Blob Storage</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:2px;">Managed Identity</div>
+      </div>
+    </div>
+
+    <!-- Row 2: labels -->
+    <div style="display:grid;grid-template-columns:1fr 40px 1fr 40px 1fr 40px 1fr;align-items:center;font-size:.68rem;color:var(--muted);text-align:center;padding:0 20px;">
+      <div></div><div></div>
+      <div style="color:var(--purple);">JWT validation</div><div></div>
+      <div style="color:var(--accent);">In-memory pandas cache<br>ARM SDK calls</div><div></div>
+      <div style="color:var(--green);">Cost export CSVs / Parquet</div>
+    </div>
+
+    <!-- Row 3: CI/CD + Cost Export -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:4px;">
+      <div class="arch-box" style="border-color:rgba(251,146,60,.25);background:rgba(251,146,60,.05);">
+        <div style="font-size:18px;margin-bottom:4px;">🤖</div>
+        <div style="font-size:.8rem;">GitHub Actions</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:3px;">OIDC → ACR push → ACA deploy</div>
+      </div>
+      <div class="arch-box" style="border-color:rgba(250,204,21,.25);background:rgba(250,204,21,.05);">
+        <div style="font-size:18px;margin-bottom:4px;">💰</div>
+        <div style="font-size:.8rem;">Cost Management Export</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:3px;">Daily CSV → cost-exports/penny/</div>
+      </div>
+      <div class="arch-box" style="border-color:rgba(167,139,250,.25);background:rgba(167,139,250,.05);">
+        <div style="font-size:18px;margin-bottom:4px;">📊</div>
+        <div style="font-size:.8rem;">ARM API (Live tab)</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:3px;">Resource list · VM power states · 15 min cache</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 4 — WHAT'S DONE WELL ═══════════════════════════════ -->
+<div class="slide" id="s4">
+  <div class="slide-title">Strengths — What's Done Well</div>
+  <div class="slide-subtitle">Design decisions that are genuinely solid</div>
+  <div class="cards cards-2" style="max-width:960px;">
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">🔑</span>
+        <span class="card-title">Zero-secret authentication</span>
+        <span class="tag tag-green">Best practice</span>
+      </div>
+      <div class="card-body">Managed Identity for all Azure SDK access. GitHub OIDC federation eliminates stored secrets. No client secrets in CI/CD variables. Easy Auth guards the public endpoint without touching application code.</div>
+    </div>
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">📦</span>
+        <span class="card-title">100% Terraform-managed IaC</span>
+        <span class="tag tag-green">Reproducible</span>
+      </div>
+      <div class="card-body">Every resource — including Entra app registration, Easy Auth config (via azapi), cost export, and budget alert — is in state. Remote state in Blob Storage. Naming convention is consistent and environment-parameterised.</div>
+    </div>
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">💤</span>
+        <span class="card-title">Scale-to-zero serverless</span>
+        <span class="tag tag-green">Cost-efficient</span>
+      </div>
+      <div class="card-body">0 min replicas means zero compute cost when idle. A dashboard opened 1–2 times per day tolerates a cold start. LRS storage (no geo-redundancy) is correct since exports are rebuilt daily.</div>
+    </div>
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">🔄</span>
+        <span class="card-title">Smart blob discovery</span>
+        <span class="tag tag-green">Correct</span>
+      </div>
+      <div class="card-body">Picks only the single most-recently-modified file per date-range folder — correctly avoiding double-counting from Azure's cumulative MonthToDate export pattern. Fallback chain (parquet → csv → csv.gz) handles format changes.</div>
+    </div>
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">⚡</span>
+        <span class="card-title">Async + executor pattern</span>
+        <span class="tag tag-green">Non-blocking</span>
+      </div>
+      <div class="card-body">FastAPI routes are fully async. Blocking I/O (pandas reads, ARM SDK calls) runs in thread pool via run_in_executor(). asyncio.Lock protects the shared in-memory cache from stampede on cold start.</div>
+    </div>
+    <div class="card green-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">💰</span>
+        <span class="card-title">Multi-layer cost attribution</span>
+        <span class="tag tag-green">Resilient</span>
+      </div>
+      <div class="card-body">Five fallback strategies: export match → period interpolation → projection → spot API → hardcoded table. Resources without export data still get a cost estimate. Source attribution field tells the UI which method was used.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 5 — WEAKNESSES ═══════════════════════════════ -->
+<div class="slide" id="s5">
+  <div class="slide-title">Weaknesses — What Should Be Improved</div>
+  <div class="slide-subtitle">Real risks and technical debt worth addressing</div>
+  <div class="cards cards-2" style="max-width:960px;">
+    <div class="card red-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">🗑️</span>
+        <span class="card-title">Destructive DELETE endpoints exposed</span>
+        <span class="tag tag-red">High risk</span>
+      </div>
+      <div class="card-body">DELETE /api/resource, /api/resource-group, and /api/resource-groups/all can wipe subscription resources. They are protected only by Easy Auth (login ≠ authorisation). Any authenticated user can delete any resource group, including the one hosting the app itself.</div>
+    </div>
+    <div class="card red-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">💀</span>
+        <span class="card-title">Managed Identity has Contributor on subscription</span>
+        <span class="tag tag-red">Overprivileged</span>
+      </div>
+      <div class="card-body">The identity needs Contributor at subscription scope to list and delete resources for the Live tab. This violates least-privilege. A compromised container can delete any subscription resource and is a lateral movement path.</div>
+    </div>
+    <div class="card orange-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">💾</span>
+        <span class="card-title">In-process in-memory cache only</span>
+        <span class="tag tag-orange">Fragile</span>
+      </div>
+      <div class="card-body">Cache lives in the single container process. A container restart (common after scale-to-zero) flushes it. If max replicas ever grows to 2+, each instance builds its own cache independently — no data consistency.</div>
+    </div>
+    <div class="card orange-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">🔢</span>
+        <span class="card-title">Hardcoded VM pricing tables</span>
+        <span class="tag tag-orange">Stale risk</span>
+      </div>
+      <div class="card-body">Spot and on-demand prices for ~5 VM SKUs are hardcoded in live_resources.py. Azure changes these without notice. Only a handful of regions and SKUs are covered — everything else falls through to an 8-second external API call or returns $0.</div>
+    </div>
+    <div class="card orange-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">📋</span>
+        <span class="card-title">Cost export format: CSV, not Parquet</span>
+        <span class="tag tag-orange">Performance</span>
+      </div>
+      <div class="card-body">Azure Cost Management exports at subscription scope produce CSV only. Parquet is available only at billing-account scope. Monthly exports can reach 100 MB+ as CSV; pandas reads and parses the whole file on every cache miss.</div>
+    </div>
+    <div class="card orange-border">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:22px;">🚨</span>
+        <span class="card-title">No observability beyond logs</span>
+        <span class="tag tag-orange">Blind spots</span>
+      </div>
+      <div class="card-body">Log Analytics workspace exists but only captures container stdout. No distributed tracing, no metrics (request latency, cache hit rate, blob read time), no alerting on application errors. Cold-start duration is invisible.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 6 — SECURITY DEEP DIVE ═══════════════════════════════ -->
+<div class="slide" id="s6">
+  <div class="slide-title">Security Analysis</div>
+  <div class="slide-subtitle">Authentication model, privilege boundaries, and attack surface</div>
+  <div class="two-col" style="max-width:1000px;gap:30px;">
+    <div class="col">
+      <div class="section-label">What's correct</div>
+      <ul class="procon" style="margin-bottom:24px;">
+        <li><span class="mark">✅</span><span>Managed Identity — no credentials in environment or code</span></li>
+        <li><span class="mark">✅</span><span>Easy Auth at the ACA ingress layer — app never sees unauthenticated requests</span></li>
+        <li><span class="mark">✅</span><span>ACR Admin user disabled — pull only via role assignment</span></li>
+        <li><span class="mark">✅</span><span>GitHub OIDC federation — no AZURE_CLIENT_SECRET in repository secrets</span></li>
+        <li><span class="mark">✅</span><span>Storage Account: <code>allow_nested_items_to_be_public = false</code></span></li>
+        <li><span class="mark">✅</span><span>TLS 1.2 minimum enforced on storage account</span></li>
+        <li><span class="mark">✅</span><span>Single-tenant Entra app — no cross-tenant login possible</span></li>
+      </ul>
+      <div class="section-label">Gaps &amp; risks</div>
+      <ul class="procon">
+        <li><span class="mark">🔴</span><span><strong>No authorisation model</strong> — Easy Auth is authentication only; all authenticated users have equal write/delete access</span></li>
+        <li><span class="mark">🔴</span><span><strong>Contributor scope too broad</strong> — identity can modify billing, networking, and security resources</span></li>
+        <li><span class="mark">🟡</span><span><strong>App Password expires 2028-01-01</strong> — no rotation mechanism; silent expiry will break Easy Auth</span></li>
+        <li><span class="mark">🟡</span><span><strong>Shared access key enabled</strong> on storage — intended as break-glass but widens the blast radius if leaked</span></li>
+        <li><span class="mark">🟡</span><span><strong>No IP allowlist</strong> on ACA ingress — any internet address can reach the Easy Auth login screen</span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="section-label">Recommended privilege model</div>
+      <div style="background:var(--surface);border:1px solid rgba(80,230,255,.1);border-radius:10px;padding:16px;">
+        <table class="comp-table">
+          <thead>
+            <tr>
+              <th>Operation</th>
+              <th>Current role</th>
+              <th>Better role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Read cost CSVs</td><td class="warn">Contributor</td><td class="best">Storage Blob Data Reader</td></tr>
+            <tr><td>List resources</td><td class="warn">Contributor</td><td class="best">Reader (subscription)</td></tr>
+            <tr><td>VM power state</td><td class="warn">Contributor</td><td class="best">Reader (subscription)</td></tr>
+            <tr><td>Delete resource</td><td class="warn">Contributor</td><td class="warn">Custom role, scoped RG</td></tr>
+            <tr><td>Delete resource group</td><td class="bad">Contributor</td><td class="bad">Require out-of-band approval</td></tr>
+            <tr><td>Pull ACR image</td><td class="best">AcrPull</td><td class="best">AcrPull ✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;font-size:.8rem;color:var(--muted);line-height:1.6;">
+        <strong style="color:var(--orange);">Recommended:</strong> Split the identity into two — a read-only identity for the app process, and a separate "operator" identity that requires an additional header or role claim before the DELETE endpoints respond. App Role assignments in the Entra app can gate this without external infrastructure.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 7 — CACHING ALTERNATIVES ═══════════════════════════════ -->
+<div class="slide" id="s7">
+  <div class="slide-title">Caching Strategy: Alternatives</div>
+  <div class="slide-subtitle">Current approach vs. production-grade options</div>
+  <div style="width:100%;max-width:1000px;">
+    <table class="comp-table" style="background:var(--surface);border-radius:12px;overflow:hidden;border:1px solid rgba(80,230,255,.1);">
+      <thead>
+        <tr>
+          <th>Approach</th>
+          <th>Latency</th>
+          <th>Multi-replica</th>
+          <th>Restart-safe</th>
+          <th>Complexity</th>
+          <th>Cost / mo</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong style="color:var(--text);">In-process dict (current)</strong></td>
+          <td class="best">~0 ms</td>
+          <td class="bad">✗ diverges</td>
+          <td class="bad">✗ cold-starts</td>
+          <td class="best">Zero</td>
+          <td class="best">$0</td>
+          <td class="warn">OK for 0→1 only</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--text);">Azure Cache for Redis (Basic C0)</strong></td>
+          <td class="best">&lt;1 ms</td>
+          <td class="best">✓ shared</td>
+          <td class="best">✓ persists</td>
+          <td class="warn">Medium</td>
+          <td class="warn">~$15</td>
+          <td class="best">Best if scaling</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--text);">Blob Storage (serialise DataFrame)</strong></td>
+          <td class="warn">100–500 ms</td>
+          <td class="best">✓ shared</td>
+          <td class="best">✓ persists</td>
+          <td class="warn">Low-medium</td>
+          <td class="best">&lt;$1</td>
+          <td class="warn">Acceptable, no new infra</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--text);">Azure Functions timer (pre-warm)</strong></td>
+          <td class="best">~0 ms (warm)</td>
+          <td class="best">✓ any source</td>
+          <td class="best">✓</td>
+          <td class="bad">High</td>
+          <td class="best">~$0</td>
+          <td class="warn">Overkill for 1 user</td>
+        </tr>
+        <tr>
+          <td><strong style="color:var(--text);">DuckDB file on persistent volume</strong></td>
+          <td class="best">~5 ms</td>
+          <td class="bad">✗ single mount</td>
+          <td class="best">✓</td>
+          <td class="warn">Medium</td>
+          <td class="best">~$2</td>
+          <td class="warn">Interesting, niche</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-title">🎯 Recommended for current scale</div>
+        <div class="card-body">Keep in-process cache — it is correct for a single-replica scale-to-zero app. Add a <strong style="color:var(--accent);">startup event</strong> that pre-populates the cache on container boot so the first real request is fast.</div>
+      </div>
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-title">🚀 Recommended if scaling</div>
+        <div class="card-body">Add <strong style="color:var(--accent);">Azure Cache for Redis (Basic C0)</strong> or serialise the pandas DataFrame to Parquet in Blob every hour via a background task — no new services required.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 8 — DATA PIPELINE ALTERNATIVES ═══════════════════════════════ -->
+<div class="slide" id="s8">
+  <div class="slide-title">Data Pipeline: Alternatives</div>
+  <div class="slide-subtitle">Cost export → dashboard: five possible architectures</div>
+  <div class="cards cards-2" style="max-width:980px;">
+    <div class="card" style="border-color:rgba(80,230,255,.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div class="card-title">A — Current: Direct CSV read (no ETL)</div>
+        <span class="tag tag-blue">Current</span>
+      </div>
+      <ul class="procon">
+        <li><span class="mark">✅</span><span>Zero infrastructure overhead</span></li>
+        <li><span class="mark">✅</span><span>No moving parts to maintain</span></li>
+        <li><span class="mark">🔴</span><span>Full CSV parsed on every cache miss (100 MB+)</span></li>
+        <li><span class="mark">🔴</span><span>All computation in the serving path</span></li>
+        <li><span class="mark">🟡</span><span>Subscription scope = CSV only, no Parquet</span></li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:rgba(74,222,128,.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div class="card-title">B — Blob trigger Function → pre-aggregated JSON</div>
+        <span class="tag tag-green">Recommended</span>
+      </div>
+      <ul class="procon">
+        <li><span class="mark">✅</span><span>CSV parsed once per day (off serving path)</span></li>
+        <li><span class="mark">✅</span><span>App reads tiny JSON files; startup is instant</span></li>
+        <li><span class="mark">✅</span><span>Function Consumption Plan ≈ free</span></li>
+        <li><span class="mark">🟡</span><span>Additional service to manage (Azure Functions)</span></li>
+        <li><span class="mark">🟡</span><span>Aggregations are fixed at write time</span></li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:rgba(251,146,60,.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div class="card-title">C — Microsoft Fabric Cost Management connector</div>
+        <span class="tag tag-orange">Enterprise</span>
+      </div>
+      <ul class="procon">
+        <li><span class="mark">✅</span><span>Native Power BI / Fabric dashboards, no code</span></li>
+        <li><span class="mark">✅</span><span>Real-time data, historical rollup, cross-subscription</span></li>
+        <li><span class="mark">🔴</span><span>Requires Fabric (E SKU) licence — significant cost</span></li>
+        <li><span class="mark">🔴</span><span>Replaces entire custom app; no live ARM inventory</span></li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:rgba(167,139,250,.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <div class="card-title">D — Azure Data Explorer (Kusto)</div>
+        <span class="tag tag-purple">Analytics</span>
+      </div>
+      <ul class="procon">
+        <li><span class="mark">✅</span><span>Sub-second queries on full 12-month history</span></li>
+        <li><span class="mark">✅</span><span>Built-in Cost Management connector (no export needed)</span></li>
+        <li><span class="mark">🔴</span><span>Minimum ~$120/mo for smallest cluster</span></li>
+        <li><span class="mark">🔴</span><span>Significant operational complexity</span></li>
+      </ul>
+    </div>
+  </div>
+  <div style="margin-top:16px;max-width:980px;width:100%;background:var(--surface);border:1px solid rgba(74,222,128,.2);border-radius:10px;padding:14px 18px;font-size:.82rem;color:var(--muted);line-height:1.6;">
+    <strong style="color:var(--green);">Best path forward:</strong> Option B — add a single Azure Function with a Blob trigger that runs when Cost Management drops a new file. It reads the CSV, computes all aggregations, and writes pre-built JSON files back to Blob. The FastAPI app switches from reading 100 MB CSVs to reading &lt;10 KB JSON files. Development time: ~1 day.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 9 — LIVE RESOURCES ALTERNATIVES ═══════════════════════════════ -->
+<div class="slide" id="s9">
+  <div class="slide-title">Live Resource Inventory: Alternatives</div>
+  <div class="slide-subtitle">How to get real-time resource + cost data without Contributor on subscription</div>
+  <div class="two-col" style="max-width:1000px;gap:30px;">
+    <div class="col">
+      <div class="section-label" style="margin-bottom:12px;">Current design problems</div>
+      <ul class="procon" style="margin-bottom:20px;">
+        <li><span class="mark">🔴</span><span><strong>Contributor on subscription</strong> — required for list + delete, but massively overprivileged for read-only scenarios</span></li>
+        <li><span class="mark">🔴</span><span><strong>Direct ARM calls from app</strong> — 15-min cache, but bursts of 10–20 API calls per live-reload hit ARM rate limits</span></li>
+        <li><span class="mark">🟡</span><span><strong>Hardcoded VM prices</strong> — only 5 SKUs, breaks on new instance types or region launches</span></li>
+        <li><span class="mark">🟡</span><span><strong>File share pricing via Storage SDK</strong> — optional dependency, fails silently</span></li>
+      </ul>
+      <div class="section-label" style="margin-bottom:12px;">Alternative: Azure Resource Graph</div>
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-body">Replace <code>ResourceManagementClient.resources.list()</code> with a single <strong style="color:var(--accent);">Azure Resource Graph KQL query</strong>. One API call returns all resources with type, location, RG, and tags. Requires only <strong>Reader</strong> at subscription scope. Dramatically fewer ARM API calls, no pagination issues.</div>
+        <div style="margin-top:8px;background:rgba(0,0,0,.3);border-radius:6px;padding:8px 12px;font-size:.72rem;font-family:monospace;color:var(--accent);">
+          Resources | where type != 'microsoft.resources/subscriptions'<br>
+          | project id, name, type, resourceGroup, location
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="section-label" style="margin-bottom:12px;">Comparison: inventory approaches</div>
+      <table class="comp-table" style="background:var(--surface);border-radius:10px;overflow:hidden;border:1px solid rgba(80,230,255,.1);">
+        <thead>
+          <tr><th>Approach</th><th>Privilege needed</th><th>API calls</th><th>Latency</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ARM ResourceClient (current)</td>
+            <td class="bad">Contributor</td>
+            <td class="bad">N+VM calls</td>
+            <td class="warn">2–10 s</td>
+          </tr>
+          <tr>
+            <td>Azure Resource Graph</td>
+            <td class="best">Reader</td>
+            <td class="best">1–2 calls</td>
+            <td class="best">&lt;1 s</td>
+          </tr>
+          <tr>
+            <td>Azure Monitor Metrics</td>
+            <td class="best">Reader</td>
+            <td class="warn">per resource</td>
+            <td class="warn">variable</td>
+          </tr>
+          <tr>
+            <td>Cost Management Query API</td>
+            <td class="best">Cost Reader</td>
+            <td class="best">1 call</td>
+            <td class="warn">2–5 s</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="section-label" style="margin-top:18px;margin-bottom:10px;">VM pricing fix</div>
+      <div class="card" style="border-color:rgba(251,146,60,.2);">
+        <div class="card-body">Replace hardcoded table with a <strong style="color:var(--orange);">daily cached call</strong> to the Azure Retail Prices API filtered to the subscription's regions and the top 20 VM SKUs found in the last export. Cache result in Blob Storage — no extra infra, always accurate, ~$0 cost.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 10 — COMPUTE / SCALING ═══════════════════════════════ -->
+<div class="slide" id="s10">
+  <div class="slide-title">Compute & Scaling Options</div>
+  <div class="slide-subtitle">Azure Container Apps vs. alternative hosting targets</div>
+  <div style="width:100%;max-width:1000px;">
+    <table class="comp-table" style="background:var(--surface);border-radius:12px;overflow:hidden;border:1px solid rgba(80,230,255,.1);">
+      <thead>
+        <tr>
+          <th>Platform</th>
+          <th>Cold start</th>
+          <th>Idle cost/mo</th>
+          <th>Managed TLS</th>
+          <th>Easy Auth</th>
+          <th>IaC complexity</th>
+          <th>Best fit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong style="color:var(--accent);">ACA scale-to-zero (current)</strong></td>
+          <td class="warn">4–12 s</td>
+          <td class="best">$0</td>
+          <td class="best">✓</td>
+          <td class="best">✓ native</td>
+          <td class="best">Low</td>
+          <td class="best">Personal / small team</td>
+        </tr>
+        <tr>
+          <td>ACA min-replicas: 1</td>
+          <td class="best">0 s</td>
+          <td class="warn">~$12</td>
+          <td class="best">✓</td>
+          <td class="best">✓ native</td>
+          <td class="best">Low</td>
+          <td class="warn">Frequent-use dashboard</td>
+        </tr>
+        <tr>
+          <td>Azure App Service (B1)</td>
+          <td class="best">0 s</td>
+          <td class="warn">~$13</td>
+          <td class="best">✓</td>
+          <td class="best">✓ native</td>
+          <td class="best">Low</td>
+          <td class="warn">Classic PaaS</td>
+        </tr>
+        <tr>
+          <td>Azure Functions (Flex Consumption)</td>
+          <td class="warn">2–5 s</td>
+          <td class="best">$0</td>
+          <td class="best">✓</td>
+          <td class="warn">Via APIM</td>
+          <td class="warn">Medium</td>
+          <td class="warn">Purely API, no templates</td>
+        </tr>
+        <tr>
+          <td>AKS (cheapest nodepool)</td>
+          <td class="best">0 s</td>
+          <td class="bad">~$75+</td>
+          <td class="warn">Via ingress</td>
+          <td class="bad">Custom</td>
+          <td class="bad">High</td>
+          <td class="bad">Overkill</td>
+        </tr>
+        <tr>
+          <td>Azure Static Web App + APIM</td>
+          <td class="best">0 s</td>
+          <td class="best">~$0</td>
+          <td class="best">✓</td>
+          <td class="best">✓</td>
+          <td class="warn">High (SPA rewrite)</td>
+          <td class="warn">If rewriting to SPA</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-title">⚡ Cold start mitigation</div>
+        <div class="card-body">Add a <strong style="color:var(--accent);">startup event</strong> (FastAPI lifespan) that pre-loads the DataFrame cache immediately on boot. Reduces first-request time from ~15 s (boot + CSV parse) to ~3 s (boot only).</div>
+      </div>
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-title">🕐 Scheduled warm-up</div>
+        <div class="card-body">A Logic App or GitHub Action that <strong style="color:var(--accent);">pings /health every 10 minutes</strong> during business hours keeps the container warm for zero extra cost. Scale stays at 0 outside hours.</div>
+      </div>
+      <div class="card" style="border-color:rgba(80,230,255,.15);">
+        <div class="card-title">📈 Scaling rule improvement</div>
+        <div class="card-body">Current HTTP rule fires at 10 concurrent requests. A personal dashboard rarely reaches that. <strong style="color:var(--accent);">Removing the HTTP rule</strong> and relying only on KEDA HTTP scaler prevents unnecessary replica creation.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 11 — OBSERVABILITY ═══════════════════════════════ -->
+<div class="slide" id="s11">
+  <div class="slide-title">Observability Gap</div>
+  <div class="slide-subtitle">What you can't see today — and what to add</div>
+  <div class="two-col" style="max-width:1000px;gap:30px;">
+    <div class="col">
+      <div class="section-label" style="margin-bottom:12px;">Current state</div>
+      <ul class="procon" style="margin-bottom:20px;">
+        <li><span class="mark">✅</span><span>Log Analytics workspace captures container stdout/stderr</span></li>
+        <li><span class="mark">✅</span><span>ACA revision-level HTTP metrics (basic)</span></li>
+        <li><span class="mark">✅</span><span>Budget alerts (email at 20/40/60/80/100% of $100)</span></li>
+        <li><span class="mark">🔴</span><span>No request latency histograms</span></li>
+        <li><span class="mark">🔴</span><span>No cache hit/miss ratio</span></li>
+        <li><span class="mark">🔴</span><span>No blob read duration tracking</span></li>
+        <li><span class="mark">🔴</span><span>No alerting on application errors (5xx)</span></li>
+        <li><span class="mark">🔴</span><span>No tracing across ARM API calls</span></li>
+        <li><span class="mark">🟡</span><span>Cold-start duration invisible — only seen in ACA provision logs</span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="section-label" style="margin-bottom:12px;">Recommended additions</div>
+      <div class="flow-list">
+        <li>
+          <span class="step-num">1</span>
+          <span><strong style="color:var(--text);">Application Insights (free tier)</strong> — add <code>opencensus-ext-azure</code> or <code>opentelemetry-sdk</code> with Azure Monitor exporter. Gets distributed tracing, latency histograms, and dependency tracking for ~$0.</span>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <span><strong style="color:var(--text);">Structured logging</strong> — switch to JSON log lines with <code>request_id</code>, <code>endpoint</code>, <code>duration_ms</code>, <code>cache_hit</code> fields. Enables KQL queries on Log Analytics without code changes in Terraform.</span>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <span><strong style="color:var(--text);">/health liveness + readiness</strong> — current /health is status-only. Add <code>liveness_probe</code> and <code>readiness_probe</code> to the ACA container spec so Azure restarts unhealthy containers automatically.</span>
+        </li>
+        <li>
+          <span class="step-num">4</span>
+          <span><strong style="color:var(--text);">Alert rule on 5xx rate</strong> — Log Analytics alert: if <code>ContainerAppConsoleLogs | where Log contains "500"</code> &gt; 3 in 5 min, fire email via existing action group.</span>
+        </li>
+        <li>
+          <span class="step-num">5</span>
+          <span><strong style="color:var(--text);">Cost export lag alert</strong> — alert if no new blob appears in <code>cost-exports/penny/</code> within 36 hours. Catches Cost Management export silently stopping.</span>
+        </li>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 12 — TERRAFORM CODE QUALITY ═══════════════════════════════ -->
+<div class="slide" id="s12">
+  <div class="slide-title">Terraform Code Quality</div>
+  <div class="slide-subtitle">IaC design: what works, what to tighten</div>
+  <div class="cards cards-2" style="max-width:960px;">
+    <div class="card green-border">
+      <div class="card-title">✅ Consistent naming convention</div>
+      <div class="card-body">All resources follow <code>{prefix}-{env}-{location_short}-{suffix}</code>. Storage and ACR names correctly strip hyphens (Azure naming constraints). Random suffix on storage avoids global name collisions.</div>
+    </div>
+    <div class="card green-border">
+      <div class="card-title">✅ Import block for pre-existing resources</div>
+      <div class="card-body">imports.tf brings manually-created resources under IaC control — correct approach. Avoids drift between actual Azure state and Terraform state without destructive re-creation.</div>
+    </div>
+    <div class="card green-border">
+      <div class="card-title">✅ azapi for Easy Auth</div>
+      <div class="card-body">Using AzAPI provider for the <code>Microsoft.App/containerApps/authConfigs</code> resource is the right call — azurerm doesn't expose this resource yet. Keeps infrastructure declarative rather than using null_resource + az CLI.</div>
+    </div>
+    <div class="card green-border">
+      <div class="card-title">✅ Multi-provider pattern (azurerm + azuread + azapi)</div>
+      <div class="card-body">Appropriate use of specialised providers. azuread for Entra objects, azapi for preview resources, azurerm for stable resources. Versions are pinned, preventing accidental upgrades.</div>
+    </div>
+    <div class="card orange-border">
+      <div class="card-title">⚠️ container_image is a required variable</div>
+      <div class="card-body">Terraform apply always requires <code>-var container_image=...</code>. This creates a chicken-and-egg problem: infrastructure must exist before CI/CD can push an image, but apply needs an image tag. Fix: use a placeholder default (<code>mcr.microsoft.com/azuredocs/containerapps-helloworld:latest</code>) and let CI/CD override.</div>
+    </div>
+    <div class="card orange-border">
+      <div class="card-title">⚠️ No environment separation</div>
+      <div class="card-body">All resources are <code>prd</code>. No <code>dev</code> workspace or tfvars file. Testing Terraform changes means applying directly to production. Recommend: add <code>dev.tfvars</code> with smaller SKUs and a separate storage container for state.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 13 — APP CODE QUALITY ═══════════════════════════════ -->
+<div class="slide" id="s13">
+  <div class="slide-title">Application Code Quality</div>
+  <div class="slide-subtitle">Python / FastAPI layer: patterns and concerns</div>
+  <div class="two-col" style="max-width:1000px;gap:30px;">
+    <div class="col">
+      <div class="section-label" style="margin-bottom:10px;">Strengths</div>
+      <ul class="procon" style="margin-bottom:18px;">
+        <li><span class="mark">✅</span><span><strong>Layered modules</strong> — clean separation: main.py (routes), storage.py (blob), live_resources.py (ARM), config.py (env)</span></li>
+        <li><span class="mark">✅</span><span><strong>DefaultAzureCredential</strong> — works identically in ACA (IMDS), local (CLI), CI (env vars); no conditional auth logic</span></li>
+        <li><span class="mark">✅</span><span><strong>Column mapping dict</strong> — handles multiple Azure export schema variants (CostInBillingCurrency, Cost, PreTaxCost) via fallback iteration</span></li>
+        <li><span class="mark">✅</span><span><strong>Fallback date period</strong> — if "day" period requested but no data, uses most recent date rather than returning empty</span></li>
+        <li><span class="mark">✅</span><span><strong>Service category sets</strong> — cleanly defined as module-level constants, easy to extend</span></li>
+      </ul>
+      <div class="section-label" style="margin-bottom:10px;">Concerns</div>
+      <ul class="procon">
+        <li><span class="mark">🔴</span><span><strong>main.py is monolithic</strong> — 700+ lines: routes, filtering logic, aggregation, and ARM calls all mixed. Hard to test individual concerns.</span></li>
+        <li><span class="mark">🟡</span><span><strong>No request validation</strong> — period and rg query params are used directly in filtering without sanitisation</span></li>
+        <li><span class="mark">🟡</span><span><strong>No tests</strong> — no pytest, no unit coverage on filtering, aggregation, or blob discovery logic</span></li>
+        <li><span class="mark">🟡</span><span><strong>Pinned to old versions</strong> — fastapi 0.111.0, uvicorn 0.29.0, pyarrow 16.0.0 (all have newer releases with bug fixes)</span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="section-label" style="margin-bottom:10px;">Recommended refactoring</div>
+      <div class="flow-list">
+        <li>
+          <span class="step-num">1</span>
+          <span><strong style="color:var(--text);">Extract routers</strong> — split main.py into FastAPI APIRouter modules: <code>routers/costs.py</code>, <code>routers/live.py</code>, <code>routers/admin.py</code>. Each file is &lt;200 lines and independently testable.</span>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <span><strong style="color:var(--text);">Pydantic response models</strong> — define typed response schemas. FastAPI validates output automatically; OpenAPI docs become usable; breaking schema changes are caught at startup.</span>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <span><strong style="color:var(--text);">Lifespan event for cache pre-warm</strong> — use FastAPI's <code>lifespan</code> context manager to start loading the DataFrame in the background immediately on container boot, before the first real request.</span>
+        </li>
+        <li>
+          <span class="step-num">4</span>
+          <span><strong style="color:var(--text);">Add pytest + pytest-asyncio</strong> — unit test _discover_latest_blobs() with mock blob listings, _filter_period() with synthetic DataFrames, and cost attribution logic with stub ARM responses.</span>
+        </li>
+        <li>
+          <span class="step-num">5</span>
+          <span><strong style="color:var(--text);">Dependency injection for storage</strong> — pass BlobServiceClient as a FastAPI dependency rather than a module-level singleton. Makes unit tests trivial to write without monkeypatching.</span>
+        </li>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 14 — COST ANALYSIS ═══════════════════════════════ -->
+<div class="slide" id="s14">
+  <div class="slide-title">Infrastructure Cost Analysis</div>
+  <div class="slide-subtitle">Where the money goes — and smarter alternatives</div>
+  <div style="width:100%;max-width:1000px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px;">
+      <div>
+        <div class="section-label" style="margin-bottom:12px;">Current monthly spend estimate</div>
+        <table class="comp-table" style="background:var(--surface);border-radius:10px;overflow:hidden;border:1px solid rgba(80,230,255,.1);">
+          <thead><tr><th>Resource</th><th>SKU</th><th>Est. $/mo</th></tr></thead>
+          <tbody>
+            <tr><td>Container App</td><td>0.5 vCPU · scale-to-0</td><td class="best">~$0–3</td></tr>
+            <tr><td>ACA Environment</td><td>Consumption plan</td><td class="best">~$0</td></tr>
+            <tr><td>Log Analytics</td><td>1 GB/day cap</td><td class="best">&lt;$5</td></tr>
+            <tr><td>Storage Account</td><td>LRS, BlobStorage, Hot</td><td class="best">&lt;$1</td></tr>
+            <tr><td>Container Registry</td><td>Basic SKU</td><td class="warn">~$5</td></tr>
+            <tr><td>Budget Alert</td><td>Free</td><td class="best">$0</td></tr>
+            <tr><td><strong>Total</strong></td><td></td><td class="best"><strong>~$10–14/mo</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:12px;">Cost optimisation opportunities</div>
+        <ul class="procon">
+          <li><span class="mark">💡</span><span><strong>ACR Basic → ACR-less</strong>: pull images from GitHub Container Registry (ghcr.io) for free. Requires adjusting the ACA image source and OIDC authentication. Saves ~$5/mo.</span></li>
+          <li><span class="mark">💡</span><span><strong>Log Analytics quota</strong>: 1 GB/day cap with 31-day retention may generate unnecessary cost. For a single-container app, 100 MB/day is more realistic. Adjust <code>daily_quota_gb</code> to 0.1.</span></li>
+          <li><span class="mark">💡</span><span><strong>Storage tier</strong>: CSV exports are read once per hour then ignored for 23 hours. Consider moving to <strong>Cool tier</strong> after 1 day via a lifecycle policy — 50% storage cost reduction.</span></li>
+          <li><span class="mark">💡</span><span><strong>ACA Environment workload profile</strong>: Dedicated profile at D4 costs ~$200/mo. Keep Consumption — correct choice for this workload.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="border-color:rgba(74,222,128,.2);max-width:100%;">
+      <div class="card-title">🏆 Bottom line on cost</div>
+      <div class="card-body">The current architecture is genuinely cost-optimised for its purpose. Scale-to-zero + LRS + Basic ACR + Consumption Log Analytics = ~$10/mo total. The only meaningful saving available is dropping ACR for GHCR ($5/mo), which introduces a trade-off in registry control. At this scale, optimise for developer experience over infrastructure cost.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 15 — RECOMMENDATIONS PRIORITY ═══════════════════════════════ -->
+<div class="slide" id="s15">
+  <div class="slide-title">Prioritised Recommendations</div>
+  <div class="slide-subtitle">What to do, in order of impact vs. effort</div>
+  <div style="width:100%;max-width:900px;">
+    <div style="margin-bottom:6px;display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:6px 12px;font-size:.72rem;font-weight:600;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;">
+      <div>#</div><div>Recommendation</div><div style="text-align:right;">Effort</div>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(248,113,113,.25);color:var(--red);">1</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">🔴 Restrict Managed Identity to Reader + custom delete role</div>
+        <div class="rec-desc">Replace Contributor with Reader at subscription scope. Create a custom role with only delete actions, scoped to a dedicated "managed" resource group tag. Gate DELETE endpoints on an app role claim.</div>
+      </div>
+      <span class="tag tag-orange" style="white-space:nowrap;">1 day</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(248,113,113,.25);color:var(--red);">2</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">🔴 Add authorisation to DELETE endpoints</div>
+        <div class="rec-desc">Check the X-MS-CLIENT-PRINCIPAL header (populated by Easy Auth) for a specific app role before executing any destructive operation. Without this, any authenticated user can wipe resources.</div>
+      </div>
+      <span class="tag tag-orange" style="white-space:nowrap;">0.5 days</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(251,146,60,.25);color:var(--orange);">3</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">🟡 Replace ARM ResourceClient with Azure Resource Graph</div>
+        <div class="rec-desc">One KQL query replaces dozens of paginated ARM calls. Reduces Live tab load time from 5–10 s to &lt;1 s, eliminates rate-limit risk, and requires only Reader scope.</div>
+      </div>
+      <span class="tag tag-blue" style="white-space:nowrap;">1 day</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(251,146,60,.25);color:var(--orange);">4</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">🟡 Add FastAPI lifespan pre-warm + structured logging</div>
+        <div class="rec-desc">Pre-load DataFrame cache on startup to eliminate the 10–15 s first-request lag after scale-from-zero. JSON log lines with duration_ms and cache_hit make Log Analytics queries useful.</div>
+      </div>
+      <span class="tag tag-blue" style="white-space:nowrap;">0.5 days</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(250,204,21,.2);color:var(--yellow);">5</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">🟡 Blob-trigger Function for CSV pre-aggregation</div>
+        <div class="rec-desc">Parse the 100 MB CSV once per day in an Azure Function, write pre-built JSON aggregates to Blob. App reads tiny files; cold-start drops from ~15 s to ~3 s. Consumption plan ≈ free.</div>
+      </div>
+      <span class="tag tag-purple" style="white-space:nowrap;">2 days</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(80,230,255,.1);color:var(--muted);">6</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">⚪ Extract routers + add pytest coverage</div>
+        <div class="rec-desc">Split main.py into APIRouter modules. Add pytest + pytest-asyncio with mock DataFrame fixtures. Brings confidence for future changes without a full regression test cycle.</div>
+      </div>
+      <span class="tag tag-blue" style="white-space:nowrap;">2–3 days</span>
+    </div>
+    <div class="rec-row">
+      <div class="nbadge" style="background:rgba(80,230,255,.1);color:var(--muted);">7</div>
+      <div class="rec-body" style="flex:1;">
+        <div class="rec-title">⚪ Add dev.tfvars + Terraform workspace</div>
+        <div class="rec-desc">Create a dev environment with smaller SKUs so Terraform changes can be tested before hitting production. ~30 min setup, eliminates production-as-test-environment risk.</div>
+      </div>
+      <span class="tag tag-green" style="white-space:nowrap;">0.5 days</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SLIDE 16 — SUMMARY SCORECARD ═══════════════════════════════ -->
+<div class="slide" id="s16">
+  <div class="slide-title">Architecture Scorecard</div>
+  <div class="slide-subtitle">Overall assessment across six dimensions</div>
+  <div style="max-width:840px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+    <div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Security &amp; Auth</span>
+          <span style="font-size:.85rem;color:var(--orange);">7 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-orange" style="width:70%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Zero-secret identity ✓, but Contributor is overprivileged and no authorisation layer for destructive ops</div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Infrastructure (IaC)</span>
+          <span style="font-size:.85rem;color:var(--green);">9 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-green" style="width:90%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Fully declarative, consistent naming, remote state, import blocks, multi-provider. Only missing: env separation.</div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Cost Efficiency</span>
+          <span style="font-size:.85rem;color:var(--green);">9 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-green" style="width:90%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Scale-to-zero, LRS, Basic ACR, Consumption log — ~$10/mo total. Excellent for a personal cost dashboard.</div>
+      </div>
+    </div>
+    <div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Application Code Quality</span>
+          <span style="font-size:.85rem;color:var(--orange);">6 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-orange" style="width:60%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Good module separation and async patterns, but monolithic main.py, no tests, hardcoded pricing, old deps.</div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Observability</span>
+          <span style="font-size:.85rem;color:var(--red);">4 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-red" style="width:40%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Log Analytics exists but only captures raw stdout. No metrics, no tracing, no alerting on errors or data freshness.</div>
+      </div>
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:.88rem;font-weight:600;">Data Pipeline</span>
+          <span style="font-size:.85rem;color:var(--orange);">6 / 10</span>
+        </div>
+        <div class="score-bar"><div class="score-fill fill-orange" style="width:60%"></div></div>
+        <div style="font-size:.74rem;color:var(--muted);margin-top:5px;">Blob discovery is correct and resilient. But full CSV parsing per cold start is slow; no pre-aggregation layer.</div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:20px;max-width:840px;width:100%;background:var(--surface);border:1px solid rgba(80,230,255,.15);border-radius:12px;padding:18px 22px;">
+    <div style="font-size:.9rem;font-weight:600;color:var(--text);margin-bottom:8px;">Overall verdict</div>
+    <div style="font-size:.83rem;color:var(--muted);line-height:1.7;">
+      azure-penny is a <strong style="color:var(--accent);">well-designed personal cost tool</strong> that makes smart trade-offs for its scale. The IaC is production-quality. The two non-negotiable fixes are the <strong style="color:var(--red);">Contributor privilege scope</strong> and the <strong style="color:var(--red);">missing authorisation on DELETE endpoints</strong> — both are security issues that could cause real damage. Everything else is a quality-of-life improvement that can be done incrementally.
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- ── Navigation ── -->
+<div id="nav">
+  <button id="btnPrev" onclick="go(-1)" disabled>‹</button>
+  <div id="dots"></div>
+  <span id="counter">1 / 16</span>
+  <button id="btnNext" onclick="go(1)">›</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let cur = 0;
+
+  const dotsEl    = document.getElementById('dots');
+  const counter   = document.getElementById('counter');
+  const btnPrev   = document.getElementById('btnPrev');
+  const btnNext   = document.getElementById('btnNext');
+
+  // build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => goTo(i);
+    dotsEl.appendChild(d);
+  });
+
+  function goTo(n) {
+    if (n < 0 || n >= total) return;
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur < n ? cur : n + (n < cur ? 1 : 0)].classList.remove('prev'), 420);
+
+    // clean up all prev classes after transition
+    const oldIdx = cur;
+    cur = n;
+
+    slides.forEach((s, i) => {
+      s.classList.remove('active', 'prev');
+      if (i === oldIdx && oldIdx !== cur) s.classList.add('prev');
+    });
+    slides[cur].classList.add('active');
+    setTimeout(() => slides.forEach(s => s.classList.remove('prev')), 430);
+
+    dotsEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('on', i === cur));
+    counter.textContent = `${cur + 1} / ${total}`;
+    btnPrev.disabled = cur === 0;
+    btnNext.disabled = cur === total - 1;
+  }
+
+  function go(dir) { goTo(cur + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') go(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                     go(-1);
+  });
+
+  // touch / swipe
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1);
+  });
+</script>
+</body>
+</html>
