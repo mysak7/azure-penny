@@ -44,9 +44,14 @@ resource "azuread_invitation" "owner" {
   }
 }
 
+data "azuread_user" "owner" {
+  mail       = var.owner_email
+  depends_on = [azuread_invitation.owner]
+}
+
 resource "azuread_app_role_assignment" "owner" {
   app_role_id         = "00000000-0000-0000-0000-000000000000"
-  principal_object_id = azuread_invitation.owner.user_object_id
+  principal_object_id = data.azuread_user.owner.object_id
   resource_object_id  = azuread_service_principal.penny.object_id
 }
 
