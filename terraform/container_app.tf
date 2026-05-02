@@ -29,6 +29,11 @@ resource "azurerm_container_app" "this" {
     identity_ids = [azurerm_user_assigned_identity.this.id]
   }
 
+  secret {
+    name  = "auth-client-secret"
+    value = azuread_application_password.penny.value
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -85,10 +90,32 @@ resource "azurerm_container_app" "this" {
     }
   }
 
+  auth_settings_v2 {
+    auth_enabled           = true
+    require_authentication = true
+    unauthenticated_action = "RedirectToLoginPage"
+    default_provider       = "azureactivedirectory"
+
+    active_directory_v2 {
+      client_id                  = azuread_application.penny.client_id
+      tenant_auth_endpoint       = "https://login.microsoftonline.com/${data.azurerm_client_config.current.tenant_id}/v2.0"
+      client_secret_setting_name = "auth-client-secret"
+      allowed_audiences = [
+        "api://${azuread_application.penny.client_id}",
+        azuread_application.penny.client_id,
+      ]
+    }
+
+    login {
+      token_store_enabled = true
+    }
+  }
+
   tags = var.tags
 
   depends_on = [
     azurerm_role_assignment.storage_blob_reader,
     azurerm_role_assignment.acr_pull,
+    azuread_service_principal.penny,
   ]
 }
