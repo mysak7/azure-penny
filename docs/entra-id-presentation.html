@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>azure-penny — Entra ID Setup</title>
+<style>
+  :root {
+    --azure-blue: #0078d4;
+    --azure-dark: #003966;
+    --azure-light: #50e6ff;
+    --azure-teal: #008575;
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1f2937;
+    --text: #f0f4ff;
+    --muted: #8b9ab2;
+    --accent: #50e6ff;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateX(60px);
+  }
+  .slide.active  { opacity: 1; pointer-events: auto; transform: translateX(0); }
+  .slide.prev    { opacity: 0; transform: translateX(-60px); }
+
+  #nav {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 100;
+    background: rgba(17,24,39,0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 40px;
+    padding: 10px 20px;
+  }
+  #nav button {
+    background: none;
+    border: 1px solid rgba(80,230,255,0.3);
+    color: var(--accent);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #nav button:hover  { background: rgba(80,230,255,0.12); border-color: var(--accent); }
+  #nav button:disabled { opacity: 0.3; cursor: default; }
+  #counter { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
+  #dots { display: flex; gap: 6px; }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(80,230,255,0.2);
+    transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
+  }
+  .dot.on { background: var(--accent); transform: scale(1.3); }
+
+  .slide-title {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--azure-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .slide-subtitle {
+    font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .cards { display: grid; gap: 16px; width: 100%; max-width: 1000px; }
+  .cards-2 { grid-template-columns: 1fr 1fr; }
+  .cards-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid rgba(80,230,255,0.1);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: rgba(80,230,255,0.35); transform: translateY(-2px); }
+  .card-icon  { font-size: 28px; margin-bottom: 10px; }
+  .card-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+  .card-body  { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+  .two-col { display: flex; gap: 48px; align-items: flex-start; width: 100%; max-width: 1060px; }
+  .col { flex: 1; }
+
+  .flow-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .flow-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .flow-list li .step-num {
+    flex: 0 0 24px; height: 24px;
+    border-radius: 50%;
+    background: rgba(0,120,212,0.35);
+    color: var(--accent);
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+    background: rgba(31,41,55,1);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+  }
+  .pill.hi  { border-color: rgba(80,230,255,0.3);  color: var(--accent); }
+  .pill.grn { border-color: rgba(74,222,128,0.3);  color: var(--green);  }
+  .pill.org { border-color: rgba(251,146,60,0.3);  color: var(--orange); }
+  .pill.pur { border-color: rgba(167,139,250,0.3); color: var(--purple); }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .data-table th {
+    text-align: left; padding: 8px 12px;
+    color: var(--accent); font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(80,230,255,0.2);
+  }
+  .data-table td {
+    padding: 8px 12px; color: var(--muted);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: top;
+  }
+  .data-table tr:hover td { background: rgba(80,230,255,0.03); }
+  .data-table td:first-child { color: var(--text); font-family: 'Courier New', monospace; font-size: 0.78rem; }
+
+  .code-block {
+    background: #0d1117;
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.76rem;
+    color: #a5d6ff;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-block .cm  { color: #6b7280; }
+  .code-block .kw  { color: #ff7b72; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .var { color: #79c0ff; }
+  .code-block .ok  { color: #4ade80; }
+
+  .diagram-wrap { display: flex; justify-content: center; width: 100%; }
+  .diagram-wrap svg { max-width: 100%; height: auto; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-orange { background: rgba(251,146,60,0.15); color: var(--orange); border: 1px solid rgba(251,146,60,0.3); }
+  .badge-green  { background: rgba(74,222,128,0.15);  color: var(--green);  border: 1px solid rgba(74,222,128,0.3);  }
+  .badge-blue   { background: rgba(80,230,255,0.12);  color: var(--accent); border: 1px solid rgba(80,230,255,0.3);  }
+  .badge-purple { background: rgba(167,139,250,0.12); color: var(--purple); border: 1px solid rgba(167,139,250,0.3); }
+
+  hr.dim { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 14px 0; }
+</style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 1 — Title
+  ══════════════════════════════════════════════════ -->
+  <div class="slide active" id="s1">
+    <div style="text-align:center; max-width:800px;">
+
+      <!-- Lock + Azure logo -->
+      <svg width="88" height="88" viewBox="0 0 88 88" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:24px;">
+        <circle cx="44" cy="44" r="43" stroke="#0078d4" stroke-width="1.5" fill="rgba(0,120,212,0.07)"/>
+        <circle cx="44" cy="44" r="34" fill="rgba(0,120,212,0.13)" stroke="rgba(80,230,255,0.25)" stroke-width="1"/>
+        <!-- lock body -->
+        <rect x="29" y="42" width="30" height="22" rx="4" fill="rgba(80,230,255,0.15)" stroke="#50e6ff" stroke-width="1.8"/>
+        <!-- lock shackle -->
+        <path d="M34 42 V34 a10 10 0 0 1 20 0 V42" stroke="#50e6ff" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <!-- keyhole -->
+        <circle cx="44" cy="51" r="3.5" fill="#50e6ff"/>
+        <rect x="42.5" y="53" width="3" height="5" rx="1" fill="#50e6ff"/>
+        <!-- Entra ID 'E' badge -->
+        <circle cx="64" cy="64" r="13" fill="#0a0e1a" stroke="#0078d4" stroke-width="1.5"/>
+        <text x="64" y="69" text-anchor="middle" font-size="12" font-weight="800" fill="#50e6ff" font-family="Segoe UI,sans-serif">E</text>
+      </svg>
+
+      <h1 style="font-size:clamp(2rem,5vw,3.4rem); font-weight:800; background:linear-gradient(135deg,#50e6ff,#0078d4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:14px;">
+        Entra ID in azure-penny
+      </h1>
+      <p style="font-size:clamp(0.95rem,1.8vw,1.2rem); color:#8b9ab2; margin-bottom:12px; line-height:1.65;">
+        Three distinct identity layers — CI/CD service principal, runtime managed identity, and Easy Auth app registration.<br>
+        How they work, why they exist, and how to set them up again from scratch.
+      </p>
+      <p style="font-size:0.85rem; color:#4b5563; margin-bottom:32px;">
+        Companion to <code style="color:#50e6ff;">docs/entra-id-setup.md</code>
+      </p>
+
+      <div class="pill-row" style="justify-content:center;">
+        <span class="pill hi">OIDC Federated Credentials</span>
+        <span class="pill grn">Managed Identity</span>
+        <span class="pill org">Easy Auth</span>
+        <span class="pill pur">Admin Consent</span>
+        <span class="pill hi">Zero Secrets</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 2 — Three Identity Layers
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s2">
+    <div class="slide-title">Three Identity Layers</div>
+    <div class="slide-subtitle">Each solves a different problem · none require stored passwords</div>
+
+    <div class="cards cards-3" style="max-width:980px;">
+      <div class="card" style="border-color:rgba(80,230,255,0.25);">
+        <div class="card-icon">🐙</div>
+        <div class="card-title" style="color:var(--accent);">1 — GitHub Actions SP</div>
+        <div style="margin-bottom:10px;">
+          <span class="badge badge-blue">CI/CD identity</span>
+        </div>
+        <div class="card-body">
+          OIDC federated service principal used by GitHub Actions to run <code style="color:#50e6ff;">terraform apply</code> and push Docker images to ACR.<br><br>
+          Requires <strong style="color:var(--text);">Azure RBAC</strong> roles on the subscription <em>and</em> a <strong style="color:var(--text);">Microsoft Graph</strong> application permission.
+        </div>
+        <div style="margin-top:12px; font-size:0.75rem; color:#4b5563;">Managed by: manual bootstrap (once)</div>
+      </div>
+
+      <div class="card" style="border-color:rgba(251,146,60,0.25);">
+        <div class="card-icon">🔑</div>
+        <div class="card-title" style="color:var(--orange);">2 — User-Assigned Managed Identity</div>
+        <div style="margin-bottom:10px;">
+          <span class="badge badge-orange">Runtime identity</span>
+        </div>
+        <div class="card-body">
+          Attached to the Container App. Used by the Python app at runtime to read Blob Storage, pull from ACR, and call Azure Resource Manager.<br><br>
+          <code style="color:#fb923c;">DefaultAzureCredential</code> picks it up automatically via the IMDS endpoint — no code changes needed between local dev and production.
+        </div>
+        <div style="margin-top:12px; font-size:0.75rem; color:#4b5563;">Managed by: Terraform (identity.tf, acr.tf)</div>
+      </div>
+
+      <div class="card" style="border-color:rgba(167,139,250,0.25);">
+        <div class="card-icon">🛡️</div>
+        <div class="card-title" style="color:var(--purple);">3 — Easy Auth App Registration</div>
+        <div style="margin-bottom:10px;">
+          <span class="badge badge-purple">UI access guard</span>
+        </div>
+        <div class="card-body">
+          An Entra ID app registration wired into Container Apps Easy Auth. Any browser request to the dashboard is redirected to a Microsoft login page first.<br><br>
+          <strong style="color:var(--text);">app_role_assignment_required = true</strong> means only explicitly whitelisted users can sign in.
+        </div>
+        <div style="margin-top:12px; font-size:0.75rem; color:#4b5563;">Managed by: Terraform (auth.tf)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 3 — Full Identity Map (diagram)
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s3">
+    <div class="slide-title">Full Identity Map</div>
+    <div class="slide-subtitle">Who authenticates where, and what permissions they hold</div>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 940 400" width="940" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+        <defs>
+          <marker id="ab"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#50e6ff"/></marker>
+          <marker id="ag"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/></marker>
+          <marker id="ao"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#fb923c"/></marker>
+          <marker id="ap"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#a78bfa"/></marker>
+        </defs>
+
+        <!-- GitHub Actions -->
+        <rect x="10" y="140" width="155" height="90" rx="10" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+        <text x="88" y="168" text-anchor="middle" font-size="18">🐙</text>
+        <text x="88" y="188" text-anchor="middle" font-size="10" font-weight="700" fill="#f0f4ff">GitHub Actions</text>
+        <text x="88" y="203" text-anchor="middle" font-size="8.5" fill="#6b7280">OIDC token exchange</text>
+        <text x="88" y="217" text-anchor="middle" font-size="8.5" fill="#6b7280">no stored secrets</text>
+
+        <!-- Entra ID / Microsoft Graph hub -->
+        <ellipse cx="400" cy="185" rx="110" ry="55" fill="rgba(0,120,212,0.1)" stroke="rgba(0,120,212,0.5)" stroke-width="2"/>
+        <text x="400" y="175" text-anchor="middle" font-size="12" font-weight="700" fill="#50e6ff">Microsoft Entra ID</text>
+        <text x="400" y="192" text-anchor="middle" font-size="9" fill="#8b9ab2">azure-penny-github-actions SP</text>
+        <text x="400" y="206" text-anchor="middle" font-size="9" fill="#8b9ab2">penny-prd app registration</text>
+        <text x="400" y="220" text-anchor="middle" font-size="9" fill="#8b9ab2">user-assigned MI principal</text>
+
+        <!-- OIDC exchange label -->
+        <line x1="165" y1="182" x2="287" y2="182" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ab)"/>
+        <text x="226" y="174" text-anchor="middle" font-size="8" fill="#50e6ff">OIDC</text>
+
+        <!-- Targets on the right -->
+        <!-- ARM / Subscription -->
+        <rect x="590" y="20" width="155" height="60" rx="9" fill="rgba(80,230,255,0.06)" stroke="rgba(80,230,255,0.3)" stroke-width="1.5"/>
+        <text x="667" y="47" text-anchor="middle" font-size="13">🏗️</text>
+        <text x="667" y="63" text-anchor="middle" font-size="9.5" font-weight="700" fill="#50e6ff">ARM / Terraform</text>
+        <text x="667" y="74" text-anchor="middle" font-size="8" fill="#6b7280">Contributor + UAA</text>
+
+        <!-- ACR -->
+        <rect x="590" y="110" width="155" height="60" rx="9" fill="rgba(74,222,128,0.07)" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+        <text x="667" y="137" text-anchor="middle" font-size="13">⬡</text>
+        <text x="667" y="153" text-anchor="middle" font-size="9.5" font-weight="700" fill="#4ade80">Container Registry</text>
+        <text x="667" y="164" text-anchor="middle" font-size="8" fill="#6b7280">AcrPush (CICD) · AcrPull (MI)</text>
+
+        <!-- Graph -->
+        <rect x="590" y="200" width="155" height="60" rx="9" fill="rgba(167,139,250,0.07)" stroke="rgba(167,139,250,0.3)" stroke-width="1.5"/>
+        <text x="667" y="227" text-anchor="middle" font-size="13">📊</text>
+        <text x="667" y="243" text-anchor="middle" font-size="9.5" font-weight="700" fill="#a78bfa">Microsoft Graph</text>
+        <text x="667" y="254" text-anchor="middle" font-size="8" fill="#6b7280">DelegatedPermGrant.RW.All</text>
+
+        <!-- Blob -->
+        <rect x="590" y="290" width="155" height="60" rx="9" fill="rgba(80,230,255,0.06)" stroke="rgba(80,230,255,0.3)" stroke-width="1.5"/>
+        <text x="667" y="317" text-anchor="middle" font-size="13">🗄️</text>
+        <text x="667" y="333" text-anchor="middle" font-size="9.5" font-weight="700" fill="#50e6ff">Blob Storage</text>
+        <text x="667" y="344" text-anchor="middle" font-size="8" fill="#6b7280">Storage Blob Data Reader (MI)</text>
+
+        <!-- Container App + MI -->
+        <rect x="760" y="160" width="165" height="110" rx="10" fill="rgba(251,146,60,0.06)" stroke="rgba(251,146,60,0.3)" stroke-width="1.5"/>
+        <text x="842" y="187" text-anchor="middle" font-size="13">🪙</text>
+        <text x="842" y="205" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fb923c">Container App</text>
+        <text x="842" y="220" text-anchor="middle" font-size="8" fill="#6b7280">User-Assigned MI attached</text>
+        <text x="842" y="234" text-anchor="middle" font-size="8" fill="#6b7280">AZURE_CLIENT_ID env var</text>
+        <text x="842" y="248" text-anchor="middle" font-size="8" fill="#fb923c">Easy Auth (penny-prd)</text>
+        <text x="842" y="262" text-anchor="middle" font-size="8" fill="#6b7280">Entra ID sign-in required</text>
+
+        <!-- Browser -->
+        <rect x="780" y="310" width="125" height="52" rx="9" fill="rgba(74,222,128,0.07)" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+        <text x="842" y="334" text-anchor="middle" font-size="13">👤</text>
+        <text x="842" y="352" text-anchor="middle" font-size="9" fill="#4ade80">Browser (owner only)</text>
+
+        <!-- Arrows from Entra to targets -->
+        <line x1="507" y1="165" x2="587" y2="50" stroke="#50e6ff" stroke-width="1.2" marker-end="url(#ab)"/>
+        <line x1="510" y1="170" x2="587" y2="140" stroke="#4ade80" stroke-width="1.2" marker-end="url(#ag)"/>
+        <line x1="510" y1="185" x2="587" y2="230" stroke="#a78bfa" stroke-width="1.2" marker-end="url(#ap)"/>
+        <line x1="507" y1="200" x2="587" y2="320" stroke="#50e6ff" stroke-width="1.2" marker-end="url(#ab)"/>
+
+        <!-- Container App uses MI → Blob, ACR -->
+        <line x1="760" y1="205" x2="748" y2="140" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#ao)"/>
+        <line x1="760" y1="230" x2="748" y2="320" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#ao)"/>
+
+        <!-- Browser → Container App -->
+        <line x1="842" y1="310" x2="842" y2="272" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ag)"/>
+
+        <!-- CICD labels -->
+        <text x="635" y="95" font-size="8" fill="#50e6ff" text-anchor="middle">Contributor</text>
+        <text x="635" y="196" font-size="8" fill="#4ade80" text-anchor="middle">AcrPush / AcrPull</text>
+        <text x="635" y="290" font-size="8" fill="#a78bfa" text-anchor="middle">admin consent</text>
+
+        <!-- Legend -->
+        <rect x="10" y="370" width="500" height="22" rx="4" fill="rgba(17,24,39,0.7)"/>
+        <line x1="22" y1="381" x2="44" y2="381" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ab)"/>
+        <text x="50" y="384" font-size="8" fill="#8b9ab2">CICD SP grants</text>
+        <line x1="150" y1="381" x2="172" y2="381" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ag)"/>
+        <text x="178" y="384" font-size="8" fill="#8b9ab2">image operations</text>
+        <line x1="280" y1="381" x2="302" y2="381" stroke="#fb923c" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#ao)"/>
+        <text x="308" y="384" font-size="8" fill="#8b9ab2">Managed Identity runtime</text>
+        <line x1="420" y1="381" x2="442" y2="381" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ap)"/>
+        <text x="448" y="384" font-size="8" fill="#8b9ab2">Graph permission</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 4 — GitHub Actions OIDC SP
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s4">
+    <div class="slide-title">Layer 1 — GitHub Actions Service Principal</div>
+    <div class="slide-subtitle">OIDC federated identity · no client secrets · managed once manually</div>
+
+    <div class="two-col" style="max-width:1020px; gap:36px;">
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Required Permissions</div>
+        <table class="data-table" style="margin-bottom:18px;">
+          <thead><tr><th>Permission</th><th>Type</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>Contributor</td><td style="color:#6b7280;">Azure RBAC · subscription</td><td>Create / modify all ARM resources via Terraform</td></tr>
+            <tr><td>User Access Administrator</td><td style="color:#6b7280;">Azure RBAC · subscription</td><td>Create role assignments (e.g. AcrPull for MI)</td></tr>
+            <tr><td>DelegatedPermissionGrant.ReadWrite.All</td><td style="color:#a78bfa;">Graph App permission</td><td>Create the Easy Auth admin-consent grant in Terraform</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:10px;">GitHub Repository Variables (not secrets)</div>
+        <table class="data-table">
+          <thead><tr><th>Variable</th><th>Value source</th></tr></thead>
+          <tbody>
+            <tr><td>AZURE_CLIENT_ID</td><td>App registration client ID</td></tr>
+            <tr><td>AZURE_TENANT_ID</td><td><code style="color:#6b7280;">az account show --query tenantId</code></td></tr>
+            <tr><td>AZURE_SUBSCRIPTION_ID</td><td><code style="color:#6b7280;">az account show --query id</code></td></tr>
+            <tr><td>ACR_LOGIN_SERVER</td><td>Terraform output <code style="color:#6b7280;">acr_login_server</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--orange); margin-bottom:8px;">⚠️ Bootstrap: Graph Permission</div>
+        <div style="font-size:0.8rem; color:#6b7280; margin-bottom:12px; line-height:1.6;">
+          The <code style="color:#a78bfa;">DelegatedPermissionGrant.ReadWrite.All</code> permission cannot be granted by Terraform — it's the same principal Terraform runs as. A Global Admin or Privileged Role Admin must run this once.
+        </div>
+        <div class="code-block"><span class="cm"># Get CICD SP object ID by display name</span>
+SP_OID=$(az ad sp show \
+  --display-name "azure-penny-github-actions" \
+  --query id -o tsv)
+
+<span class="cm"># Get Microsoft Graph SP object ID in this tenant</span>
+MSGRAPH_OID=$(az ad sp show \
+  --id 00000003-0000-0000-c000-000000000000 \
+  --query id -o tsv)
+
+<span class="cm"># Assign the app role (= grant admin consent)</span>
+az rest --method POST \
+  --uri "https://graph.microsoft.com/v1.0/\
+servicePrincipals/$SP_OID/appRoleAssignments" \
+  --headers "Content-Type=application/json" \
+  --body "{
+    \"principalId\": \"$SP_OID\",
+    \"resourceId\": \"$MSGRAPH_OID\",
+    \"appRoleId\": \"8e8e4742-1d95-4f68-9d56-6ee75648c72a\"
+  }"</div>
+        <div style="margin-top:10px; font-size:0.76rem; color:#4b5563;">
+          App role ID <code style="color:#a78bfa;">8e8e4742-…c72a</code> is stable and well-known for this permission across all tenants.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 5 — Managed Identity
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s5">
+    <div class="slide-title">Layer 2 — User-Assigned Managed Identity</div>
+    <div class="slide-subtitle">Runtime identity for the Container App · fully managed by Terraform</div>
+
+    <div class="two-col" style="max-width:1020px; gap:40px; align-items:center;">
+      <div class="col">
+        <svg viewBox="0 0 380 310" width="360" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <defs>
+            <marker id="mi_a" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#fb923c"/></marker>
+          </defs>
+          <!-- MI hub -->
+          <circle cx="190" cy="140" r="52" fill="rgba(251,146,60,0.1)" stroke="rgba(251,146,60,0.5)" stroke-width="2"/>
+          <text x="190" y="128" text-anchor="middle" font-size="20">🔑</text>
+          <text x="190" y="148" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fb923c">User-Assigned MI</text>
+          <text x="190" y="163" text-anchor="middle" font-size="8.5" fill="#fb923c">id-prd-eus-penny</text>
+
+          <!-- Container App (left) -->
+          <rect x="10" y="100" width="120" height="72" rx="9" fill="rgba(0,120,212,0.1)" stroke="rgba(80,230,255,0.35)" stroke-width="1.5"/>
+          <text x="70" y="124" text-anchor="middle" font-size="14">🪙</text>
+          <text x="70" y="142" text-anchor="middle" font-size="9.5" font-weight="600" fill="#50e6ff">Container App</text>
+          <text x="70" y="157" text-anchor="middle" font-size="8" fill="#6b7280">AZURE_CLIENT_ID</text>
+          <text x="70" y="169" text-anchor="middle" font-size="8" fill="#6b7280">env var injected</text>
+
+          <!-- Blob (top right) -->
+          <rect x="270" y="10" width="105" height="50" rx="8" fill="rgba(0,120,212,0.08)" stroke="rgba(80,230,255,0.3)" stroke-width="1.5"/>
+          <text x="322" y="31" text-anchor="middle" font-size="11">🗄️</text>
+          <text x="322" y="47" text-anchor="middle" font-size="9" font-weight="600" fill="#50e6ff">Blob Storage</text>
+          <text x="322" y="57" text-anchor="middle" font-size="7.5" fill="#4ade80">Blob Data Reader</text>
+
+          <!-- ACR (mid right) -->
+          <rect x="270" y="110" width="105" height="50" rx="8" fill="rgba(74,222,128,0.07)" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+          <text x="322" y="131" text-anchor="middle" font-size="11">⬡</text>
+          <text x="322" y="147" text-anchor="middle" font-size="9" font-weight="600" fill="#4ade80">Container Reg.</text>
+          <text x="322" y="157" text-anchor="middle" font-size="7.5" fill="#4ade80">AcrPull</text>
+
+          <!-- ARM (bottom right) -->
+          <rect x="270" y="210" width="105" height="50" rx="8" fill="rgba(167,139,250,0.08)" stroke="rgba(167,139,250,0.3)" stroke-width="1.5"/>
+          <text x="322" y="231" text-anchor="middle" font-size="11">🏗️</text>
+          <text x="322" y="247" text-anchor="middle" font-size="9" font-weight="600" fill="#a78bfa">ARM Resources</text>
+          <text x="322" y="257" text-anchor="middle" font-size="7.5" fill="#a78bfa">Contributor (sub)</text>
+
+          <!-- Container App ↔ MI -->
+          <line x1="130" y1="136" x2="138" y2="136" stroke="#fb923c" stroke-width="1.5" marker-end="url(#mi_a)"/>
+          <text x="134" y="128" text-anchor="middle" font-size="7.5" fill="#fb923c">attached</text>
+
+          <!-- MI → Blob -->
+          <line x1="235" y1="110" x2="268" y2="45" stroke="#fb923c" stroke-width="1.5" marker-end="url(#mi_a)"/>
+          <!-- MI → ACR -->
+          <line x1="242" y1="138" x2="268" y2="136" stroke="#fb923c" stroke-width="1.5" marker-end="url(#mi_a)"/>
+          <!-- MI → ARM -->
+          <line x1="230" y1="170" x2="268" y2="235" stroke="#fb923c" stroke-width="1.5" marker-end="url(#mi_a)"/>
+
+          <!-- Environments bottom -->
+          <text x="190" y="225" text-anchor="middle" font-size="9" fill="#4b5563">DefaultAzureCredential resolves to:</text>
+          <rect x="20" y="238" width="95" height="32" rx="6" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+          <text x="67" y="252" text-anchor="middle" font-size="8.5" fill="#f0f4ff">Production ACA</text>
+          <text x="67" y="265" text-anchor="middle" font-size="7.5" fill="#6b7280">IMDS endpoint</text>
+          <rect x="130" y="238" width="95" height="32" rx="6" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+          <text x="177" y="252" text-anchor="middle" font-size="8.5" fill="#f0f4ff">Local dev</text>
+          <text x="177" y="265" text-anchor="middle" font-size="7.5" fill="#6b7280">az login</text>
+          <rect x="240" y="238" width="95" height="32" rx="6" fill="rgba(31,41,55,0.9)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+          <text x="287" y="252" text-anchor="middle" font-size="8.5" fill="#f0f4ff">GitHub Actions</text>
+          <text x="287" y="265" text-anchor="middle" font-size="7.5" fill="#6b7280">OIDC env token</text>
+        </svg>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Terraform resources (identity.tf + acr.tf)</div>
+        <table class="data-table" style="margin-bottom:18px;">
+          <thead><tr><th>Resource</th><th>Role</th><th>Scope</th></tr></thead>
+          <tbody>
+            <tr><td>azurerm_user_assigned_identity</td><td colspan="2" style="color:#6b7280;">Creates the MI principal</td></tr>
+            <tr><td>azurerm_role_assignment</td><td style="color:#4ade80;">Storage Blob Data Reader</td><td>Storage account</td></tr>
+            <tr><td>azurerm_role_assignment</td><td style="color:#4ade80;">AcrPull</td><td>Container Registry</td></tr>
+            <tr><td>azurerm_role_assignment</td><td style="color:#a78bfa;">Contributor</td><td>Subscription</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:8px;">Why User-Assigned, not System-Assigned?</div>
+        <ul class="flow-list">
+          <li><span class="step-num">1</span><span>Survives Container App replacement — the identity is independent of the app resource lifecycle.</span></li>
+          <li><span class="step-num">2</span><span>Role assignments can reference the MI before the app exists — no ordering dependency in Terraform.</span></li>
+          <li><span class="step-num">3</span><span>The same identity can be re-used or referenced in future resources (e.g. AKS, Functions).</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 6 — Easy Auth App Registration
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s6">
+    <div class="slide-title">Layer 3 — Easy Auth App Registration</div>
+    <div class="slide-subtitle">Entra ID gates every browser request · only the owner can sign in · all managed by Terraform</div>
+
+    <div class="two-col" style="max-width:1020px; gap:36px;">
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Terraform resources (auth.tf)</div>
+        <table class="data-table" style="margin-bottom:18px;">
+          <thead><tr><th>Resource</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>azuread_application</td><td>App registration with redirect URI + required Graph scopes (openid, profile, email, User.Read)</td></tr>
+            <tr><td>azuread_service_principal</td><td>SP for the app; <code style="color:#50e6ff;">app_role_assignment_required = true</code> — restricts login to assigned users</td></tr>
+            <tr><td>azuread_service_principal_delegated_permission_grant</td><td>Pre-grants admin consent so users never see the "needs admin approval" screen</td></tr>
+            <tr><td>azuread_app_role_assignment</td><td>Grants <code style="color:#a78bfa;">owner_email</code> user the default role (access allowed)</td></tr>
+            <tr><td>azuread_application_password</td><td>Client secret, injected into Container App as <code style="color:#50e6ff;">auth-client-secret</code></td></tr>
+            <tr><td>azapi_resource (authConfigs)</td><td>Enables Easy Auth on the Container App pointing at the app registration</td></tr>
+          </tbody>
+        </table>
+
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:8px;">Adding More Users</div>
+        <div class="code-block"><span class="cm"># In auth.tf — add one block per user</span>
+<span class="kw">data</span> "azuread_user" "alice" {
+  mail = "alice@example.com"
+}
+
+<span class="kw">resource</span> "azuread_app_role_assignment" "alice" {
+  app_role_id         = "00000000-0000-0000-0000-000000000000"
+  principal_object_id = data.azuread_user.alice.object_id
+  resource_object_id  = azuread_service_principal.penny.object_id
+}</div>
+      </div>
+
+      <div class="col">
+        <!-- Easy Auth sign-in flow -->
+        <svg viewBox="0 0 340 380" width="320" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,sans-serif">
+          <defs>
+            <marker id="ea_a" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#50e6ff"/></marker>
+            <marker id="ea_g" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#4ade80"/></marker>
+            <marker id="ea_r" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#f87171"/></marker>
+          </defs>
+
+          <text x="170" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="#8b9ab2">Sign-in flow</text>
+
+          <!-- Browser -->
+          <rect x="115" y="28" width="110" height="40" rx="8" fill="rgba(74,222,128,0.08)" stroke="rgba(74,222,128,0.35)" stroke-width="1.5"/>
+          <text x="170" y="46" text-anchor="middle" font-size="9.5" font-weight="600" fill="#4ade80">👤 Browser</text>
+          <text x="170" y="60" text-anchor="middle" font-size="8" fill="#6b7280">GET /dashboard</text>
+
+          <line x1="170" y1="68" x2="170" y2="88" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ea_a)"/>
+
+          <!-- Container App -->
+          <rect x="80" y="90" width="180" height="48" rx="8" fill="rgba(0,120,212,0.1)" stroke="rgba(80,230,255,0.4)" stroke-width="1.5"/>
+          <text x="170" y="110" text-anchor="middle" font-size="9.5" font-weight="600" fill="#50e6ff">Azure Container App</text>
+          <text x="170" y="125" text-anchor="middle" font-size="8" fill="#6b7280">Easy Auth middleware intercepts</text>
+
+          <line x1="170" y1="138" x2="170" y2="158" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ea_a)"/>
+
+          <!-- Entra ID -->
+          <rect x="60" y="160" width="220" height="60" rx="8" fill="rgba(0,120,212,0.08)" stroke="rgba(0,120,212,0.45)" stroke-width="1.5"/>
+          <text x="170" y="182" text-anchor="middle" font-size="9.5" font-weight="600" fill="#50e6ff">Microsoft Entra ID</text>
+          <text x="170" y="197" text-anchor="middle" font-size="8" fill="#6b7280">Authenticate with Microsoft account</text>
+          <text x="170" y="210" text-anchor="middle" font-size="8" fill="#6b7280">Issue ID token for penny-prd app</text>
+
+          <line x1="170" y1="220" x2="170" y2="240" stroke="#50e6ff" stroke-width="1.5" marker-end="url(#ea_a)"/>
+
+          <!-- Check assignment -->
+          <rect x="60" y="242" width="220" height="50" rx="8" fill="rgba(251,146,60,0.08)" stroke="rgba(251,146,60,0.35)" stroke-width="1.5"/>
+          <text x="170" y="263" text-anchor="middle" font-size="9.5" font-weight="600" fill="#fb923c">Check app_role_assignment</text>
+          <text x="170" y="277" text-anchor="middle" font-size="8" fill="#6b7280">Is this user in azuread_app_role_assignment?</text>
+
+          <!-- Yes path -->
+          <line x1="130" y1="292" x2="100" y2="316" stroke="#4ade80" stroke-width="1.5" marker-end="url(#ea_g)"/>
+          <rect x="20" y="318" width="90" height="36" rx="7" fill="rgba(74,222,128,0.08)" stroke="rgba(74,222,128,0.35)" stroke-width="1.5"/>
+          <text x="65" y="332" text-anchor="middle" font-size="8.5" fill="#4ade80">✓ Access granted</text>
+          <text x="65" y="346" text-anchor="middle" font-size="7.5" fill="#6b7280">token cookie set</text>
+
+          <!-- No path -->
+          <line x1="210" y1="292" x2="240" y2="316" stroke="#f87171" stroke-width="1.5" marker-end="url(#ea_r)"/>
+          <rect x="230" y="318" width="100" height="36" rx="7" fill="rgba(248,113,113,0.08)" stroke="rgba(248,113,113,0.35)" stroke-width="1.5"/>
+          <text x="280" y="332" text-anchor="middle" font-size="8.5" fill="#f87171">✗ AADSTS50105</text>
+          <text x="280" y="346" text-anchor="middle" font-size="7.5" fill="#6b7280">not assigned to app</text>
+
+          <text x="115" y="310" font-size="8" fill="#4ade80">yes</text>
+          <text x="222" y="310" font-size="8" fill="#f87171">no</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 7 — Admin Consent Deep-Dive
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s7">
+    <div class="slide-title">The Admin Consent Problem</div>
+    <div class="slide-subtitle">Why <code style="color:#50e6ff;font-size:0.85em;">azuread_service_principal_delegated_permission_grant</code> fails in CI and how to fix it</div>
+
+    <div class="two-col" style="max-width:1040px; gap:36px;">
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--orange); margin-bottom:10px;">What goes wrong</div>
+        <ul class="flow-list" style="margin-bottom:18px;">
+          <li><span class="step-num">1</span><span>Terraform runs as the GitHub Actions service principal (<code style="color:#50e6ff;">azure-penny-github-actions</code>).</span></li>
+          <li><span class="step-num">2</span><span><code style="color:#a78bfa;">azuread_service_principal_delegated_permission_grant</code> calls the Graph API to create a tenant-wide admin consent record.</span></li>
+          <li><span class="step-num">3</span><span>Graph requires the caller to hold <code style="color:#a78bfa;">DelegatedPermissionGrant.ReadWrite.All</code> as an <strong style="color:var(--text);">application permission</strong>.</span></li>
+          <li><span class="step-num">4</span><span>If the SP does not have this permission → <strong style="color:#f87171;">403 Insufficient privileges</strong> and apply fails.</span></li>
+          <li><span class="step-num">5</span><span>The permission cannot be self-granted — a Global Admin or Privileged Role Admin must assign it once.</span></li>
+        </ul>
+
+        <div style="font-size:0.84rem; font-weight:600; color:var(--orange); margin-bottom:8px;">Why it re-triggers after successful runs</div>
+        <div style="font-size:0.8rem; color:#6b7280; line-height:1.65;">
+          If the <code style="color:#50e6ff;">azuread_application</code> resource is modified (e.g. redirect URI change), Terraform may destroy and recreate the delegated permission grant. If the SP's Graph permission was revoked in the meantime, the apply will fail again.
+        </div>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:8px;">The Fix (one-time, run as Global Admin)</div>
+        <div class="code-block"><span class="cm"># Step 1 — find the CICD service principal</span>
+SP_OID=$(az ad sp show \
+  --display-name "azure-penny-github-actions" \
+  --query id -o tsv)
+
+<span class="cm"># Step 2 — find Microsoft Graph SP in this tenant</span>
+GRAPH_OID=$(az ad sp show \
+  --id 00000003-0000-0000-c000-000000000000 \
+  --query id -o tsv)
+
+<span class="cm"># Step 3 — verify the correct app role ID</span>
+az ad sp show \
+  --id 00000003-0000-0000-c000-000000000000 \
+  --query "appRoles[?value==\
+'DelegatedPermissionGrant.ReadWrite.All'].id" -o tsv
+<span class="ok"># → 8e8e4742-1d95-4f68-9d56-6ee75648c72a</span>
+
+<span class="cm"># Step 4 — assign the app role</span>
+az rest --method POST \
+  --uri "https://graph.microsoft.com/v1.0/\
+servicePrincipals/$SP_OID/appRoleAssignments" \
+  --headers "Content-Type=application/json" \
+  --body "{
+    \"principalId\":\"$SP_OID\",
+    \"resourceId\":\"$GRAPH_OID\",
+    \"appRoleId\":\"8e8e4742-1d95-4f68-9d56-6ee75648c72a\"
+  }"</div>
+        <div style="margin-top:10px; font-size:0.76rem; color:#4b5563; line-height:1.6;">
+          Note: <code style="color:#6b7280;">az ad app permission admin-consent</code> does NOT work for application permissions (Role type) — it returns <em>Consent validation failed</em>. Always use the <code style="color:#50e6ff;">az rest</code> approach above.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 8 — Bootstrap Checklist
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s8">
+    <div class="slide-title">Bootstrap Checklist — New Environment</div>
+    <div class="slide-subtitle">Everything needed before <code style="color:#50e6ff;font-size:0.85em;">terraform apply</code> will succeed end-to-end</div>
+
+    <div class="two-col" style="max-width:1020px; gap:40px; align-items:flex-start;">
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:12px;">Manual one-time steps (require Global Admin or Owner)</div>
+        <ul class="flow-list">
+          <li>
+            <span class="step-num">1</span>
+            <span><strong style="color:var(--text);">Create the CICD app registration</strong> and service principal in Entra ID.</span>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <span><strong style="color:var(--text);">Add a federated credential</strong> for <code style="color:#50e6ff;">repo:mysak7/azure-penny:ref:refs/heads/main</code> (and optionally for pull_request).</span>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <span><strong style="color:var(--text);">Assign Azure RBAC roles</strong> to the CICD SP: <code style="color:#4ade80;">Contributor</code> + <code style="color:#4ade80;">User Access Administrator</code> at subscription scope.</span>
+          </li>
+          <li>
+            <span class="step-num">4</span>
+            <span><strong style="color:var(--text);">Grant Graph permission</strong> <code style="color:#a78bfa;">DelegatedPermissionGrant.ReadWrite.All</code> via <code style="color:#50e6ff;">az rest</code> (see slide 7).</span>
+          </li>
+          <li>
+            <span class="step-num">5</span>
+            <span><strong style="color:var(--text);">Create Terraform state storage</strong> — run <code style="color:#50e6ff;">scripts/setup-backend.sh</code> (creates RG, storage account, container).</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="col">
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:12px;">GitHub repository configuration</div>
+        <ul class="flow-list" style="margin-bottom:20px;">
+          <li>
+            <span class="step-num">6</span>
+            <span>Set repository <strong style="color:var(--text);">variables</strong> (not secrets): <code style="color:#50e6ff;">AZURE_CLIENT_ID</code>, <code style="color:#50e6ff;">AZURE_TENANT_ID</code>, <code style="color:#50e6ff;">AZURE_SUBSCRIPTION_ID</code>, <code style="color:#50e6ff;">ACR_LOGIN_SERVER</code>.</span>
+          </li>
+          <li>
+            <span class="step-num">7</span>
+            <span>Update <code style="color:#50e6ff;">cicd_principal_object_id</code> in <code style="color:#50e6ff;">terraform/variables.tf</code> to the new SP's object ID.</span>
+          </li>
+          <li>
+            <span class="step-num">8</span>
+            <span>Update <code style="color:#50e6ff;">owner_email</code> in <code style="color:#50e6ff;">terraform/variables.tf</code> to the user who should have dashboard access.</span>
+          </li>
+        </ul>
+
+        <div style="font-size:0.84rem; font-weight:600; color:var(--accent); margin-bottom:10px;">Then just push</div>
+        <div class="code-block">git push origin main
+<span class="cm"># Terraform workflow runs automatically:
+# → terraform plan (shows all resources to create)
+# → terraform apply (on main push)
+# All Entra ID resources created automatically</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 9 — Troubleshooting
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s9">
+    <div class="slide-title">Troubleshooting</div>
+    <div class="slide-subtitle">Common Entra ID errors and their fixes</div>
+
+    <div style="width:100%; max-width:980px;">
+      <table class="data-table">
+        <thead>
+          <tr><th style="width:32%;">Error</th><th style="width:18%;">Where</th><th>Cause</th><th>Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>403 Insufficient privileges</td>
+            <td style="color:#f87171;">terraform apply</td>
+            <td style="color:var(--muted);">CICD SP missing <code style="color:#a78bfa;">DelegatedPermissionGrant.ReadWrite.All</code></td>
+            <td style="color:var(--muted);">Run the <code style="color:#50e6ff;">az rest appRoleAssignments</code> bootstrap command (slide 7)</td>
+          </tr>
+          <tr>
+            <td>Consent validation failed: Bad Request</td>
+            <td style="color:#f87171;">az admin-consent CLI</td>
+            <td style="color:var(--muted);"><code style="color:#6b7280;">az ad app permission admin-consent</code> doesn't work for app (Role) permissions</td>
+            <td style="color:var(--muted);">Use <code style="color:#50e6ff;">az rest POST /appRoleAssignments</code> instead</td>
+          </tr>
+          <tr>
+            <td>AADSTS50105 — user not assigned</td>
+            <td style="color:#fb923c;">browser login</td>
+            <td style="color:var(--muted);">User has no <code style="color:#50e6ff;">azuread_app_role_assignment</code> for the penny app</td>
+            <td style="color:var(--muted);">Add an <code style="color:#50e6ff;">azuread_app_role_assignment</code> block in auth.tf for that user's email</td>
+          </tr>
+          <tr>
+            <td>"Need admin approval" consent screen</td>
+            <td style="color:#fb923c;">browser login</td>
+            <td style="color:var(--muted);"><code style="color:#50e6ff;">azuread_service_principal_delegated_permission_grant</code> was not applied</td>
+            <td style="color:var(--muted);">Re-run <code style="color:#50e6ff;">terraform apply</code> — the grant will be created</td>
+          </tr>
+          <tr>
+            <td>Redirect URI mismatch</td>
+            <td style="color:#fb923c;">browser login</td>
+            <td style="color:var(--muted);">Container App URL changed (e.g. new environment) but app registration not updated</td>
+            <td style="color:var(--muted);">Run <code style="color:#50e6ff;">terraform apply</code> — redirect URI is computed from the ACA environment FQDN</td>
+          </tr>
+          <tr>
+            <td>401 on blob reads in production</td>
+            <td style="color:#fb923c;">Container App logs</td>
+            <td style="color:var(--muted);">MI role assignment not propagated yet (can take a few minutes after first apply)</td>
+            <td style="color:var(--muted);">Wait 2–5 minutes; role assignments have eventual consistency in ARM</td>
+          </tr>
+          <tr>
+            <td>Permission being assigned was not found</td>
+            <td style="color:#f87171;">az rest</td>
+            <td style="color:var(--muted);">Wrong appRoleId — note the ID ends in <code style="color:#a78bfa;">c72a</code> not <code style="color:#f87171;">c5f0</code></td>
+            <td style="color:var(--muted);">Verify with <code style="color:#50e6ff;">az ad sp show --id 00000003-… --query "appRoles[?value=='DelegatedPermissionGrant.ReadWrite.All'].id"</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       SLIDE 10 — Summary
+  ══════════════════════════════════════════════════ -->
+  <div class="slide" id="s10">
+    <div class="slide-title">Summary</div>
+    <div class="slide-subtitle">The complete Entra ID picture for azure-penny</div>
+
+    <div class="cards cards-3" style="max-width:980px; margin-bottom:28px;">
+      <div class="card" style="border-color:rgba(80,230,255,0.25);">
+        <div class="card-icon">🐙</div>
+        <div class="card-title">CICD Service Principal</div>
+        <div class="card-body">
+          OIDC federated · no secrets.<br><br>
+          Needs <code style="color:#4ade80;">Contributor</code> + <code style="color:#4ade80;">User Access Administrator</code> on the subscription, plus <code style="color:#a78bfa;">DelegatedPermissionGrant.ReadWrite.All</code> on Graph.<br><br>
+          <strong style="color:var(--orange);">Graph permission = one-time manual bootstrap.</strong>
+        </div>
+      </div>
+      <div class="card" style="border-color:rgba(251,146,60,0.25);">
+        <div class="card-icon">🔑</div>
+        <div class="card-title">Managed Identity</div>
+        <div class="card-body">
+          Created by Terraform. Attached to the Container App.<br><br>
+          Holds three RBAC roles: <code style="color:#4ade80;">Storage Blob Data Reader</code>, <code style="color:#4ade80;">AcrPull</code>, and <code style="color:#a78bfa;">Contributor</code>.<br><br>
+          <code style="color:#fb923c;">DefaultAzureCredential</code> uses it automatically — no code differences between local and production.
+        </div>
+      </div>
+      <div class="card" style="border-color:rgba(167,139,250,0.25);">
+        <div class="card-icon">🛡️</div>
+        <div class="card-title">Easy Auth App Registration</div>
+        <div class="card-body">
+          Created by Terraform. Gatekeeps the dashboard UI.<br><br>
+          <code style="color:#50e6ff;">app_role_assignment_required = true</code> — whitelist model.<br><br>
+          Admin consent pre-granted via <code style="color:#a78bfa;">azuread_service_principal_delegated_permission_grant</code> — requires CICD SP to hold the Graph permission.
+        </div>
+      </div>
+    </div>
+
+    <div class="pill-row" style="justify-content:center;">
+      <span class="pill hi">No stored passwords anywhere</span>
+      <span class="pill grn">Fully Terraform-managed after bootstrap</span>
+      <span class="pill org">Bootstrap ≈ 5 az CLI commands</span>
+      <span class="pill pur">See docs/entra-id-setup.md for full reference</span>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<div id="nav">
+  <button id="prevBtn" onclick="go(-1)" disabled>&#8592;</button>
+  <div id="dots"></div>
+  <span id="counter">1 / 10</span>
+  <button id="nextBtn" onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let cur = 0;
+
+  const dotsEl   = document.getElementById('dots');
+  const counterEl = document.getElementById('counter');
+  const prevBtn  = document.getElementById('prevBtn');
+  const nextBtn  = document.getElementById('nextBtn');
+
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => show(i);
+    dotsEl.appendChild(d);
+  });
+
+  function show(n) {
+    const dots = dotsEl.querySelectorAll('.dot');
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur < n ? cur : n + 1]?.classList.remove('prev'), 420);
+    dots[cur].classList.remove('on');
+    cur = n;
+    slides[cur].classList.add('active');
+    slides[cur].classList.remove('prev');
+    dots[cur].classList.add('on');
+    counterEl.textContent = `${cur + 1} / ${total}`;
+    prevBtn.disabled = cur === 0;
+    nextBtn.disabled = cur === total - 1;
+  }
+
+  function go(dir) {
+    const n = cur + dir;
+    if (n >= 0 && n < total) show(n);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                    { e.preventDefault(); go(-1); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End')  show(total - 1);
+  });
+</script>
+</body>
+</html>
