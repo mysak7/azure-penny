@@ -42,3 +42,9 @@ variable "tags" {
     managed_by = "terraform"
   }
 }
+
+variable "cicd_principal_object_id" {
+  description = "Object ID of the service principal used by CI/CD (GitHub Actions OIDC) to push images to ACR."
+  type        = string
+  default     = "79b8035e-2830-4acc-b30f-03b721eae5da"
+}

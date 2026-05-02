@@ -52,3 +52,8 @@ import {
   to = azurerm_role_assignment.storage_blob_reader
   id = "/subscriptions/9b7fe8b8-ffba-451a-a77f-46d8552f3922/resourceGroups/rg-prd-eus-penny/providers/Microsoft.Storage/storageAccounts/stprdeus8wvzzi/providers/Microsoft.Authorization/roleAssignments/d53ab878-c87c-3c55-768e-dcf9ecf4604e"
 }
+
+import {
+  to = azurerm_role_assignment.acr_push_cicd
+  id = "/subscriptions/9b7fe8b8-ffba-451a-a77f-46d8552f3922/resourceGroups/rg-prd-eus-penny/providers/Microsoft.ContainerRegistry/registries/crprdeuspenny/providers/Microsoft.Authorization/roleAssignments/58e3ae0e-d47f-8406-3d3a-535dc487258e"
+}
