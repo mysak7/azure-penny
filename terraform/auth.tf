@@ -67,22 +67,14 @@ resource "azuread_application_password" "penny" {
   end_date       = "2028-01-01T00:00:00Z"
 }
 
-# The guest user was created in a prior run. Stop managing the invitation in
-# Terraform (destroy=false keeps the actual user in the tenant).
-removed {
-  from = azuread_invitation.owner
-  lifecycle {
-    destroy = false
-  }
-}
-
-data "azuread_user" "owner" {
-  mail = var.owner_email
+resource "azuread_invitation" "owner" {
+  user_email_address = var.owner_email
+  redirect_url       = "https://${local.container_app_fqdn}"
 }
 
 resource "azuread_app_role_assignment" "owner" {
   app_role_id         = "00000000-0000-0000-0000-000000000000"
-  principal_object_id = data.azuread_user.owner.object_id
+  principal_object_id = azuread_invitation.owner.user_id
   resource_object_id  = azuread_service_principal.penny.object_id
 }
 
