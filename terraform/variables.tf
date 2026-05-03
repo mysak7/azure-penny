@@ -43,10 +43,16 @@ variable "tags" {
   }
 }
 
+variable "enable_cost_export" {
+  description = "Whether to create the Cost Management export (requires EA/MCA/Pay-As-You-Go subscription; set false for trial/dev subs)."
+  type        = bool
+  default     = true
+}
+
 variable "cicd_principal_object_id" {
   description = "Object ID of the service principal used by CI/CD (GitHub Actions OIDC) to push images to ACR."
   type        = string
-  default     = "79b8035e-2830-4acc-b30f-03b721eae5da"
+  default     = "5bcc93c5-b6e3-4a5c-91cb-3defb9254151"
 }
 
 variable "owner_email" {

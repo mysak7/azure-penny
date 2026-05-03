@@ -1,4 +1,5 @@
 resource "azurerm_subscription_cost_management_export" "daily" {
+  count           = var.enable_cost_export ? 1 : 0
   name            = "penny-${var.environment}-daily-export"
   subscription_id = data.azurerm_subscription.current.id
 

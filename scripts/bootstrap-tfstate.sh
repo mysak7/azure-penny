@@ -8,12 +8,12 @@
 set -euo pipefail
 
 TFSTATE_RG="azure-penny-tfstate-rg"
-TFSTATE_SA="azurepennytf3759"
+TFSTATE_SA="azurepennytff04cd1"
 TFSTATE_CONTAINER="tfstate"
 LOCATION="eastus"
 
 # GitHub Actions SP — object ID of azure-penny-github-actions
-GH_SP_OBJECT_ID="79b8035e-2830-4acc-b30f-03b721eae5da"
+GH_SP_OBJECT_ID="5bcc93c5-b6e3-4a5c-91cb-3defb9254151"
 
 echo "==> Creating resource group $TFSTATE_RG"
 az group create --name "$TFSTATE_RG" --location "$LOCATION" --output none

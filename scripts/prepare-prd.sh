@@ -4,7 +4,7 @@
 set -euo pipefail
 
 TFSTATE_RG="azure-penny-tfstate-rg"
-TFSTATE_SA="azurepennytf3759"
+TFSTATE_SA="azurepennytff04cd1"
 TFSTATE_CONTAINER="tfstate"
 LOCATION="eastus"
 

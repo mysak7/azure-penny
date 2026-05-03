@@ -28,7 +28,7 @@ Azure Container Registry                              ▼
 | Container App Environment | Shared ACA hosting environment (with Log Analytics) |
 | Container App | The running app, scales to zero when idle |
 
-Terraform state is stored in Azure Blob Storage (`azure-penny-tfstate-rg` / `azurepennytf3759`).
+Terraform state is stored in Azure Blob Storage (`azure-penny-tfstate-rg` / `azurepennytff04cd1`).
 
 ## Repository layout
 

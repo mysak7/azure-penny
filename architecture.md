@@ -27,7 +27,7 @@
 
 ## Infrastructure (Terraform)
 
-All cloud resources are declared in `terraform/` using the `hashicorp/azurerm ~> 4.67` provider. State is stored remotely in a dedicated storage account (`azurepennytf3759` / container `tfstate`).
+All cloud resources are declared in `terraform/` using the `hashicorp/azurerm ~> 4.67` provider. State is stored remotely in a dedicated storage account (`azurepennytff04cd1` / container `tfstate`).
 
 | File | What it provisions |
 |---|---|

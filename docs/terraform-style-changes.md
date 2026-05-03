@@ -32,7 +32,7 @@ than a silent side-effect of `terraform init`.
 ```hcl
 backend "azurerm" {
   resource_group_name  = "azure-penny-tfstate-rg"
-  storage_account_name = "azurepennytf3759"
+  storage_account_name = "azurepennytff04cd1"
   ...
 }
 ```
@@ -53,7 +53,7 @@ scripts were added:
 The CI workflow (`terraform.yml`) was updated to pass the same flags in the
 `Terraform Init` step.
 
-The existing state storage account (`azurepennytf3759`) is unchanged — `init-prd.sh`
+The existing state storage account (`azurepennytff04cd1`) is unchanged — `init-prd.sh`
 points to it so no state migration is needed.
 
 ---
