@@ -75,6 +75,7 @@ It merges all Parquet (or CSV/CSV.GZ) files from the most-recent date folder int
 | `AZURE_SUBSCRIPTION_ID` | No | — | Azure subscription ID |
 | `CACHE_TTL_SECONDS` | No | `3600` | How long to cache the loaded DataFrame |
 | `LIVE_CACHE_TTL_SECONDS` | No | `900` | Live data cache TTL (15 min default) |
+| `PROTECTED_RGS` | No | — | Comma-separated RG names the app refuses to delete (e.g. `rg-prd-eus-penny`) |
 
 Authentication uses `DefaultAzureCredential`, which resolves automatically in:
 - Azure Container Apps (via the attached managed identity)
@@ -126,8 +127,11 @@ All workflows authenticate to Azure via OIDC (no stored secrets).
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
 | `ACR_LOGIN_SERVER` | ACR login server (e.g. `myacr.azurecr.io`) |
 | `ACR_NAME` | ACR resource name |
-| `CONTAINER_APP_NAME` | Container App resource name |
-| `RESOURCE_GROUP_NAME` | Resource group name |
+| `CONTAINER_APP_NAME` | Container App resource name (prd) |
+| `RESOURCE_GROUP_NAME` | Resource group name (prd) |
+| `DEV_CONTAINER_APP_NAME` | Container App resource name (dev branch) |
+| `DEV_RESOURCE_GROUP_NAME` | Resource group name (dev branch) |
+| `BILLING_PROFILE_ID` | MCA billing profile resource ID (for cost export) |
 
 ## Infrastructure deployment
 
@@ -142,6 +146,18 @@ terraform plan -var="container_image=<acr-login-server>/azure-penny:latest"
 
 # Apply
 terraform apply -var="container_image=<acr-login-server>/azure-penny:latest"
+```
+
+**Bootstrap sequence (first deploy):**
+
+1. Run `terraform apply` — deploys all infrastructure. The Container App starts with `nginx:latest` as a placeholder.
+2. Push to `main` — the CD workflow builds the real image and updates the Container App.
+3. The app is live after step 2. Step 1 alone will show nginx behind the Easy Auth login.
+
+**Budget alerts** are not managed by Terraform. Run once to create per-$10 subscription alerts:
+
+```bash
+./scripts/set-budget-alerts.sh your@email.com 200
 ```
 
 Key outputs after apply:

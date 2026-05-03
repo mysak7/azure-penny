@@ -2,10 +2,10 @@ name: Terraform
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths: ["terraform/**"]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths: ["terraform/**"]
   workflow_dispatch:
     inputs:
@@ -15,9 +15,15 @@ on:
         default: plan
         type: choice
         options: [plan, apply]
+      environment:
+        description: "Target environment"
+        required: true
+        default: prd
+        type: choice
+        options: [prd, dev]
 
 concurrency:
-  group: deploy-prd
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -45,7 +51,7 @@ jobs:
     defaults:
       run:
         working-directory: terraform
-    # Gate apply behind the production environment (requires manual approval if configured)
+    # Gate apply behind the production environment only for prd (requires manual approval if configured)
     environment: >-
       ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
           && 'production'
@@ -53,6 +59,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Detect environment
+        id: detect
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]] || \
+             [[ "${{ github.base_ref }}" == "dev" ]] || \
+             [[ "${{ github.event.inputs.environment }}" == "dev" ]]; then
+            echo "env_name=dev"        >> "$GITHUB_OUTPUT"
+            echo "tfvars=variables/dev.tfvars" >> "$GITHUB_OUTPUT"
+            echo "state_key=azure-penny-dev.tfstate" >> "$GITHUB_OUTPUT"
+          else
+            echo "env_name=prd"        >> "$GITHUB_OUTPUT"
+            echo "tfvars=variables/prd.tfvars" >> "$GITHUB_OUTPUT"
+            echo "state_key=azure-penny.tfstate" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -71,16 +92,16 @@ jobs:
             -backend-config="resource_group_name=azure-penny-tfstate-rg" \
             -backend-config="storage_account_name=azurepennytff04cd1" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=azure-penny.tfstate" \
+            -backend-config="key=${{ steps.detect.outputs.state_key }}" \
             -backend-config="use_azuread_auth=true"
 
       - name: Write prd.tfvars
+        if: steps.detect.outputs.env_name == 'prd'
         run: |
           cat > variables/prd.tfvars <<EOF
           environment           = "prd"
           location              = "eastus"
           location_short        = "eus"
-          budget_monthly_amount = 100
           enable_cost_export    = true
           billing_profile_id    = "${{ vars.BILLING_PROFILE_ID }}"
           tags = {
@@ -90,12 +111,27 @@ jobs:
           }
           EOF
 
+      - name: Write dev.tfvars
+        if: steps.detect.outputs.env_name == 'dev'
+        run: |
+          cat > variables/dev.tfvars <<EOF
+          environment        = "dev"
+          location           = "swedencentral"
+          location_short     = "sc"
+          enable_cost_export = false
+          tags = {
+            project     = "penny"
+            managed_by  = "terraform"
+            environment = "dev"
+          }
+          EOF
+
       - name: Terraform Plan
         id: plan
         run: |
           terraform plan -no-color -out=tfplan \
-            -var-file=variables/prd.tfvars \
-            -var="container_image=${{ vars.ACR_LOGIN_SERVER }}/azure-penny:latest"
+            -var-file="${{ steps.detect.outputs.tfvars }}" \
+            -var="container_image=${{ vars.ACR_LOGIN_SERVER }}/azure-penny:${{ steps.detect.outputs.env_name == 'prd' && 'latest' || 'dev' }}"
         continue-on-error: true  # Surface plan output in PR comment even on error
 
       - name: Comment plan on PR

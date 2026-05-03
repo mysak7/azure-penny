@@ -6,6 +6,13 @@ resource "azapi_resource" "cost_export" {
   name      = "penny-${var.environment}-daily-export"
   parent_id = var.billing_profile_id
 
+  lifecycle {
+    precondition {
+      condition     = var.billing_profile_id != ""
+      error_message = "billing_profile_id must be set when enable_cost_export is true."
+    }
+  }
+
   body = {
     properties = {
       schedule = {

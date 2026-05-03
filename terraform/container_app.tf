@@ -73,6 +73,11 @@ resource "azurerm_container_app" "this" {
         name  = "LIVE_CACHE_TTL_SECONDS"
         value = "900"
       }
+
+      env {
+        name  = "PROTECTED_RGS"
+        value = azurerm_resource_group.this.name
+      }
     }
   }
 

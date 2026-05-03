@@ -2,7 +2,6 @@ subscription_id       = ""
 environment           = "prd"
 location              = "eastus"
 location_short        = "eus"
-budget_monthly_amount = 100
 container_image       = "crprdeusmcucta.azurecr.io/azure-penny:latest"
 enable_cost_export    = true
 billing_profile_id    = "providers/Microsoft.Billing/billingAccounts/<BILLING_ACCOUNT_ID>/billingProfiles/<PROFILE_ID>"

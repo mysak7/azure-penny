@@ -110,26 +110,27 @@ def _discover_latest_blobs(container_name: str) -> list[str]:
         log.info("Fallback: selected newest blob %s", newest.name)
         return [newest.name]
 
-    latest_segment = sorted(date_segments)[-1]
-    log.info("Latest export date folder: %s", latest_segment)
+    for segment in sorted(date_segments, reverse=True):
+        candidates = [
+            bp for bp in all_blob_props
+            if segment in bp.name and bp.name.endswith(_EXPORT_EXTS)
+        ]
+        if not candidates:
+            log.info("Folder '%s' has no export files, trying previous period.", segment)
+            continue
 
-    candidates = [
-        bp for bp in all_blob_props
-        if latest_segment in bp.name and bp.name.endswith(_EXPORT_EXTS)
-    ]
-    if not candidates:
-        return []
+        if len(candidates) == 1:
+            log.info("Selected 1 file from folder '%s': %s", segment, candidates[0].name)
+            return [candidates[0].name]
 
-    if len(candidates) == 1:
-        log.info("Selected 1 file from folder '%s': %s", latest_segment, candidates[0].name)
-        return [candidates[0].name]
+        newest = max(candidates, key=lambda bp: bp.last_modified or 0)
+        log.info(
+            "Found %d file(s) in folder '%s'; using only the most-recent: %s (last_modified=%s)",
+            len(candidates), segment, newest.name, newest.last_modified,
+        )
+        return [newest.name]
 
-    newest = max(candidates, key=lambda bp: bp.last_modified or 0)
-    log.info(
-        "Found %d file(s) in folder '%s'; using only the most-recent: %s (last_modified=%s)",
-        len(candidates), latest_segment, newest.name, newest.last_modified,
-    )
-    return [newest.name]
+    return []
 
 
 # ---------------------------------------------------------------------------

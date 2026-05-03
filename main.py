@@ -14,7 +14,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from config import AZURE_SUBSCRIPTION_ID, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
+from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
 from live_resources import _get_live_data, _live_cache, _live_lock, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
@@ -617,6 +617,14 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
     if not resource_id.lower().startswith("/subscriptions/"):
         raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
 
+    _parts = [p.lower() for p in resource_id.strip("/").split("/")]
+    try:
+        _rg = _parts[_parts.index("resourcegroups") + 1]
+        if _rg in PROTECTED_RGS:
+            raise HTTPException(status_code=403, detail=f"Resource group '{_rg}' is protected.")
+    except (ValueError, IndexError):
+        pass
+
     log.warning("⚠️  DELETE resource initiated: %s", resource_id)
 
     from live_resources import _get_resource_mgmt_client
@@ -700,6 +708,9 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
         raise HTTPException(status_code=400, detail="resource_group_name is required")
 
     rg = resource_group_name.strip()
+    if rg.lower() in PROTECTED_RGS:
+        raise HTTPException(status_code=403, detail=f"Resource group '{rg}' is protected.")
+
     log.warning("⚠️  DELETE resource group initiated: %s", rg)
 
     from live_resources import _get_resource_mgmt_client
@@ -739,6 +750,10 @@ async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...))
     """Delete multiple Azure resource groups sequentially."""
     if not resource_groups:
         raise HTTPException(status_code=400, detail="resource_groups list is empty")
+
+    blocked = [r for r in resource_groups if r.strip().lower() in PROTECTED_RGS]
+    if blocked:
+        raise HTTPException(status_code=403, detail=f"Protected resource groups cannot be deleted: {blocked}")
 
     log.warning("⚠️  BULK DELETE resource groups initiated: %s", resource_groups)
 
