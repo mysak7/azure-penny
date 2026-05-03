@@ -81,7 +81,8 @@ jobs:
           location              = "eastus"
           location_short        = "eus"
           budget_monthly_amount = 100
-          enable_cost_export    = false
+          enable_cost_export    = true
+          billing_profile_id    = "${{ vars.BILLING_PROFILE_ID }}"
           tags = {
             project     = "penny"
             managed_by  = "terraform"

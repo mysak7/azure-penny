@@ -49,6 +49,12 @@ variable "enable_cost_export" {
   default     = true
 }
 
+variable "billing_profile_id" {
+  description = "Full resource ID of the MCA billing profile scope for Cost Management exports (e.g. providers/Microsoft.Billing/billingAccounts/.../billingProfiles/...)."
+  type        = string
+  default     = ""
+}
+
 variable "cicd_principal_object_id" {
   description = "Object ID of the service principal used by CI/CD (GitHub Actions OIDC) to push images to ACR."
   type        = string
