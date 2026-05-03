@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>azure-penny — New Subscription Bootstrap</title>
+<style>
+  :root {
+    --azure-blue: #0078d4;
+    --azure-dark: #003966;
+    --azure-light: #50e6ff;
+    --azure-teal: #008575;
+    --bg: #0a0e1a;
+    --surface: #111827;
+    --surface2: #1f2937;
+    --text: #f0f4ff;
+    --muted: #8b9ab2;
+    --accent: #50e6ff;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+    --red: #f87171;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 64px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    transform: translateX(60px);
+  }
+  .slide.active  { opacity: 1; pointer-events: auto; transform: translateX(0); }
+  .slide.prev    { opacity: 0; transform: translateX(-60px); }
+
+  #nav {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 100;
+    background: rgba(17,24,39,0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 40px;
+    padding: 10px 20px;
+  }
+  #nav button {
+    background: none;
+    border: 1px solid rgba(80,230,255,0.3);
+    color: var(--accent);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #nav button:hover  { background: rgba(80,230,255,0.12); border-color: var(--accent); }
+  #nav button:disabled { opacity: 0.3; cursor: default; }
+  #counter { color: var(--muted); font-size: 13px; min-width: 52px; text-align: center; }
+  #dots { display: flex; gap: 6px; }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: rgba(80,230,255,0.2);
+    transition: background 0.2s, transform 0.2s;
+    cursor: pointer;
+  }
+  .dot.on { background: var(--accent); transform: scale(1.3); }
+
+  .slide-title {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--azure-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .slide-subtitle {
+    font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 36px;
+  }
+
+  .cards { display: grid; gap: 16px; width: 100%; max-width: 1000px; }
+  .cards-2 { grid-template-columns: 1fr 1fr; }
+  .cards-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .cards-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid rgba(80,230,255,0.1);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .card:hover { border-color: rgba(80,230,255,0.35); transform: translateY(-2px); }
+  .card-icon  { font-size: 28px; margin-bottom: 10px; }
+  .card-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+  .card-body  { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+  .two-col { display: flex; gap: 48px; align-items: flex-start; width: 100%; max-width: 1060px; }
+  .col { flex: 1; }
+
+  .flow-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .flow-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .flow-list li .step-num {
+    flex: 0 0 24px; height: 24px;
+    border-radius: 50%;
+    background: rgba(0,120,212,0.35);
+    color: var(--accent);
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .flow-list li b { color: var(--text); }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px; font-weight: 500;
+    background: rgba(31,41,55,1);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--muted);
+  }
+  .pill.hi  { border-color: rgba(80,230,255,0.3);  color: var(--accent); }
+  .pill.grn { border-color: rgba(74,222,128,0.3);  color: var(--green);  }
+  .pill.org { border-color: rgba(251,146,60,0.3);  color: var(--orange); }
+  .pill.pur { border-color: rgba(167,139,250,0.3); color: var(--purple); }
+  .pill.red { border-color: rgba(248,113,113,0.3); color: var(--red); }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .data-table th {
+    text-align: left; padding: 8px 12px;
+    color: var(--accent); font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(80,230,255,0.2);
+  }
+  .data-table td {
+    padding: 8px 12px; color: var(--muted);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: top;
+  }
+  .data-table tr:hover td { background: rgba(80,230,255,0.03); }
+  .data-table td:first-child { color: var(--text); font-family: 'Courier New', monospace; font-size: 0.78rem; }
+
+  .code-block {
+    background: #0d1117;
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.76rem;
+    color: #a5d6ff;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-block .cm  { color: #6b7280; }
+  .code-block .kw  { color: #ff7b72; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .var { color: #79c0ff; }
+  .code-block .ok  { color: #4ade80; }
+  .code-block .err { color: #f87171; }
+  .code-block .warn { color: #fb923c; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-green { background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
+  .badge-blue  { background: rgba(80,230,255,0.12); border: 1px solid rgba(80,230,255,0.3); color: var(--accent); }
+  .badge-org   { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.3); color: var(--orange); }
+  .badge-red   { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
+  .badge-pur   { background: rgba(167,139,250,0.12); border: 1px solid rgba(167,139,250,0.3); color: var(--purple); }
+
+  .section-label {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  /* Hero slide */
+  .hero-ring {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    border: 3px solid rgba(80,230,255,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 52px;
+    margin-bottom: 28px;
+    background: radial-gradient(circle, rgba(0,120,212,0.15), transparent);
+    box-shadow: 0 0 40px rgba(80,230,255,0.1);
+  }
+  .hero-title {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 800;
+    background: linear-gradient(135deg, #50e6ff, #0078d4, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-align: center;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+  .hero-sub {
+    font-size: 1rem; color: var(--muted); text-align: center; margin-bottom: 28px;
+  }
+
+  /* Timeline */
+  .timeline { width: 100%; max-width: 900px; }
+  .tl-item {
+    display: flex; gap: 20px; margin-bottom: 18px; align-items: flex-start;
+  }
+  .tl-icon {
+    flex: 0 0 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    border: 1px solid rgba(80,230,255,0.2);
+    background: rgba(0,120,212,0.1);
+  }
+  .tl-content { flex: 1; padding-top: 6px; }
+  .tl-title { font-size: 0.9rem; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .tl-desc  { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+  /* Problem/solution */
+  .ps-row { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+  .ps-icon { font-size: 18px; flex: 0 0 28px; margin-top: 1px; }
+  .ps-text { font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
+  .ps-text b { color: var(--text); }
+
+  /* Resource grid */
+  .res-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; max-width: 1000px; }
+  .res-card {
+    background: var(--surface);
+    border: 1px solid rgba(80,230,255,0.08);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .res-icon { font-size: 22px; margin-bottom: 6px; }
+  .res-name { font-size: 0.7rem; color: var(--text); font-weight: 600; margin-bottom: 3px; }
+  .res-val  { font-size: 0.65rem; color: var(--muted); font-family: monospace; word-break: break-all; }
+
+  /* Arch diagram */
+  .arch-box {
+    background: var(--surface);
+    border: 1px solid rgba(80,230,255,0.15);
+    border-radius: 10px;
+    padding: 14px 20px;
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text);
+    min-width: 120px;
+  }
+  .arch-box small { display: block; font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+  .arch-arrow {
+    font-size: 18px; color: var(--accent); align-self: center;
+    opacity: 0.6;
+  }
+  .arch-row { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; width: 100%; max-width: 960px; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- Slide 1: Title -->
+<div class="slide active">
+  <div class="hero-ring">☁️</div>
+  <div class="hero-title">New Subscription Bootstrap</div>
+  <div class="hero-sub">azure-penny · Full deployment from scratch on a fresh Azure sub · 2026-05-03</div>
+  <div class="pill-row" style="justify-content:center;margin-bottom:28px">
+    <span class="pill hi">Sub: 5ffa7688</span>
+    <span class="pill grn">MCA / Pay-As-You-Go</span>
+    <span class="pill pur">Terraform 1.12</span>
+    <span class="pill org">azurerm 4.67</span>
+    <span class="pill">azapi 2.9</span>
+  </div>
+  <div class="pill-row" style="justify-content:center">
+    <span class="badge badge-green">✓ 22 resources deployed</span>
+    <span class="badge badge-blue">✓ CI/CD wired</span>
+    <span class="badge badge-pur">✓ Daily cost export</span>
+    <span class="badge badge-green">✓ App live</span>
+  </div>
+</div>
+
+<!-- Slide 2: What we started with -->
+<div class="slide">
+  <div class="slide-title">Starting Point</div>
+  <div class="slide-subtitle">Fresh tenant, no resources, old subscription artefacts in code</div>
+  <div class="two-col">
+    <div class="col">
+      <div class="section-label">What existed</div>
+      <ul class="flow-list">
+        <li><span class="step-num">✓</span><span>Terraform code &amp; app code in git — ready to deploy</span></li>
+        <li><span class="step-num">✓</span><span>GitHub Actions workflows for CI/CD + Terraform</span></li>
+        <li><span class="step-num">✓</span><span>Entra ID Easy Auth already designed in auth.tf</span></li>
+        <li><span class="step-num">✓</span><span>Bootstrap scripts in <code>scripts/</code></span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="section-label">What needed doing</div>
+      <ul class="flow-list">
+        <li><span class="step-num">1</span><span><b>Register Azure resource providers</b> — new tenant, nothing registered</span></li>
+        <li><span class="step-num">2</span><span><b>Terraform state backend</b> — new storage account (old name globally taken)</span></li>
+        <li><span class="step-num">3</span><span><b>GitHub Actions SP</b> — new OIDC identity + MS Graph permissions</span></li>
+        <li><span class="step-num">4</span><span><b>Terraform apply</b> — 23 resources from zero</span></li>
+        <li><span class="step-num">5</span><span><b>Cost export</b> — two rounds of debugging (free trial → PAYG → MCA scope)</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 3: Step 1 - GitHub Actions SP -->
+<div class="slide">
+  <div class="slide-title">GitHub Actions Service Principal</div>
+  <div class="slide-subtitle">OIDC federation — no secrets, just JWT tokens from GitHub</div>
+  <div class="two-col">
+    <div class="col">
+      <div class="section-label">Created</div>
+      <ul class="flow-list" style="margin-bottom:20px">
+        <li><span class="step-num">1</span><span><b>App registration</b> <code>azure-penny-github-actions</code></span></li>
+        <li><span class="step-num">2</span><span><b>Service principal</b> from the app</span></li>
+        <li><span class="step-num">3</span><span><b>3 federated credentials</b> — main branch, PRs, production environment</span></li>
+      </ul>
+      <div class="section-label">Azure RBAC</div>
+      <ul class="flow-list">
+        <li><span class="step-num">✓</span><span><b>Contributor</b> on subscription</span></li>
+        <li><span class="step-num">✓</span><span><b>User Access Administrator</b> on subscription (for Terraform RBAC assignments)</span></li>
+        <li><span class="step-num">✓</span><span><b>Storage Blob Data Contributor</b> on tfstate SA</span></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="section-label">Microsoft Graph app roles (admin-consented)</div>
+      <ul class="flow-list" style="margin-bottom:20px">
+        <li><span class="step-num">✓</span><span><b>Application.ReadWrite.All</b> — manage app registrations</span></li>
+        <li><span class="step-num">✓</span><span><b>AppRoleAssignment.ReadWrite.All</b> — assign app roles</span></li>
+        <li><span class="step-num">✓</span><span><b>User.Read.All</b> — look up owner by email</span></li>
+        <li><span class="step-num">✓</span><span><b>DelegatedPermissionGrant.ReadWrite.All</b> — admin-consent Easy Auth scopes</span></li>
+      </ul>
+      <div class="pill-row">
+        <span class="pill hi">App ID: ede4d876</span>
+        <span class="pill">OID: 5bcc93c5</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 4: Step 2 - tfstate backend -->
+<div class="slide">
+  <div class="slide-title">Terraform State Backend</div>
+  <div class="slide-subtitle">Remote state in Azure Blob Storage — OIDC auth, no storage keys</div>
+  <div class="two-col">
+    <div class="col">
+      <div class="section-label">What was created</div>
+      <ul class="flow-list" style="margin-bottom:20px">
+        <li><span class="step-num">✓</span><span>Resource group <b>azure-penny-tfstate-rg</b> (eastus)</span></li>
+        <li><span class="step-num">✓</span><span>Storage account <b>azurepennytff04cd1</b></span></li>
+        <li><span class="step-num">✓</span><span>Blob container <b>tfstate</b></span></li>
+      </ul>
+      <div class="section-label">Problem encountered</div>
+      <div class="ps-row">
+        <div class="ps-icon">🚫</div>
+        <div class="ps-text"><b>azurepennytf3759</b> (old name) was globally reserved — Azure storage account names have no expiry after deletion</div>
+      </div>
+      <div class="ps-row">
+        <div class="ps-icon">✅</div>
+        <div class="ps-text">Generated new name <b>azurepennytff04cd1</b>, updated all 9 references across scripts, workflows, and docs</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="section-label">Access grants</div>
+      <ul class="flow-list" style="margin-bottom:20px">
+        <li><span class="step-num">✓</span><span>GitHub Actions SP → <b>Storage Blob Data Contributor</b></span></li>
+        <li><span class="step-num">✓</span><span>Local user → <b>Storage Blob Data Owner</b> (for local <code>terraform init</code>)</span></li>
+      </ul>
+      <div class="section-label">Init command</div>
+      <div class="code-block"><span class="kw">terraform</span> init \
+  -backend-config=<span class="str">"storage_account_name=azurepennytff04cd1"</span> \
+  -backend-config=<span class="str">"use_azuread_auth=true"</span> \
+  ...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 5: Step 3 - Provider registrations -->
+<div class="slide">
+  <div class="slide-title">Resource Provider Registration</div>
+  <div class="slide-subtitle">Fresh tenant — nothing is registered by default</div>
+  <div class="cards cards-3" style="max-width:860px;margin-bottom:24px">
+    <div class="card">
+      <div class="card-icon">💾</div>
+      <div class="card-title">Microsoft.Storage</div>
+      <div class="card-body">First to register — needed before the tfstate storage account could be created. Was blocking the entire bootstrap.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📦</div>
+      <div class="card-title">Microsoft.App</div>
+      <div class="card-body">Container Apps provider. Already registered when Terraform tried to create it — imported into state with <code>terraform import</code>.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🐳</div>
+      <div class="card-title">Microsoft.ContainerRegistry</div>
+      <div class="card-body">Needed for ACR. Registered alongside the other providers during bootstrap.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🪪</div>
+      <div class="card-title">Microsoft.ManagedIdentity</div>
+      <div class="card-body">Required for user-assigned managed identities used by the Container App.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-title">Microsoft.OperationalInsights</div>
+      <div class="card-body">Log Analytics workspace for Container App environment telemetry.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <div class="card-title">Microsoft.CostManagementExports</div>
+      <div class="card-body">Registered twice — once during initial bootstrap, once again after the subscription was upgraded from Free Trial to PAYG.</div>
+    </div>
+  </div>
+  <div class="pill-row" style="justify-content:center">
+    <span class="pill org">⚠️ Unregistered providers give misleading "SubscriptionNotFound" errors</span>
+  </div>
+</div>
+
+<!-- Slide 6: Step 4 - Terraform apply -->
+<div class="slide">
+  <div class="slide-title">Terraform Apply</div>
+  <div class="slide-subtitle">23 resources — 3 rounds to get a clean state</div>
+  <div class="res-grid">
+    <div class="res-card">
+      <div class="res-icon">📁</div>
+      <div class="res-name">Resource Group</div>
+      <div class="res-val">rg-prd-eus-penny</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">💾</div>
+      <div class="res-name">Storage Account</div>
+      <div class="res-val">stprdeusmcucta</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🐳</div>
+      <div class="res-name">Container Registry</div>
+      <div class="res-val">crprdeusmcucta</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🪪</div>
+      <div class="res-name">Managed Identity</div>
+      <div class="res-val">id-prd-eus-penny</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">📊</div>
+      <div class="res-name">Log Analytics</div>
+      <div class="res-val">log-prd-eus-penny</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🌐</div>
+      <div class="res-name">CA Environment</div>
+      <div class="res-val">cae-prd-eus-penny</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🚀</div>
+      <div class="res-name">Container App</div>
+      <div class="res-val">ca-prd-eus-penny</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🔐</div>
+      <div class="res-name">App Registration</div>
+      <div class="res-val">penny-prd</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🔑</div>
+      <div class="res-name">Easy Auth Config</div>
+      <div class="res-val">authConfigs/current</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🛡️</div>
+      <div class="res-name">Role: AcrPull</div>
+      <div class="res-val">identity → ACR</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🛡️</div>
+      <div class="res-name">Role: AcrPush</div>
+      <div class="res-val">GH Actions → ACR</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🛡️</div>
+      <div class="res-name">Role: BlobReader</div>
+      <div class="res-val">identity → storage</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">💵</div>
+      <div class="res-name">Budget Alert</div>
+      <div class="res-val">$100/month</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">🔀</div>
+      <div class="res-name">Random Suffix</div>
+      <div class="res-val">mcucta</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">📤</div>
+      <div class="res-name">Cost Export</div>
+      <div class="res-val">billing profile scope</div>
+    </div>
+    <div class="res-card">
+      <div class="res-icon">+7</div>
+      <div class="res-name">Other resources</div>
+      <div class="res-val">SP, password, grants, container, provider reg…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 7: Terraform issues fixed -->
+<div class="slide">
+  <div class="slide-title">Terraform Issues &amp; Fixes</div>
+  <div class="slide-subtitle">Three blockers on the first apply, all resolved</div>
+  <div class="cards cards-3">
+    <div class="card">
+      <div class="card-icon">🏷️</div>
+      <div class="card-title">ACR name globally taken</div>
+      <div class="card-body" style="margin-bottom:12px">
+        <code>crprdeuspenny</code> was still reserved from the old subscription. ACR names are globally unique with no release TTL.
+      </div>
+      <div class="ps-row">
+        <div class="ps-icon">✅</div>
+        <div class="ps-text" style="font-size:0.76rem">Changed <code>acr.tf</code> to use the random suffix already generated by <code>random_string.suffix</code> → <b>crprdeusmcucta</b>. Also removed hardcoded role assignment GUIDs.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📦</div>
+      <div class="card-title">Provider already registered</div>
+      <div class="card-body" style="margin-bottom:12px">
+        <code>azurerm_resource_provider_registration.app</code> failed because we had manually registered <code>Microsoft.App</code> during bootstrap.
+      </div>
+      <div class="ps-row">
+        <div class="ps-icon">✅</div>
+        <div class="ps-text" style="font-size:0.76rem">Imported the existing registration into Terraform state with <code>terraform import</code>. No code change needed.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🗂️</div>
+      <div class="card-title">Old imports.tf</div>
+      <div class="card-body" style="margin-bottom:12px">
+        <code>imports.tf</code> contained import blocks pointing to resource IDs in the previous subscription (9b7fe8b8). Would fail on any apply.
+      </div>
+      <div class="ps-row">
+        <div class="ps-icon">✅</div>
+        <div class="ps-text" style="font-size:0.76rem">Cleared the file — fresh deployment, nothing to import from the old sub.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 8: GitHub Actions wiring -->
+<div class="slide">
+  <div class="slide-title">GitHub Actions Variables</div>
+  <div class="slide-subtitle">All 7 variables set — CI/CD fully wired for OIDC</div>
+  <div class="two-col" style="align-items:center">
+    <div class="col">
+      <table class="data-table">
+        <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>AZURE_TENANT_ID</td><td>f50acfeb-1d10-…</td></tr>
+          <tr><td>AZURE_SUBSCRIPTION_ID</td><td>5ffa7688-ecf9-…</td></tr>
+          <tr><td>AZURE_CLIENT_ID</td><td>ede4d876-89a7-… (GH Actions SP)</td></tr>
+          <tr><td>ACR_LOGIN_SERVER</td><td>crprdeusmcucta.azurecr.io</td></tr>
+          <tr><td>CONTAINER_APP_NAME</td><td>ca-prd-eus-penny</td></tr>
+          <tr><td>RESOURCE_GROUP_NAME</td><td>rg-prd-eus-penny</td></tr>
+          <tr><td>BILLING_PROFILE_ID</td><td>/providers/Microsoft.Billing/…/KY23-2NKI-BG7-PGB</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <div class="section-label" style="margin-bottom:16px">First successful pipeline run</div>
+      <div class="code-block"><span class="ok">✓</span> Build &amp; Push Image  <span class="cm">27s</span>
+  <span class="ok">✓</span> Login to Azure (OIDC)
+  <span class="ok">✓</span> Login to ACR
+  <span class="ok">✓</span> Build and push
+  <span class="ok">✓</span> crprdeusmcucta.azurecr.io/azure-penny:latest
+
+<span class="ok">✓</span> Deploy to Container App  <span class="cm">31s</span>
+  <span class="ok">✓</span> Login to Azure (OIDC)
+  <span class="ok">✓</span> Update Container App image
+  Deployed to: <span class="str">https://ca-prd-eus-penny
+    .thankfulsand-fdb51b76.eastus
+    .azurecontainerapps.io</span></div>
+      <div style="margin-top:12px">
+        <span class="badge badge-green">✓ CD green</span>
+        <span class="badge badge-green" style="margin-left:8px">✓ App responds 401 → Easy Auth active</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 9: Cost Export - the saga -->
+<div class="slide">
+  <div class="slide-title">Cost Export — Three-Act Debugging</div>
+  <div class="slide-subtitle">From "not supported" to a working daily export in billing profile scope</div>
+  <div class="cards cards-3">
+    <div class="card" style="border-color:rgba(248,113,113,0.25)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:22px">🧪</span>
+        <span style="font-weight:700;color:var(--red)">Act 1 — Free Trial</span>
+      </div>
+      <div class="card-body" style="margin-bottom:10px">
+        Subscription quota was <code>FreeTrial_2014-09-01</code>. Azure Cost Management exports are <b>completely unsupported</b> on free trial — every API version returns 404.
+      </div>
+      <div class="badge badge-org">Added <code>enable_cost_export = false</code> variable</div>
+    </div>
+    <div class="card" style="border-color:rgba(251,146,60,0.25)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:22px">⚙️</span>
+        <span style="font-weight:700;color:var(--orange)">Act 2 — Upgraded to PAYG</span>
+      </div>
+      <div class="card-body" style="margin-bottom:10px">
+        Quota changed to <code>PayAsYouGo_2014-09-01</code>. <code>azurerm_subscription_cost_management_export</code> still fails — the provider uses newer API versions that the MCA billing backend rejects at subscription scope.
+      </div>
+      <div class="badge badge-org">Provider API version mismatch</div>
+    </div>
+    <div class="card" style="border-color:rgba(74,222,128,0.25)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:22px">✅</span>
+        <span style="font-weight:700;color:var(--green)">Act 3 — Billing Profile Scope</span>
+      </div>
+      <div class="card-body" style="margin-bottom:10px">
+        For MCA accounts, exports must target the <b>billing profile scope</b>, not the subscription. Replaced <code>azurerm_subscription_cost_management_export</code> with <code>azapi_resource</code> at the billing profile scope.
+      </div>
+      <div class="badge badge-green">✓ Export Active · Daily CSV</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 10: Cost Export - the fix -->
+<div class="slide">
+  <div class="slide-title">Cost Export Fix — azapi to the Rescue</div>
+  <div class="slide-subtitle">azapi_resource lets us control the exact scope and API version</div>
+  <div class="two-col">
+    <div class="col">
+      <div class="section-label" style="color:var(--red);margin-bottom:8px">Before — azurerm (broken)</div>
+      <div class="code-block"><span class="err">resource "azurerm_subscription_cost_management_export" "daily" {</span>
+  <span class="cm"># Uses newer API rejected by MCA billing</span>
+  <span class="cm"># scope = subscription (wrong for MCA)</span>
+  name            = <span class="str">"penny-prd-daily-export"</span>
+  subscription_id = data.azurerm_subscription.current.id
+  ...
+}</div>
+    </div>
+    <div class="col">
+      <div class="section-label" style="color:var(--green);margin-bottom:8px">After — azapi (working)</div>
+      <div class="code-block"><span class="ok">resource "azapi_resource" "cost_export" {</span>
+  type      = <span class="str">"Microsoft.CostManagement/exports@2023-11-01"</span>
+  name      = <span class="str">"penny-prd-daily-export"</span>
+  <span class="cm"># billing profile scope — correct for MCA</span>
+  parent_id = <span class="var">var.billing_profile_id</span>
+
+  body = {
+    properties = {
+      schedule   = { recurrence = <span class="str">"Daily"</span>, ... }
+      definition = { type = <span class="str">"ActualCost"</span>, ... }
+      deliveryInfo = {
+        destination = {
+          resourceId = azurerm_storage_account.this.id
+          container  = <span class="str">"cost-exports"</span>
+        }
+      }
+    }
+  }
+}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 11: Architecture overview -->
+<div class="slide">
+  <div class="slide-title">Deployed Architecture</div>
+  <div class="slide-subtitle">Scale-to-zero · OIDC everywhere · MCA cost export</div>
+  <div style="width:100%;max-width:960px">
+    <div class="arch-row" style="margin-bottom:16px">
+      <div class="arch-box" style="border-color:rgba(167,139,250,0.3)">
+        💰 Azure Cost Management
+        <small>MCA billing profile scope</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        💾 Blob Storage
+        <small>stprdeusmcucta / cost-exports</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(80,230,255,0.35)">
+        🚀 Container App
+        <small>ca-prd-eus-penny</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(74,222,128,0.3)">
+        👤 Browser
+        <small>Easy Auth / Entra ID</small>
+      </div>
+    </div>
+    <div class="arch-row">
+      <div class="arch-box" style="border-color:rgba(251,146,60,0.3)">
+        🐙 GitHub push
+        <small>main branch</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        ⚡ GitHub Actions
+        <small>OIDC → Azure</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        🐳 ACR
+        <small>crprdeusmcucta</small>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box" style="border-color:rgba(80,230,255,0.35)">
+        🚀 Container App
+        <small>image update</small>
+      </div>
+    </div>
+    <div style="margin-top:20px" class="pill-row" style="justify-content:center">
+      <span class="pill grn">Scale 0 → 1 on request</span>
+      <span class="pill hi">Managed Identity for blob access</span>
+      <span class="pill pur">Easy Auth blocks unauthenticated</span>
+      <span class="pill org">$100/month budget alert</span>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 12: Summary -->
+<div class="slide">
+  <div class="slide-title">Session Summary</div>
+  <div class="slide-subtitle">From empty subscription to fully running penny</div>
+  <div class="cards cards-2" style="max-width:860px">
+    <div class="card">
+      <div class="card-icon">🔧</div>
+      <div class="card-title">Infrastructure</div>
+      <div class="card-body">
+        22/23 Terraform resources deployed in one session. 3 blockers hit and fixed: ACR name collision, pre-registered provider, stale imports.tf.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🤖</div>
+      <div class="card-title">CI/CD</div>
+      <div class="card-body">
+        New GitHub Actions SP with OIDC federation and MS Graph app roles. CD pipeline built and pushed the first Docker image within minutes of provisioning ACR.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <div class="card-title">Cost Export</div>
+      <div class="card-body">
+        Root-caused two layers of failure: Free Trial block, then MCA subscription-scope restriction. Resolved by targeting billing profile scope via <code>azapi_resource</code>.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📌</div>
+      <div class="card-title">Key Takeaways</div>
+      <div class="card-body">
+        • Register providers before any resource creation<br>
+        • Azure storage account names never free up quickly<br>
+        • MCA cost exports need billing profile scope, not subscription<br>
+        • <code>azapi_resource</code> escapes azurerm API version limits
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- #deck -->
+
+<div id="nav">
+  <button id="prev" onclick="go(-1)">&#8592;</button>
+  <div id="dots"></div>
+  <span id="counter"></span>
+  <button id="next" onclick="go(1)">&#8594;</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const dotsEl = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  let cur = 0;
+
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot';
+    d.onclick = () => goTo(i);
+    dotsEl.appendChild(d);
+  });
+
+  function goTo(n) {
+    slides[cur].classList.remove('active');
+    slides[cur].classList.add('prev');
+    setTimeout(() => slides[cur < n ? cur : n].classList.remove('prev'), 400);
+    cur = n;
+    slides[cur].classList.add('active');
+    document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('on', i === cur));
+    counter.textContent = `${cur + 1} / ${slides.length}`;
+    document.getElementById('prev').disabled = cur === 0;
+    document.getElementById('next').disabled = cur === slides.length - 1;
+  }
+
+  function go(dir) { if (cur + dir >= 0 && cur + dir < slides.length) goTo(cur + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') go(1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   go(-1);
+  });
+
+  goTo(0);
+</script>
+</body>
+</html>
