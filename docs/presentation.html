@@ -297,9 +297,9 @@
   <!-- ══════════════════════════════════════════════════
        SLIDE 2 — Problem / Why
   ══════════════════════════════════════════════════ -->
-  <div class="slide" id="s2">
+  <div class="slide" id="s2" style="padding-top:32px; padding-bottom:80px; justify-content:flex-start; overflow:hidden;">
     <div class="slide-title">The Problem It Solves</div>
-    <div class="slide-subtitle">Azure billing is powerful but opaque — azure-penny makes it instant and actionable</div>
+    <div class="slide-subtitle" style="margin-bottom:24px;">Azure billing is powerful but opaque — azure-penny makes it instant and actionable</div>
 
     <div class="cards cards-3" style="max-width:960px;">
       <div class="card">
@@ -332,6 +332,37 @@
         <div class="card-title">No Secrets, Ever</div>
         <div class="card-body">Managed Identity + DefaultAzureCredential — no connection strings, SAS tokens, or service principal secrets in the codebase or CI.</div>
       </div>
+    </div>
+
+    <!-- ── Why not just use the Azure Portal? ── -->
+    <div style="margin-top:20px; width:100%; max-width:960px;">
+      <div style="text-align:center; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); margin-bottom:10px;">Why not just use the Azure Portal?</div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:28%">Capability</th>
+            <th style="width:36%">Azure Portal (native)</th>
+            <th style="width:36%">azure-penny</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-family:inherit; font-size:0.82rem;">Live resources + costs</td>
+            <td style="color:var(--orange);">&#9888; Separate tabs — costs and resources never combined</td>
+            <td style="color:var(--green);">&#10003; Unified view — monthly cost shown per live resource</td>
+          </tr>
+          <tr>
+            <td style="font-family:inherit; font-size:0.82rem;">Act on expensive resources</td>
+            <td style="color:var(--orange);">&#9888; Cost UI is read-only</td>
+            <td style="color:var(--green);">&#10003; Delete resource or resource group directly from dashboard</td>
+          </tr>
+          <tr>
+            <td style="font-family:inherit; font-size:0.82rem;">Share without portal access</td>
+            <td style="color:var(--orange);">&#9888; Requires Azure portal login for every viewer</td>
+            <td style="color:var(--green);">&#10003; JSON API — embeddable in any tool, no portal needed</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
