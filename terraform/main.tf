@@ -31,6 +31,10 @@ provider "azurerm" {
 data "azurerm_client_config" "current" {}
 data "azurerm_subscription" "current" {}
 
+data "azuread_service_principal" "cost_management" {
+  client_id = "e5408ad0-c4e2-43aa-b6f2-3b4951286d99" # Azure Cost Management Exports
+}
+
 resource "azurerm_resource_provider_registration" "app" {
   name = "Microsoft.App"
 }
