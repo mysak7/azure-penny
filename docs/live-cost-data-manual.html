@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny — Live Cost Data Manual</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --border:   #334155;
+      --muted:    #64748b;
+      --text:     #e2e8f0;
+      --blue:     #38bdf8;
+      --green:    #4ade80;
+      --yellow:   #fbbf24;
+      --red:      #f87171;
+      --orange:   #fb923c;
+      --purple:   #a78bfa;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .layout { display: flex; min-height: 100vh; }
+    nav.sidebar {
+      width: 260px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem 1rem;
+    }
+    main { flex: 1; min-width: 0; padding: 2.5rem 3rem; max-width: 960px; }
+
+    /* ── Sidebar ────────────────────────────────────────────── */
+    .sidebar-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 1rem; }
+    .nav-section { margin-bottom: 1.25rem; }
+    .nav-section-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: .25rem .5rem; margin-bottom: .3rem; }
+    .nav-link { display: block; font-size: 0.8rem; color: #94a3b8; text-decoration: none; padding: .3rem .5rem; border-radius: 5px; transition: all .12s; }
+    .nav-link:hover { color: var(--blue); background: rgba(56,189,248,.06); }
+    .nav-link.sub { padding-left: 1rem; font-size: 0.75rem; color: var(--muted); }
+    .nav-link.sub:hover { color: var(--blue); }
+
+    /* ── Typography ─────────────────────────────────────────── */
+    h1 { font-size: 2rem; font-weight: 800; color: var(--blue); margin-bottom: .4rem; letter-spacing: -.01em; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 2.5rem; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin: 2.5rem 0 .75rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 1rem; font-weight: 700; color: var(--blue); margin: 1.5rem 0 .5rem; }
+    h4 { font-size: 0.88rem; font-weight: 700; color: #94a3b8; margin: 1rem 0 .3rem; text-transform: uppercase; letter-spacing: .04em; }
+    p { margin-bottom: .85rem; color: #cbd5e1; }
+    ul, ol { margin: .5rem 0 .85rem 1.4rem; color: #cbd5e1; }
+    li { margin-bottom: .3rem; }
+    strong { color: var(--text); }
+    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82em; background: #0f172a; border: 1px solid var(--border); color: var(--blue); padding: .1em .35em; border-radius: 3px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Section anchors ────────────────────────────────────── */
+    section { margin-bottom: 3rem; }
+    section[id] { scroll-margin-top: 1.5rem; }
+
+    /* ── Info boxes ─────────────────────────────────────────── */
+    .box { border-radius: 8px; padding: .85rem 1.1rem; margin: .75rem 0 1rem; font-size: 0.85rem; border-left: 3px solid; }
+    .box-blue   { background: #0c2744; border-color: var(--blue);   color: #bae6fd; }
+    .box-green  { background: #052e16; border-color: var(--green);  color: #bbf7d0; }
+    .box-yellow { background: #2d1a00; border-color: var(--yellow); color: #fde68a; }
+    .box-red    { background: #2d0a0a; border-color: var(--red);    color: #fecaca; }
+    .box strong { color: inherit; font-weight: 700; }
+
+    /* ── Flow diagrams ──────────────────────────────────────── */
+    .flow { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; font-size: 0.8rem; }
+    .flow-step {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+      padding: .4rem .75rem; color: var(--text); white-space: nowrap;
+    }
+    .flow-step.source  { border-color: var(--blue);   color: var(--blue); }
+    .flow-step.process { border-color: var(--purple);  color: var(--purple); }
+    .flow-step.output  { border-color: var(--green);  color: var(--green); }
+    .flow-arrow { color: var(--muted); font-size: 1rem; }
+
+    /* ── Source badges ──────────────────────────────────────── */
+    .src-badge { display: inline-flex; align-items: center; gap: .3rem; font-size: 0.75rem; padding: .2rem .6rem; border-radius: 12px; white-space: nowrap; font-weight: 600; font-family: monospace; }
+    .src-export          { background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .src-export_projected{ background: #0c2744; border: 1px solid #1e4e8c; color: #93c5fd; }
+    .src-export_period   { background: #1a2744; border: 1px solid #2a3f6c; color: #a5b4fc; }
+    .src-export_last_day { background: #1c1437; border: 1px solid #4c1d95; color: #c4b5fd; }
+    .src-export_hours    { background: #0f2620; border: 1px solid #166534; color: #6ee7b7; }
+    .src-spot_rate       { background: #2d1a00; border: 1px solid #78350f; color: #fcd34d; }
+    .src-price_table     { background: #1c1917; border: 1px solid #57534e; color: #d6d3d1; }
+    .src-files_rate      { background: #0c1a4a; border: 1px solid #1e3a8a; color: #93c5fd; }
+    .src-in_shares       { background: #1e293b; border: 1px solid #334155; color: #64748b; }
+
+    /* ── Tables ─────────────────────────────────────────────── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: .75rem 0 1.25rem; }
+    .data-table th { background: #0f172a; color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; padding: .5rem .85rem; text-align: left; border-bottom: 2px solid var(--border); }
+    .data-table td { padding: .5rem .85rem; border-bottom: 1px solid #1e293b; color: #cbd5e1; vertical-align: top; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: rgba(56,189,248,.03); }
+
+    /* ── Architecture diagram ───────────────────────────────── */
+    .arch-box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; margin: 1rem 0; font-size: 0.82rem; line-height: 1.8; }
+    .arch-box .layer { margin-bottom: .75rem; }
+    .arch-box .layer:last-child { margin-bottom: 0; }
+    .arch-box .layer-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .3rem; }
+    .arch-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .arch-node { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: .3rem .7rem; font-family: monospace; font-size: 0.77rem; white-space: nowrap; }
+    .arch-node.blue   { border-color: var(--blue);   color: var(--blue); }
+    .arch-node.green  { border-color: var(--green);  color: var(--green); }
+    .arch-node.yellow { border-color: var(--yellow); color: var(--yellow); }
+    .arch-node.purple { border-color: var(--purple); color: var(--purple); }
+    .arch-node.red    { border-color: var(--red);    color: var(--red); }
+    .arch-arrow { color: var(--muted); }
+
+    /* ── Code block ─────────────────────────────────────────── */
+    pre { background: #0a1020; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; overflow-x: auto; font-size: 0.79rem; line-height: 1.6; margin: .75rem 0 1.25rem; font-family: 'SF Mono', 'Fira Code', monospace; color: #94a3b8; }
+    pre .kw { color: var(--purple); }
+    pre .fn { color: var(--blue); }
+    pre .str{ color: var(--green); }
+    pre .cm { color: #475569; font-style: italic; }
+    pre .num{ color: var(--yellow); }
+
+    /* ── Inline diagram ─────────────────────────────────────── */
+    .timeline { display: flex; align-items: flex-start; gap: 0; margin: 1rem 0; }
+    .tl-step { flex: 1; position: relative; text-align: center; }
+    .tl-step::before { content: ''; display: block; height: 2px; background: var(--border); position: absolute; top: 14px; left: 0; right: 0; z-index: 0; }
+    .tl-step:first-child::before { left: 50%; }
+    .tl-step:last-child::before { right: 50%; }
+    .tl-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--surface); border: 2px solid var(--blue); display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: var(--blue); position: relative; z-index: 1; }
+    .tl-label { font-size: 0.72rem; color: var(--muted); margin-top: .3rem; line-height: 1.3; }
+
+    /* ── Cost cell examples ──────────────────────────────────── */
+    .cost-example { display: inline-flex; align-items: center; gap: .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .4rem .85rem; font-family: monospace; font-size: 0.82rem; }
+    .c-hi  { color: var(--red);    font-weight: 700; }
+    .c-med { color: var(--yellow); }
+    .c-lo  { color: var(--green);  }
+    .c-nil { color: #475569; }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    footer { margin-top: 3rem; padding: 1.5rem 0; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+<nav class="sidebar">
+  <div class="sidebar-title">azure-penny docs</div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-link" href="#intro">Introduction</a>
+    <a class="nav-link" href="#two-pipelines">Two Data Pipelines</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Pipeline 1 — Cost Exports</div>
+    <a class="nav-link" href="#export-schedule">Export Schedule</a>
+    <a class="nav-link" href="#blob-discovery">Blob Discovery</a>
+    <a class="nav-link" href="#column-mapping">Column Mapping</a>
+    <a class="nav-link" href="#export-cache">In-Memory Cache</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Pipeline 2 — Live ARM</div>
+    <a class="nav-link" href="#arm-inventory">ARM Inventory</a>
+    <a class="nav-link sub" href="#vm-power">↳ VM Power States</a>
+    <a class="nav-link sub" href="#file-shares">↳ File Shares</a>
+    <a class="nav-link" href="#arm-cache">ARM Cache</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Merge & Cost Sources</div>
+    <a class="nav-link" href="#merge">Merging the Pipelines</a>
+    <a class="nav-link" href="#cost-sources">Cost Source Reference</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">UI</div>
+    <a class="nav-link" href="#ui-live">Live Resources Page</a>
+    <a class="nav-link sub" href="#status-bar">↳ Status Bar</a>
+    <a class="nav-link sub" href="#cost-colors">↳ Cost Colors</a>
+    <a class="nav-link sub" href="#filters">↳ Filters & Sort</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Refresh & Limits</div>
+    <a class="nav-link" href="#refresh">Refreshing Data</a>
+    <a class="nav-link" href="#pricing-fallback">Pricing Fallbacks</a>
+    <a class="nav-link" href="#known-limits">Known Limits</a>
+  </div>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────────────── -->
+<main>
+
+  <h1>Live Cost Data Manual</h1>
+  <p class="subtitle">How azure-penny collects, merges, and displays live resource costs</p>
+
+  <!-- ── INTRO ─────────────────────────────────────────────── -->
+  <section id="intro">
+    <h2>Introduction</h2>
+    <p>
+      The <strong>Live Resources</strong> page (<code>/live</code>) answers one question: <em>what am I spending right now, and on what?</em>
+      It combines two independent data sources into a single table — the historical billing record from Azure Cost Management exports,
+      and the real-time resource inventory from Azure Resource Manager.
+    </p>
+    <div class="box box-blue">
+      <strong>Key insight:</strong> Cost Management exports are always 1–2 days behind. The live ARM inventory is current to the minute.
+      azure-penny correlates them by Resource ID so every live resource shows its actual billed cost where available,
+      and falls back to price-list estimates for resources too new to appear in exports yet.
+    </div>
+  </section>
+
+  <!-- ── TWO PIPELINES ─────────────────────────────────────── -->
+  <section id="two-pipelines">
+    <h2>Two Data Pipelines</h2>
+    <p>Every number you see on the Live Resources page comes from one of two independent pipelines that run in parallel and are then merged.</p>
+
+    <div class="arch-box">
+      <div class="layer">
+        <div class="layer-title">Pipeline 1 — Historical billing (cost exports)</div>
+        <div class="arch-row">
+          <span class="arch-node blue">Azure Cost Management</span>
+          <span class="arch-arrow">→ daily CSV →</span>
+          <span class="arch-node blue">Blob Storage<br><small>cost-exports/</small></span>
+          <span class="arch-arrow">→ download →</span>
+          <span class="arch-node purple">pandas DataFrame</span>
+          <span class="arch-arrow">→ 1h cache →</span>
+          <span class="arch-node green">C_COST per resource</span>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-title">Pipeline 2 — Live inventory (ARM)</div>
+        <div class="arch-row">
+          <span class="arch-node yellow">Azure Resource Manager</span>
+          <span class="arch-arrow">→ REST API →</span>
+          <span class="arch-node purple">list_resources()</span>
+          <span class="arch-arrow">→ VM states, SKUs, IPs →</span>
+          <span class="arch-node green">resource list</span>
+          <span class="arch-arrow">→ 15min cache →</span>
+          <span class="arch-node green">live inventory</span>
+        </div>
+      </div>
+      <div class="layer">
+        <div class="layer-title">Merge</div>
+        <div class="arch-row">
+          <span class="arch-node green">C_COST per resource</span>
+          <span class="arch-arrow">+</span>
+          <span class="arch-node green">live inventory</span>
+          <span class="arch-arrow">→ join on Resource ID →</span>
+          <span class="arch-node red">enriched list → /api/live-resources</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── EXPORT SCHEDULE ───────────────────────────────────── -->
+  <section id="export-schedule">
+    <h2>Export Schedule</h2>
+    <p>
+      Terraform provisions a <strong>daily Cost Management export</strong> at billing profile scope using the
+      <code>azapi_resource</code> provider (the standard <code>azurerm</code> provider does not support MCA/billing profile scope).
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Setting</th><th>Value</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>Schedule</td><td>Daily</td><td>Fresh data every morning</td></tr>
+        <tr><td>Time frame</td><td>MonthToDate</td><td>Each file contains the full month — no need to aggregate multiple files</td></tr>
+        <tr><td>Type</td><td>ActualCost</td><td>Real charges, not amortised</td></tr>
+        <tr><td>Format</td><td>CSV</td><td>Parquet not supported at billing profile scope by <code>azapi</code></td></tr>
+        <tr><td>Destination path</td><td><code>penny/{date-range}/{guid}/filename.csv</code></td><td>Azure's default export folder structure</td></tr>
+        <tr><td>Lag</td><td>1–2 hours after midnight UTC</td><td>Azure pipeline processing time</td></tr>
+      </tbody>
+    </table>
+    <div class="box box-yellow">
+      <strong>Lag warning:</strong> Today's charges never appear in today's export. Cost Management closes and exports the previous day's data
+      roughly 1–2 hours after midnight UTC. The app always displays the most recently available export, which will be yesterday's or earlier.
+    </div>
+  </section>
+
+  <!-- ── BLOB DISCOVERY ────────────────────────────────────── -->
+  <section id="blob-discovery">
+    <h2>Blob Discovery</h2>
+    <p>
+      On every cache miss, <code>storage.py:_discover_latest_blobs()</code> scans the <code>cost-exports</code> container
+      and selects exactly <strong>one file</strong> to load — the most recently modified file in the most recent date-range folder.
+    </p>
+
+    <h3>Discovery algorithm</h3>
+    <div class="flow">
+      <span class="flow-step source">List all blobs</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">Extract <code>YYYYMMDD-YYYYMMDD</code> segments</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">Sort descending (newest first)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">Pick latest folder with .csv / .parquet</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">If multiple files in folder → pick newest by <code>last_modified</code></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step output">Single blob path returned</span>
+    </div>
+
+    <h4>Why only one file?</h4>
+    <p>
+      Azure Cost Management exports are <strong>cumulative</strong>: each daily export contains all charges from the
+      start of the billing month to that day. Loading multiple files would double-count costs.
+      The app intentionally loads only the newest file — which contains the most complete data.
+    </p>
+
+    <h4>Fallback behaviour</h4>
+    <p>
+      If no <code>YYYYMMDD-YYYYMMDD</code> folder pattern is found (e.g. a manually uploaded file),
+      the discovery falls back to picking the single newest <code>.parquet</code> or <code>.csv</code>/<code>.csv.gz</code> file
+      in the entire container by <code>last_modified</code> timestamp.
+    </p>
+
+    <h4>Supported file formats</h4>
+    <ul>
+      <li><code>.parquet</code> — read via <code>pd.read_parquet(engine="pyarrow")</code></li>
+      <li><code>.csv</code> — read via <code>pd.read_csv()</code></li>
+      <li><code>.csv.gz</code> — read via <code>pd.read_csv(compression="gzip")</code></li>
+    </ul>
+
+    <p>The raw bytes are streamed into memory via <code>io.BytesIO</code> — no temporary disk files are used.</p>
+  </section>
+
+  <!-- ── COLUMN MAPPING ────────────────────────────────────── -->
+  <section id="column-mapping">
+    <h2>Column Mapping</h2>
+    <p>
+      Azure exports column names differ between EA (Enterprise Agreement), MCA (Microsoft Customer Agreement), and CSP agreements.
+      <code>storage.py:_apply_column_map()</code> normalises all variants to a stable internal schema of <code>C_*</code> names.
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>Azure column(s)</th><th>Internal name</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td><code>CostInBillingCurrency</code>, <code>Cost</code>, <code>PreTaxCost</code></td><td><code>C_COST</code></td><td>All cost aggregations</td></tr>
+        <tr><td><code>MeterCategory</code>, <code>ServiceName</code></td><td><code>C_SERVICE</code></td><td>Service-level grouping (Compute, Storage…)</td></tr>
+        <tr><td><code>ResourceGroup</code>, <code>ResourceGroupName</code></td><td><code>C_NAME</code></td><td>Resource-group filtering</td></tr>
+        <tr><td><code>Date</code>, <code>UsageDate</code></td><td><code>C_DATE</code></td><td>Period filtering, date-range displays</td></tr>
+        <tr><td><code>SubscriptionName</code>, <code>SubscriptionId</code></td><td><code>C_ACCOUNT</code></td><td>Subscription identifier</td></tr>
+        <tr><td><code>ResourceId</code>, <code>InstanceId</code></td><td><code>C_RESOURCE_ID</code></td><td>Joining with live ARM inventory</td></tr>
+        <tr><td><code>MeterSubCategory</code>, <code>SubCategory</code></td><td><code>C_SUBCATEGORY</code></td><td>Storage space vs. transfer breakdown</td></tr>
+        <tr><td><code>Quantity</code>, <code>UsageQuantity</code></td><td><code>C_QUANTITY</code></td><td>VM usage hours (for hourly rate projection)</td></tr>
+        <tr><td><code>Tags</code>, any <code>tag_*</code> column</td><td><code>C_TAGS</code></td><td>Tag pass-through (not currently displayed)</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Post-mapping transformations</h4>
+    <ul>
+      <li><code>C_COST</code> is coerced to <code>float64</code>; unparseable values become <code>0.0</code>.</li>
+      <li><code>C_DATE</code> is parsed as datetime and reformatted to <code>YYYY-MM-DD</code> string.</li>
+      <li><code>C_NAME</code> (resource group) is lowercased for case-insensitive matching.</li>
+    </ul>
+  </section>
+
+  <!-- ── EXPORT CACHE ───────────────────────────────────────── -->
+  <section id="export-cache">
+    <h2>In-Memory Cache (Cost Exports)</h2>
+    <p>
+      Loading a cost export CSV from Blob Storage takes several seconds. To avoid re-downloading on every API request,
+      the DataFrame is held in a process-level in-memory cache protected by an <code>asyncio.Lock</code>.
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Property</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>TTL (time-to-live)</td><td><code>CACHE_TTL_SECONDS</code> env var, default <strong>3600 s (1 hour)</strong></td></tr>
+        <tr><td>Concurrency guard</td><td><code>asyncio.Lock</code> — only one reload runs at a time; other requests wait</td></tr>
+        <tr><td>Cache miss behaviour</td><td>Download blob → parse → apply column map → store; returns empty DataFrame if no blobs found</td></tr>
+        <tr><td>Manual invalidation</td><td><code>POST /api/reload</code> or <code>GET /costs/refresh</code> — clears <code>_cache</code> dict</td></tr>
+        <tr><td>Storage location</td><td>Module-level <code>_cache</code> dict in <code>storage.py</code> — lives for the lifetime of the uvicorn process</td></tr>
+      </tbody>
+    </table>
+    <div class="box box-yellow">
+      <strong>Scale-to-zero note:</strong> When the Container App cold-starts (first request after being idle), the cache is empty.
+      The first API call will trigger a fresh download from Blob Storage before returning. Subsequent calls within the TTL window are fast.
+    </div>
+  </section>
+
+  <!-- ── ARM INVENTORY ──────────────────────────────────────── -->
+  <section id="arm-inventory">
+    <h2>ARM Inventory</h2>
+    <p>
+      <code>live_resources.py:_fetch_resource_inventory()</code> calls the Azure Resource Manager REST API
+      to list every resource in the subscription. This uses the <code>azure-mgmt-resource</code> SDK,
+      authenticated via <code>DefaultAzureCredential</code> with the Container App's user-assigned managed identity.
+    </p>
+
+    <h3>What gets listed</h3>
+    <p>
+      <code>ResourceManagementClient.resources.list()</code> returns <strong>all resources across all resource groups and all regions</strong>
+      in the configured subscription. Deallocated and stopped VMs are <strong>excluded</strong> from the returned list
+      (they contribute zero ongoing cost and clutter the view).
+    </p>
+
+    <h4>Required RBAC</h4>
+    <p>
+      The managed identity needs at minimum <strong>Reader</strong> on the subscription to list resources.
+      It is currently assigned <strong>Contributor</strong> (which also enables the resource deletion feature).
+      Without this role, the live inventory returns an empty list.
+    </p>
+
+    <!-- VM POWER STATES -->
+    <h3 id="vm-power">VM Power States</h3>
+    <p>
+      For every <code>Microsoft.Compute/virtualMachines</code> resource found, a second API call is made to
+      <code>ComputeManagementClient.virtual_machines.get(rg, name, expand="instanceView")</code>
+      to fetch the power state. This is the only way to distinguish a running VM from a deallocated one.
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Power state</th><th>Displayed as</th><th>Included in list?</th></tr></thead>
+      <tbody>
+        <tr><td><code>VM running</code></td><td><span style="color:var(--green)">● Running</span></td><td>Yes</td></tr>
+        <tr><td><code>VM stopped</code></td><td><span style="color:var(--yellow)">● Stopped</span></td><td>No — excluded</td></tr>
+        <tr><td><code>VM deallocated</code></td><td><span style="color:#a8a29e)">● Deallocated</span></td><td>No — excluded</td></tr>
+        <tr><td><code>Unknown</code> (API error)</td><td><span style="color:var(--muted)">● Unknown</span></td><td>Yes (kept to be safe)</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      For VMs, the inventory also captures:
+    </p>
+    <ul>
+      <li><strong>VM size</strong> (e.g. <code>Standard_D2s_v3</code>) — used for price lookups</li>
+      <li><strong>Is spot</strong> (boolean) — triggers spot pricing instead of on-demand</li>
+      <li><strong>Private IP</strong> — via the first NIC's first IP configuration</li>
+      <li><strong>Instance count</strong> — for VM Scale Sets, the SKU capacity field</li>
+    </ul>
+
+    <!-- FILE SHARES -->
+    <h3 id="file-shares">Azure Files Premium Shares</h3>
+    <p>
+      For every <code>Microsoft.Storage/storageAccounts</code> resource found, an additional call is made to
+      <code>StorageManagementClient.file_shares.list(rg, account_name)</code> to enumerate premium file shares.
+      Each share is added as a <strong>synthetic resource</strong> to the inventory with a pre-computed monthly estimate.
+    </p>
+    <p>
+      The cost estimate is: <code>provisioned_quota_GiB × price_per_GiB_per_month</code>.
+      The per-GiB price is looked up from the Azure Retail Prices API (with a regional fallback table).
+      This is a <em>provisioned capacity</em> estimate — the share is charged for its quota regardless of actual usage.
+    </p>
+    <div class="box box-blue">
+      <strong>Storage account suppression:</strong> When a storage account has live file shares in the inventory,
+      the storage account's own cost row is suppressed (<code>cost_source = "in_shares"</code>) to avoid double-counting.
+      The total cost for the account is shown through the individual share rows instead.
+    </div>
+  </section>
+
+  <!-- ── ARM CACHE ─────────────────────────────────────────── -->
+  <section id="arm-cache">
+    <h2>ARM Cache (Live Inventory)</h2>
+    <p>
+      ARM API calls are expensive — listing all resources in a large subscription can take 5–30 seconds.
+      The live inventory is cached separately from the cost export cache.
+    </p>
+    <table class="data-table">
+      <thead><tr><th>Property</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>TTL</td><td><code>LIVE_CACHE_TTL_SECONDS</code> env var, default <strong>900 s (15 minutes)</strong></td></tr>
+        <tr><td>Concurrency guard</td><td>Separate <code>asyncio.Lock</code> (<code>_live_lock</code>) from the export cache lock</td></tr>
+        <tr><td>Cache miss behaviour</td><td>Call ARM → fetch VM power states → enumerate file shares → store</td></tr>
+        <tr><td>Manual invalidation</td><td><code>POST /api/live-reload</code> — clears <code>_live_cache</code> dict, then re-fetches</td></tr>
+        <tr><td>Executor</td><td>All blocking SDK calls run in <code>asyncio.run_in_executor(None, ...)</code> (thread pool) to avoid blocking the event loop</td></tr>
+      </tbody>
+    </table>
+    <p>
+      The two caches (<code>_cache</code> in <code>storage.py</code> and <code>_live_cache</code> in <code>live_resources.py</code>)
+      are independent. A cost export reload does not flush the ARM inventory, and vice versa.
+    </p>
+  </section>
+
+  <!-- ── MERGE ─────────────────────────────────────────────── -->
+  <section id="merge">
+    <h2>Merging the Two Pipelines</h2>
+    <p>
+      <code>live_resources.py:_get_live_data()</code> runs after both caches are populated.
+      It joins the ARM inventory with the cost DataFrame on <strong>Resource ID</strong>.
+    </p>
+
+    <h3>Resource ID normalisation</h3>
+    <p>
+      ARM resource IDs and Cost Management resource IDs are not always identical — Cost Management sometimes includes
+      sub-resource paths (e.g. <code>.../fileServices/default</code>). Before joining, both sides are:
+    </p>
+    <ol>
+      <li>Lowercased (ARM IDs are case-insensitive)</li>
+      <li>Stripped of sub-resource suffixes via <code>_normalize_rid()</code> regex</li>
+    </ol>
+
+    <h3>30-day window</h3>
+    <p>
+      Only the last 30 days of cost data are used for the live view. The cost export file contains the full billing month,
+      but the live page is about <em>current spend</em>, not historical totals.
+    </p>
+    <pre>cutoff = (date.today() - timedelta(days=30)).strftime("<span class="str">%Y-%m-%d</span>")
+mdf = df[df[<span class="str">"C_DATE"</span>] >= cutoff]</pre>
+
+    <h3>Per-resource aggregation</h3>
+    <p>After filtering to 30 days, the DataFrame is grouped by (normalised) Resource ID:</p>
+    <ul>
+      <li><code>cost_by_id</code> — total cost over the 30-day window, per resource</li>
+      <li><code>days_by_id</code> — number of distinct billing days the resource appeared</li>
+      <li><code>hours_by_id</code> — total usage quantity (hours) for VMs</li>
+      <li><code>last_day_cost_by_id</code> — cost on the most recent export day (for new-resource detection)</li>
+    </ul>
+
+    <h3>Projection logic</h3>
+    <p>
+      The <code>monthly_cost</code> field on each enriched resource is the <strong>estimated monthly spend</strong>.
+      The projection method used depends on how many days of data are available for that resource:
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>Days of data</th><th>Method</th><th>Source tag</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>≥ 28 days</td>
+          <td>Use the 30-day billed total directly — no projection needed</td>
+          <td><span class="src-badge src-export">export</span></td>
+        </tr>
+        <tr>
+          <td>&lt; 28 days, storage account with no live shares</td>
+          <td>Show billed total as-is; projecting storage is misleading (variable usage)</td>
+          <td><span class="src-badge src-export_period">export_period</span></td>
+        </tr>
+        <tr>
+          <td>&lt; 28 days, VM with usage hours</td>
+          <td><code>(total_cost / total_hours) × 24 × 30</code></td>
+          <td><span class="src-badge src-export_hours">export_hours</span></td>
+        </tr>
+        <tr>
+          <td>&lt; 28 days, general resource</td>
+          <td><code>(total_cost / export_days) × 30</code></td>
+          <td><span class="src-badge src-export_projected">export_projected</span></td>
+        </tr>
+        <tr>
+          <td>&lt; 28 days, storage account with shares, last-day spike</td>
+          <td><code>last_day_cost × 30</code> (when larger than window projection)</td>
+          <td><span class="src-badge src-export_last_day">export_last_day</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>VM price override</h3>
+    <p>
+      For active VMs (not deallocated), the projection from export data is <strong>overridden</strong> by a live
+      price-API lookup. This gives a more accurate current estimate even when the resource is newer than the export window:
+    </p>
+    <ul>
+      <li><strong>Spot VMs:</strong> <code>spot_price_per_hour × 24 × 30 × instance_count</code></li>
+      <li><strong>On-demand VMs:</strong> <code>on_demand_price_per_hour × 24 × 30 × instance_count</code></li>
+    </ul>
+    <p>
+      If no export data exists for the VM at all, this price-API estimate is the only cost shown.
+    </p>
+  </section>
+
+  <!-- ── COST SOURCES ───────────────────────────────────────── -->
+  <section id="cost-sources">
+    <h2>Cost Source Reference</h2>
+    <p>Every cost cell in the table carries a <code>cost_source</code> tag that explains where the number came from.
+    Hover over any cost cell in the UI to see a tooltip with the exact derivation.</p>
+
+    <table class="data-table">
+      <thead><tr><th>Source tag</th><th>Meaning</th><th>Suffix shown</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="src-badge src-export">export</span></td>
+          <td>Full 30-day billed total from Cost Management export. Most accurate.</td>
+          <td>none</td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-export_projected">export_projected</span></td>
+          <td>Fewer than 28 days of billing data; extrapolated to 30 days via daily average.</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-export_period">export_period</span></td>
+          <td>Storage account with no live shares: shows billed total for the available period, not projected.</td>
+          <td><small style="color:var(--muted)">{N}d</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-export_hours">export_hours</span></td>
+          <td>VM with partial data: projected via <code>cost ÷ hours × 720h/mo</code> (more accurate than daily average).</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-export_last_day">export_last_day</span></td>
+          <td>Storage account where the last day's cost × 30 exceeds the window projection. Indicates a recent spike.</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-spot_rate">spot_rate</span></td>
+          <td>Active spot VM: live Azure Retail Prices API (or fallback table) × 720h/mo.</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-price_table">price_table</span></td>
+          <td>Active on-demand VM: live Retail Prices API (or fallback table) × 720h/mo.</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-files_rate">files_rate</span></td>
+          <td>Azure Files Premium share: provisioned quota GiB × regional $/GiB/month rate.</td>
+          <td><small style="color:var(--muted)">~mo</small></td>
+        </tr>
+        <tr>
+          <td><span class="src-badge src-in_shares">in_shares</span></td>
+          <td>Storage account suppressed because its cost is shown through individual file share rows.</td>
+          <td><em style="color:var(--muted)">in shares</em></td>
+        </tr>
+        <tr>
+          <td><em style="color:var(--muted)">null</em></td>
+          <td>No cost data found for this resource in the last 30 days. Shown as <code class="c-nil">—</code>.</td>
+          <td>—</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── UI LIVE RESOURCES ──────────────────────────────────── -->
+  <section id="ui-live">
+    <h2>Live Resources Page</h2>
+    <p>
+      The <code>/live</code> page renders a sortable, filterable table of all active ARM resources enriched with cost data.
+      The page makes two API calls in parallel on load:
+    </p>
+    <ul>
+      <li><code>GET /api/live-resources</code> — full enriched resource list</li>
+      <li><code>GET /api/live-services</code> — 30-day cost totals aggregated by Azure service (for the Billed 30d stat)</li>
+    </ul>
+
+    <!-- STATUS BAR -->
+    <h3 id="status-bar">Status Bar</h3>
+    <p>The header bar below the navigation shows six real-time statistics:</p>
+    <table class="data-table">
+      <thead><tr><th>Label</th><th>Source</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Subscription</strong></td>
+          <td><code>resData.subscription_id</code></td>
+          <td>Azure subscription ID that ARM inventory was fetched from</td>
+        </tr>
+        <tr>
+          <td><strong>Resources</strong></td>
+          <td><code>resData.count</code></td>
+          <td>Total active resources returned by ARM (before any UI filters)</td>
+        </tr>
+        <tr>
+          <td><strong>Showing</strong></td>
+          <td>Client-side filter count</td>
+          <td>Resources currently visible after applying category / min-cost / search / RG filters</td>
+        </tr>
+        <tr>
+          <td style="color:var(--yellow)"><strong>Billed 30d</strong></td>
+          <td><code>svcData.total_usd</code> from <code>/api/live-services</code></td>
+          <td>
+            Full 30-day billed total straight from cost exports — <em>not</em> filtered or correlated with ARM.
+            The authoritative number for what Azure has charged in the last 30 days.
+          </td>
+        </tr>
+        <tr>
+          <td style="color:var(--green)"><strong>Live</strong></td>
+          <td><code>resData.matched_export_usd</code></td>
+          <td>Portion of the 30-day billed total that was successfully matched to currently-visible ARM resources.</td>
+        </tr>
+        <tr>
+          <td style="color:var(--red)"><strong>Deleted/hidden</strong></td>
+          <td><code>Billed 30d − Live</code> (clamped ≥ 0)</td>
+          <td>
+            Cost for resources that have since been deleted, or that the managed identity cannot see
+            (e.g. other subscriptions, resources outside the assigned scope).
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="box box-blue">
+      <strong>Interpreting the gap:</strong> A large <em>Deleted/hidden</em> value is normal. Old resource groups that were cleaned up
+      will still appear in last month's export data but are gone from ARM. This gap tells you how much cost came from
+      resources that no longer exist — useful for understanding churn and cleanup savings.
+    </div>
+
+    <!-- COST COLORS -->
+    <h3 id="cost-colors">Cost Colour Thresholds</h3>
+    <p>Every cost cell is coloured based on the monthly estimate:</p>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin:.75rem 0 1.25rem">
+      <div class="cost-example"><span class="c-hi">€72.50</span> <span style="color:var(--muted);font-size:0.75rem">≥ €50/mo</span></div>
+      <div class="cost-example"><span class="c-med">€18.30</span> <span style="color:var(--muted);font-size:0.75rem">€10 – €49.99/mo</span></div>
+      <div class="cost-example"><span class="c-lo">€3.12</span> <span style="color:var(--muted);font-size:0.75rem">€0.01 – €9.99/mo</span></div>
+      <div class="cost-example"><span class="c-nil">—</span> <span style="color:var(--muted);font-size:0.75rem">no data</span></div>
+    </div>
+    <p>
+      Currency is displayed as <strong>€</strong> (Euro symbol) in the UI, although the underlying Cost Management export
+      uses whatever billing currency is configured on the Azure account. The symbol is cosmetic — no conversion is performed.
+    </p>
+
+    <!-- FILTERS -->
+    <h3 id="filters">Filters and Sort</h3>
+    <p>All filtering and sorting is <strong>client-side</strong> — no additional API calls are made when you change filters.</p>
+    <table class="data-table">
+      <thead><tr><th>Control</th><th>What it filters</th><th>Default</th></tr></thead>
+      <tbody>
+        <tr><td>Category pills (All / VMs / Storage / …)</td><td>Filters by <code>category</code> field set during ARM inventory</td><td>All</td></tr>
+        <tr><td>Min cost <code>&gt; €</code></td><td>Excludes resources where <code>monthly_cost &lt; threshold</code>; resources with no cost (<code>null</code>) are treated as 0</td><td>0 (show all)</td></tr>
+        <tr><td>Search box</td><td>Case-insensitive substring match on resource <code>name</code> and <code>resource_group</code></td><td>empty</td></tr>
+        <tr><td>RG dropdown (header)</td><td>Exact match on <code>resource_group</code>; persisted in <code>localStorage</code></td><td>All</td></tr>
+        <tr><td>Column headers</td><td>Click to sort ascending; click again to reverse; default sort is monthly cost descending</td><td>monthly_cost desc</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Resource categories</h4>
+    <p>Categories are assigned in <code>live_resources.py:_RTYPE_CATEGORY</code> by ARM resource type:</p>
+    <table class="data-table">
+      <thead><tr><th>Category</th><th>ARM types included</th></tr></thead>
+      <tbody>
+        <tr><td>vm</td><td><code>virtualMachines</code>, <code>virtualMachineScaleSets</code></td></tr>
+        <tr><td>storage</td><td><code>disks</code>, <code>snapshots</code>, <code>storageAccounts</code>, <code>fileServices/shares</code>, <code>netAppAccounts</code></td></tr>
+        <tr><td>network</td><td><code>virtualNetworks</code>, <code>publicIPAddresses</code>, <code>loadBalancers</code>, <code>applicationGateways</code>, <code>bastionHosts</code>, <code>azureFirewalls</code>, <code>vpnGateways</code>, <code>dnsZones</code>, <code>privateDnsZones</code>, <code>trafficManagerProfiles</code>, <code>frontDoors</code></td></tr>
+        <tr><td>database</td><td><code>SQL</code>, <code>CosmosDB</code>, <code>Redis</code>, <code>MySQL</code>, <code>PostgreSQL</code>, <code>Synapse</code></td></tr>
+        <tr><td>container</td><td><code>containerRegistries</code>, <code>containerApps</code>, <code>managedEnvironments</code>, <code>managedClusters</code>, <code>sites</code>, <code>serverFarms</code></td></tr>
+        <tr><td>other</td><td>Everything not in the above lists</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── REFRESH ───────────────────────────────────────────── -->
+  <section id="refresh">
+    <h2>Refreshing Data</h2>
+
+    <h3>Automatic refresh</h3>
+    <p>The page does not auto-refresh. Data shown is whatever was cached when you loaded the page.</p>
+
+    <h3>Manual refresh options</h3>
+    <table class="data-table">
+      <thead><tr><th>Action</th><th>What it does</th><th>How to trigger</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Refresh inventory</td>
+          <td>Clears the ARM cache (<code>_live_cache</code>) and re-fetches all resources from ARM. Cost export cache is untouched.</td>
+          <td>Click <strong>↻ Refresh inventory</strong> button in the status bar</td>
+        </tr>
+        <tr>
+          <td>Reload cost export</td>
+          <td>Clears the export DataFrame cache and re-downloads the latest blob from Blob Storage.</td>
+          <td><code>POST /api/reload</code> or <code>GET /costs/refresh</code> (no UI button on the live page)</td>
+        </tr>
+        <tr>
+          <td>Full reload</td>
+          <td>Reload cost export first, then refresh inventory.</td>
+          <td>Call both endpoints manually</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="box box-yellow">
+      <strong>Cache TTL reminder:</strong> The cost export cache (1h) and ARM cache (15min) expire independently.
+      You may see fresh ARM data with stale cost numbers, or vice versa, if only one cache was refreshed.
+    </div>
+  </section>
+
+  <!-- ── PRICING FALLBACKS ──────────────────────────────────── -->
+  <section id="pricing-fallback">
+    <h2>Pricing Fallbacks</h2>
+    <p>
+      Price lookups for VMs and Azure Files shares follow a three-tier fallback chain to handle API unavailability.
+    </p>
+
+    <h3>VM prices (spot and on-demand)</h3>
+    <div class="flow">
+      <span class="flow-step source">Azure Retail Prices API<br><small>prices.azure.com</small></span>
+      <span class="flow-arrow">→ if fails →</span>
+      <span class="flow-step process">Hardcoded <code>_SPOT_PRICES</code> / <code>_ONDEMAND_PRICES</code> tables<br><small>in live_resources.py</small></span>
+      <span class="flow-arrow">→ if VM size not in table →</span>
+      <span class="flow-step process">40% of on-demand price<br><small>(industry average for spot)</small></span>
+      <span class="flow-arrow">→ if still no price →</span>
+      <span class="flow-step output">null — show <code>—</code></span>
+    </div>
+
+    <h3>Azure Files Premium prices</h3>
+    <div class="flow">
+      <span class="flow-step source">Azure Retail Prices API<br><small>Storage filter</small></span>
+      <span class="flow-arrow">→ if fails →</span>
+      <span class="flow-step process">Hardcoded <code>_FILES_PREMIUM_PRICES</code> table<br><small>default: $0.21/GiB/mo</small></span>
+    </div>
+
+    <h4>Price caching</h4>
+    <p>
+      All price lookups are cached in-process for the lifetime of the Container App instance
+      (module-level <code>_SPOT_PRICE_CACHE</code> and <code>_FILES_PRICE_CACHE</code> dicts with no TTL).
+      Prices are not refreshed until the app restarts. Given the Container App scales to zero daily,
+      prices are effectively re-fetched on every cold start.
+    </p>
+
+    <div class="box box-yellow">
+      <strong>Staleness risk:</strong> The hardcoded fallback tables in <code>live_resources.py</code> contain spot and on-demand
+      prices that were accurate at the time the code was written. Azure spot prices fluctuate. If the Retail Prices API is consistently
+      reachable, this is not a problem — the API result always takes precedence.
+    </div>
+  </section>
+
+  <!-- ── KNOWN LIMITS ───────────────────────────────────────── -->
+  <section id="known-limits">
+    <h2>Known Limitations</h2>
+    <table class="data-table">
+      <thead><tr><th>Limitation</th><th>Impact</th><th>Workaround</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Cost data is 1–2 days old</td>
+          <td>Today's charges are never shown; yesterday's appear only after the export runs (~midnight UTC + 2h)</td>
+          <td>Check Azure Cost Management portal for same-day estimates</td>
+        </tr>
+        <tr>
+          <td>Single subscription only</td>
+          <td>Resources and costs from other subscriptions are invisible</td>
+          <td>Deploy a separate azure-penny instance per subscription</td>
+        </tr>
+        <tr>
+          <td>Deleted resources show up in "Deleted/hidden" cost</td>
+          <td>You cannot see which specific deleted resources generated the orphaned cost</td>
+          <td>Query Cost Management directly with <code>ResourceId</code> filter for deleted IDs</td>
+        </tr>
+        <tr>
+          <td>VM prices are retail, not negotiated</td>
+          <td>If you have Azure Reserved Instances or AHUB (Azure Hybrid Benefit), actual cost will be lower</td>
+          <td>Use export-based cost sources (<code>export</code>, <code>export_projected</code>) which reflect actual charges</td>
+        </tr>
+        <tr>
+          <td>File share estimate uses provisioned quota, not actual usage</td>
+          <td>Estimate may be higher than billed if the share is mostly empty</td>
+          <td>Premium file shares bill for provisioned capacity; this is correct for Premium tier</td>
+        </tr>
+        <tr>
+          <td>AKS node pools are VMSS resources, not individual VMs</td>
+          <td>Node-level power states and IPs are not fetched</td>
+          <td>The VMSS row shows aggregate cost via instance count × price</td></tr>
+        <tr>
+          <td>Hardcoded price tables cover only common VM sizes</td>
+          <td>Uncommon VM sizes (e.g. <code>Standard_ND</code> GPU series) may show <code>—</code> if the Retail API is down</td>
+          <td>The live Retail Prices API covers all sizes; only the fallback tables are limited</td>
+        </tr>
+        <tr>
+          <td>Cold start latency</td>
+          <td>First request after scale-to-zero idle period triggers both cache loads simultaneously — response may take 15–30s</td>
+          <td>Open <code>/health</code> to warm the app; costs load lazily on first API request</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    azure-penny — Live Cost Data Manual &nbsp;·&nbsp; Generated 2026-05-04
+  </footer>
+</main>
+
+</div>
+</body>
+</html>
