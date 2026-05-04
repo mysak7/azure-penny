@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny — Cost Export Data Manual</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --muted:   #64748b;
+      --text:    #e2e8f0;
+      --blue:    #38bdf8;
+      --green:   #4ade80;
+      --yellow:  #fbbf24;
+      --red:     #f87171;
+      --orange:  #fb923c;
+      --purple:  #a78bfa;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; font-size: 15px; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .layout { display: flex; min-height: 100vh; }
+    nav.sidebar {
+      width: 270px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+      background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem 1rem;
+    }
+    main { flex: 1; min-width: 0; padding: 2.5rem 3rem; max-width: 980px; }
+
+    /* ── Sidebar ────────────────────────────────────────────── */
+    .sidebar-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 1rem; }
+    .nav-section { margin-bottom: 1.25rem; }
+    .nav-section-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: .25rem .5rem; margin-bottom: .3rem; }
+    .nav-link { display: block; font-size: 0.8rem; color: #94a3b8; text-decoration: none; padding: .3rem .5rem; border-radius: 5px; transition: all .12s; }
+    .nav-link:hover { color: var(--blue); background: rgba(56,189,248,.06); }
+    .nav-link.sub { padding-left: 1rem; font-size: 0.75rem; color: var(--muted); }
+    .nav-link.sub:hover { color: var(--blue); }
+
+    /* ── Typography ─────────────────────────────────────────── */
+    h1 { font-size: 2rem; font-weight: 800; color: var(--blue); margin-bottom: .4rem; letter-spacing: -.01em; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 2.5rem; }
+    h2 { font-size: 1.35rem; font-weight: 700; color: var(--text); margin: 2.5rem 0 .75rem; padding-bottom: .4rem; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 1rem; font-weight: 700; color: var(--blue); margin: 1.5rem 0 .5rem; }
+    h4 { font-size: 0.88rem; font-weight: 700; color: #94a3b8; margin: 1rem 0 .3rem; text-transform: uppercase; letter-spacing: .04em; }
+    p  { margin-bottom: .85rem; color: #cbd5e1; }
+    ul, ol { margin: .5rem 0 .85rem 1.4rem; color: #cbd5e1; }
+    li { margin-bottom: .3rem; }
+    strong { color: var(--text); }
+    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82em; background: #0f172a; border: 1px solid var(--border); color: var(--blue); padding: .1em .35em; border-radius: 3px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    section { margin-bottom: 3rem; }
+    section[id] { scroll-margin-top: 1.5rem; }
+
+    /* ── Boxes ──────────────────────────────────────────────── */
+    .box { border-radius: 8px; padding: .85rem 1.1rem; margin: .75rem 0 1rem; font-size: 0.85rem; border-left: 3px solid; }
+    .box-blue   { background: #0c2744; border-color: var(--blue);   color: #bae6fd; }
+    .box-green  { background: #052e16; border-color: var(--green);  color: #bbf7d0; }
+    .box-yellow { background: #2d1a00; border-color: var(--yellow); color: #fde68a; }
+    .box-red    { background: #2d0a0a; border-color: var(--red);    color: #fecaca; }
+    .box strong { color: inherit; font-weight: 700; }
+
+    /* ── Flow ───────────────────────────────────────────────── */
+    .flow { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; font-size: 0.8rem; }
+    .flow-step { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .4rem .75rem; color: var(--text); white-space: nowrap; }
+    .flow-step.source  { border-color: var(--blue);   color: var(--blue); }
+    .flow-step.process { border-color: var(--purple); color: var(--purple); }
+    .flow-step.output  { border-color: var(--green);  color: var(--green); }
+    .flow-arrow { color: var(--muted); font-size: 1rem; }
+
+    /* ── Tables ─────────────────────────────────────────────── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: .75rem 0 1.25rem; }
+    .data-table th { background: #0f172a; color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; padding: .5rem .85rem; text-align: left; border-bottom: 2px solid var(--border); }
+    .data-table td { padding: .5rem .85rem; border-bottom: 1px solid #1e293b; color: #cbd5e1; vertical-align: top; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: rgba(56,189,248,.03); }
+
+    /* ── Pre / code block ───────────────────────────────────── */
+    pre { background: #0a1020; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; overflow-x: auto; font-size: 0.79rem; line-height: 1.6; margin: .75rem 0 1.25rem; font-family: 'SF Mono', 'Fira Code', monospace; color: #94a3b8; }
+    pre .kw  { color: var(--purple); }
+    pre .fn  { color: var(--blue); }
+    pre .str { color: var(--green); }
+    pre .cm  { color: #475569; font-style: italic; }
+    pre .num { color: var(--yellow); }
+    pre .py  { color: var(--orange); }
+
+    /* ── Endpoint cards ──────────────────────────────────────── */
+    .ep { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin: .85rem 0 1.5rem; overflow: hidden; }
+    .ep-header { display: flex; align-items: center; gap: .75rem; padding: .65rem 1rem; background: #0f172a; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .method { font-size: 0.72rem; font-weight: 700; font-family: monospace; padding: .2rem .55rem; border-radius: 4px; white-space: nowrap; }
+    .method.get    { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .method.post   { background: #0c2744; color: #38bdf8; border: 1px solid #1e4e8c; }
+    .ep-path { font-family: monospace; font-size: 0.85rem; color: var(--text); }
+    .ep-desc { font-size: 0.78rem; color: var(--muted); }
+    .ep-body { padding: .85rem 1rem; font-size: 0.82rem; color: #cbd5e1; }
+    .ep-body p { margin-bottom: .5rem; }
+    .ep-body ul { margin: .4rem 0 .6rem 1.2rem; }
+    .ep-body li { margin-bottom: .25rem; }
+    .param { display: inline-block; font-family: monospace; font-size: 0.78rem; background: #0c2744; border: 1px solid #1e4e8c; color: #93c5fd; padding: .1rem .4rem; border-radius: 3px; margin: 0 .2rem; }
+    .ret  { display: inline-block; font-family: monospace; font-size: 0.78rem; background: #052e16; border: 1px solid #166534; color: #86efac; padding: .1rem .4rem; border-radius: 3px; margin: 0 .2rem; }
+
+    /* ── Category set chips ──────────────────────────────────── */
+    .cat-chip { display: inline-block; font-size: 0.73rem; background: var(--surface); border: 1px solid var(--border); color: #94a3b8; padding: .15rem .5rem; border-radius: 12px; margin: .1rem .15rem; }
+    .cat-chip.blue   { border-color: var(--blue);   color: var(--blue); }
+    .cat-chip.green  { border-color: var(--green);  color: var(--green); }
+    .cat-chip.orange { border-color: var(--orange); color: var(--orange); }
+    .cat-chip.purple { border-color: var(--purple); color: var(--purple); }
+
+    /* ── Period / fallback ───────────────────────────────────── */
+    .period-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: .75rem 0 1.25rem; }
+    .period-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; }
+    .period-card .pkey { font-size: 0.78rem; font-weight: 700; color: var(--blue); font-family: monospace; }
+    .period-card .pval { font-size: 1rem; font-weight: 700; color: var(--text); font-family: monospace; }
+    .period-card .psub { font-size: 0.72rem; color: var(--muted); margin-top: .2rem; }
+
+    /* ── UI page diagrams ────────────────────────────────────── */
+    .page-mock { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 1rem 0 1.5rem; font-size: 0.78rem; }
+    .mock-bar  { background: #0f172a; padding: .5rem 1rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; }
+    .mock-bar .mock-title { color: var(--blue); font-weight: 700; font-size: 0.82rem; }
+    .mock-bar .mock-nav  { margin-left: auto; display: flex; gap: .4rem; }
+    .mock-bar .mock-nav span { color: var(--muted); font-size: 0.72rem; border: 1px solid var(--border); border-radius: 4px; padding: .1rem .45rem; }
+    .mock-bar .mock-nav span.active { color: var(--blue); border-color: var(--blue); }
+    .mock-status { background: #162032; border-bottom: 1px solid #1e3a5a; padding: .3rem 1rem; display: flex; gap: 1.5rem; }
+    .mock-status span { font-size: 0.68rem; color: var(--muted); }
+    .mock-status strong { color: var(--blue); }
+    .mock-body { padding: .85rem 1rem; }
+    .mock-kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: .5rem; margin-bottom: .75rem; }
+    .mock-kpi { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: .45rem .6rem; text-align: center; }
+    .mock-kpi .mk-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; }
+    .mock-kpi .mk-val   { font-size: 0.88rem; font-weight: 700; font-family: monospace; }
+    .mock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .mock-card { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: .5rem .75rem; }
+    .mock-card .mc-title { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); margin-bottom: .35rem; }
+    .hbar { height: 6px; border-radius: 3px; margin: .25rem 0; }
+
+    /* ── Tabs strip ──────────────────────────────────────────── */
+    .tab-strip { display: flex; gap: .2rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .tab-pill { font-size: 0.72rem; background: var(--surface); border: 1px solid var(--border); color: var(--muted); padding: .2rem .65rem; border-radius: 5px; }
+    .tab-pill.active { background: #0369a1; color: #fff; border-color: #0369a1; }
+
+    /* ── Footer ─────────────────────────────────────────────── */
+    footer { margin-top: 3rem; padding: 1.5rem 0; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+<!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+<nav class="sidebar">
+  <div class="sidebar-title">azure-penny docs</div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-link" href="#intro">Introduction</a>
+    <a class="nav-link" href="#pipeline">End-to-End Pipeline</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Data Ingestion</div>
+    <a class="nav-link" href="#blob-auth">Auth &amp; Client</a>
+    <a class="nav-link" href="#blob-discovery">Blob Discovery</a>
+    <a class="nav-link" href="#file-reading">File Reading</a>
+    <a class="nav-link" href="#column-mapping">Column Mapping</a>
+    <a class="nav-link" href="#cache">In-Memory Cache</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Filtering &amp; Aggregation</div>
+    <a class="nav-link" href="#period">Period System</a>
+    <a class="nav-link" href="#service-cats">Service Categories</a>
+    <a class="nav-link" href="#helpers">Filter Helpers</a>
+    <a class="nav-link" href="#fallback">Day Fallback</a>
+    <a class="nav-link" href="#storage-breakdown">Storage Breakdown</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">API Endpoints</div>
+    <a class="nav-link" href="#ep-category">Category APIs</a>
+    <a class="nav-link sub" href="#ep-compute">↳ /api/compute</a>
+    <a class="nav-link sub" href="#ep-machines">↳ /api/compute/machines</a>
+    <a class="nav-link sub" href="#ep-storage">↳ /api/storage</a>
+    <a class="nav-link sub" href="#ep-storage-breakdown">↳ /api/storage/breakdown</a>
+    <a class="nav-link sub" href="#ep-network">↳ /api/network</a>
+    <a class="nav-link sub" href="#ep-database">↳ /api/database</a>
+    <a class="nav-link" href="#ep-services">Services &amp; Daily</a>
+    <a class="nav-link sub" href="#ep-all-services">↳ /api/services</a>
+    <a class="nav-link sub" href="#ep-daily">↳ /api/daily</a>
+    <a class="nav-link" href="#ep-rg">Resource Groups</a>
+    <a class="nav-link sub" href="#ep-rg-cost">↳ /api/resource-groups</a>
+    <a class="nav-link sub" href="#ep-rg-list">↳ /api/resource-groups-list</a>
+    <a class="nav-link" href="#ep-raw">Raw &amp; Utility</a>
+    <a class="nav-link sub" href="#ep-costs">↳ /costs</a>
+    <a class="nav-link sub" href="#ep-summary">↳ /costs/summary</a>
+    <a class="nav-link sub" href="#ep-status">↳ /api/status</a>
+    <a class="nav-link sub" href="#ep-reload">↳ /api/reload</a>
+    <a class="nav-link sub" href="#ep-debug">↳ /api/debug</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">UI Pages</div>
+    <a class="nav-link" href="#ui-manager">Manager Page</a>
+    <a class="nav-link" href="#ui-technician">Technician Page</a>
+    <a class="nav-link" href="#ui-shared">Shared Controls</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-label">Config &amp; Ops</div>
+    <a class="nav-link" href="#env-vars">Environment Variables</a>
+    <a class="nav-link" href="#reload-cache">Reloading &amp; TTL</a>
+  </div>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────────────── -->
+<main>
+
+  <h1>Cost Export Data Manual</h1>
+  <p class="subtitle">How azure-penny loads, processes, and serves historical cost data from Azure Cost Management CSV exports</p>
+
+  <!-- ── INTRO ─────────────────────────────────────────────── -->
+  <section id="intro">
+    <h2>Introduction</h2>
+    <p>
+      The Manager and Technician pages display <strong>historical billing data</strong> from Azure Cost Management exports.
+      This is entirely separate from the live ARM inventory — no Azure API calls are made during a cost query;
+      all aggregation runs in-process against a pandas DataFrame that was loaded once from Blob Storage and cached in memory.
+    </p>
+    <p>
+      The result is a fast, read-only cost dashboard that answers questions like:
+      <em>how much did we spend on Compute this week? Which resource group is the biggest cost driver? What does our daily spend trend look like?</em>
+    </p>
+    <div class="box box-blue">
+      <strong>Not covered here:</strong> Live resource inventory and cost projections (ARM API, spot prices, file share estimates) are documented in the
+      <a href="live-cost-data-manual.html">Live Cost Data Manual</a>.
+    </div>
+  </section>
+
+  <!-- ── PIPELINE ──────────────────────────────────────────── -->
+  <section id="pipeline">
+    <h2>End-to-End Pipeline</h2>
+    <p>Every dashboard API request follows the same path:</p>
+
+    <div class="flow">
+      <span class="flow-step source">Azure Cost Management<br><small>Daily CSV export → Blob Storage</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process"><code>_discover_latest_blobs()</code><br><small>find newest date-folder</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process"><code>_read_blob_to_bytes()</code><br><small>stream download</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process"><code>_blob_to_dataframe()</code><br><small>parse CSV / Parquet</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process"><code>_apply_column_map()</code><br><small>normalize to C_*</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">1h in-memory cache</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">filter: period + category + RG</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step output">groupby + sum → JSON</span>
+    </div>
+
+    <p>
+      Steps 1–5 run only on a <strong>cache miss</strong> (first request, or after TTL expiry / manual reload).
+      Steps 6–8 run on every API call, in memory, in microseconds.
+    </p>
+  </section>
+
+  <!-- ── AUTH / CLIENT ─────────────────────────────────────── -->
+  <section id="blob-auth">
+    <h2>Auth &amp; Blob Client</h2>
+    <p>
+      <code>storage.py:get_blob_service_client()</code> returns a lazily-initialised singleton <code>BlobServiceClient</code>.
+      It uses <code>DefaultAzureCredential</code> from the <code>azure-identity</code> SDK.
+    </p>
+    <pre><span class="kw">credential</span> = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID <span class="kw">or</span> <span class="kw">None</span>)
+account_url = <span class="str">f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net"</span>
+_blob_client = BlobServiceClient(account_url=account_url, credential=credential)</pre>
+
+    <table class="data-table">
+      <thead><tr><th>Environment</th><th>How credential resolves</th></tr></thead>
+      <tbody>
+        <tr><td>Azure Container App (production)</td><td>Managed Identity — <code>AZURE_CLIENT_ID</code> env var points to the user-assigned identity</td></tr>
+        <tr><td>Local dev with <code>az login</code></td><td>Azure CLI credential — developer's own account must have <em>Storage Blob Data Reader</em> role</td></tr>
+        <tr><td>GitHub Actions CI</td><td>OIDC federated credential via <code>az login --federated-token</code></td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      The client is a module-level singleton — one instance per process lifetime. Because Container Apps run a single
+      replica, this means one client for the entire application. SDK connection pooling is handled internally.
+    </p>
+  </section>
+
+  <!-- ── BLOB DISCOVERY ────────────────────────────────────── -->
+  <section id="blob-discovery">
+    <h2>Blob Discovery</h2>
+    <p>
+      <code>_discover_latest_blobs(container_name)</code> lists all blobs in the container and selects exactly
+      <strong>one file</strong> to load. Azure Cost Management exports are <em>cumulative</em> — each daily file
+      contains all charges from the start of the billing month, so loading only the newest file gives the complete dataset.
+    </p>
+
+    <h3>Primary algorithm (date-folder pattern)</h3>
+    <p>
+      Azure exports are stored in <code>penny/{YYYYMMDD-YYYYMMDD}/{guid}/filename.csv</code> paths.
+      The function extracts the <code>YYYYMMDD-YYYYMMDD</code> segments and sorts them descending.
+    </p>
+
+    <div class="flow">
+      <span class="flow-step source">list_blobs()</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">extract all <code>YYYYMMDD-YYYYMMDD</code><br>path segments</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">sort descending<br>(newest first)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">for each folder: find<br>.parquet/.csv/.csv.gz</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step process">if multiple files:<br>pick newest by <code>last_modified</code></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step output">return [blob_name]</span>
+    </div>
+
+    <h3>Fallback algorithm (no date folders)</h3>
+    <p>
+      If no <code>YYYYMMDD-YYYYMMDD</code> segments are found (e.g. a manually uploaded file or a non-standard path),
+      the function falls back to selecting the single newest <code>.parquet</code>, <code>.csv</code>, or <code>.csv.gz</code>
+      file in the entire container, by <code>last_modified</code> timestamp.
+    </p>
+
+    <h3>Why only one file?</h3>
+    <p>
+      If two files from different date folders were concatenated, costs would be double-counted.
+      A June 1–5 file and a June 1–10 file both contain June 1–5 charges — stacking them inflates every figure by 2×.
+      The latest folder always has the most complete data for the billing period.
+    </p>
+
+    <div class="box box-yellow">
+      <strong>What if today's export hasn't run yet?</strong> The app will silently fall back to the previous day's export.
+      The <code>data_as_of</code> field in every API response tells you the last date present in the loaded file.
+      If it's two days old, the morning export hasn't finished yet.
+    </div>
+  </section>
+
+  <!-- ── FILE READING ───────────────────────────────────────── -->
+  <section id="file-reading">
+    <h2>File Reading</h2>
+    <p>
+      After discovery, <code>_read_blob_to_bytes()</code> streams the blob into a Python <code>bytes</code> object entirely in memory
+      — no temporary disk file is written. The raw bytes are wrapped in <code>io.BytesIO</code> and handed to pandas.
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>File extension</th><th>pandas call</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>.parquet</code></td>
+          <td><code>pd.read_parquet(buf, engine="pyarrow")</code></td>
+          <td>Fastest; preserves dtypes. Azure Cost Management doesn't currently export Parquet at billing-profile scope, but the app supports it for future compatibility.</td>
+        </tr>
+        <tr>
+          <td><code>.csv.gz</code></td>
+          <td><code>pd.read_csv(buf, compression="gzip")</code></td>
+          <td>Gzip-compressed CSV. Smaller download but slower to parse.</td>
+        </tr>
+        <tr>
+          <td><code>.csv</code></td>
+          <td><code>pd.read_csv(buf)</code></td>
+          <td>Standard CSV. Azure currently exports in this format at billing-profile scope.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      Multiple files from the same folder are supported (returns a list), concatenated via <code>pd.concat(frames, ignore_index=True)</code>.
+      In practice, Azure always writes exactly one file per export run.
+    </p>
+  </section>
+
+  <!-- ── COLUMN MAPPING ────────────────────────────────────── -->
+  <section id="column-mapping">
+    <h2>Column Mapping</h2>
+    <p>
+      Azure Cost Management export column names differ between agreement types (EA, MCA, CSP) and can change between API versions.
+      <code>_apply_column_map()</code> in <code>storage.py</code> normalises all variants to a stable internal schema.
+    </p>
+
+    <h3>The <code>COLUMN_MAP</code> dictionary</h3>
+    <table class="data-table">
+      <thead><tr><th>Azure source column(s)</th><th>Internal name</th><th>Type after mapping</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr><td><code>CostInBillingCurrency</code><br><code>Cost</code><br><code>PreTaxCost</code></td><td><code>C_COST</code></td><td><code>float64</code></td><td>All aggregations — the primary metric</td></tr>
+        <tr><td><code>MeterCategory</code><br><code>ServiceName</code></td><td><code>C_SERVICE</code></td><td><code>object</code> (str)</td><td>Service-level grouping; matches category sets</td></tr>
+        <tr><td><code>ResourceGroup</code><br><code>ResourceGroupName</code></td><td><code>C_NAME</code></td><td><code>object</code> (str, lowercased)</td><td>Resource-group filtering and grouping</td></tr>
+        <tr><td><code>Date</code><br><code>UsageDate</code></td><td><code>C_DATE</code></td><td><code>object</code> (<code>YYYY-MM-DD</code> str)</td><td>Period filtering, daily chart, date-range display</td></tr>
+        <tr><td><code>SubscriptionName</code><br><code>SubscriptionId</code></td><td><code>C_ACCOUNT</code></td><td><code>object</code> (str)</td><td>Subscription identifier (informational)</td></tr>
+        <tr><td><code>ResourceId</code><br><code>InstanceId</code></td><td><code>C_RESOURCE_ID</code></td><td><code>object</code> (str)</td><td>Cross-reference with live ARM inventory</td></tr>
+        <tr><td><code>MeterSubCategory</code><br><code>SubCategory</code></td><td><code>C_SUBCATEGORY</code></td><td><code>object</code> (str)</td><td>Storage space-vs-transfer classification</td></tr>
+        <tr><td><code>Quantity</code><br><code>UsageQuantity</code></td><td><code>C_QUANTITY</code></td><td><code>float64</code></td><td>VM usage hours (live projection only)</td></tr>
+        <tr><td><code>Tags</code><br>any <code>tag_*</code></td><td><code>C_TAGS</code></td><td><code>object</code> (str)</td><td>Pass-through; not currently displayed in UI</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Mapping algorithm</h3>
+    <p>The mapping is case-insensitive. For each raw column:</p>
+    <ol>
+      <li>Lowercase the raw column name.</li>
+      <li>Look it up in <code>COLUMN_MAP</code> (keys also lowercased).</li>
+      <li>If found and the internal name is not already taken, add to the rename dict.</li>
+      <li>If the column starts with <code>tag_</code> and <code>C_TAGS</code> isn't taken, map it to <code>C_TAGS</code>.</li>
+    </ol>
+    <p>After renaming:</p>
+    <ul>
+      <li><code>C_COST</code> → <code>pd.to_numeric(..., errors="coerce").fillna(0.0)</code> (strings / blanks become 0)</li>
+      <li><code>C_DATE</code> → parsed as datetime, then formatted to <code>YYYY-MM-DD</code> string</li>
+      <li><code>C_NAME</code> → lowercased (resource group names are compared case-insensitively throughout)</li>
+    </ul>
+
+    <h3>Missing columns</h3>
+    <p>
+      If a required internal column (<code>C_COST</code>, <code>C_SERVICE</code>, <code>C_NAME</code>, <code>C_ACCOUNT</code>, <code>C_DATE</code>)
+      is not found after mapping, a warning is logged but the app continues with whatever columns are available.
+      API endpoints that depend on a missing column will return empty results rather than an error.
+    </p>
+  </section>
+
+  <!-- ── CACHE ─────────────────────────────────────────────── -->
+  <section id="cache">
+    <h2>In-Memory Cache</h2>
+    <p>
+      After parsing, the DataFrame is stored in a module-level dict (<code>_cache</code> in <code>storage.py</code>).
+      The async lock (<code>_lock</code>) prevents concurrent reloads from racing.
+    </p>
+
+    <pre><span class="cm"># storage.py</span>
+_lock:  asyncio.Lock = asyncio.Lock()
+_cache: dict[str, Any] = {}   <span class="cm"># keys: "df", "loaded_at"</span>
+
+<span class="kw">async def</span> <span class="fn">get_cached_dataframe</span>() -> pd.DataFrame:
+    <span class="kw">async with</span> _lock:
+        now = time.monotonic()
+        <span class="kw">if</span> <span class="str">"df"</span> <span class="kw">not in</span> _cache <span class="kw">or</span> (now - _cache.get(<span class="str">"loaded_at"</span>, <span class="num">0.0</span>)) > TTL_SECONDS:
+            df = <span class="kw">await</span> asyncio.get_event_loop().run_in_executor(<span class="kw">None</span>, _load_dataframe)
+            _cache[<span class="str">"df"</span>]        = df
+            _cache[<span class="str">"loaded_at"</span>] = now
+        <span class="kw">return</span> _cache[<span class="str">"df"</span>]</pre>
+
+    <table class="data-table">
+      <thead><tr><th>Property</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>TTL</td><td><code>CACHE_TTL_SECONDS</code> env var, default <strong>3600 s (1 hour)</strong></td></tr>
+        <tr><td>Concurrency</td><td><code>asyncio.Lock</code> — only one thread loads at a time; others wait at the lock</td></tr>
+        <tr><td>Executor</td><td>The blocking SDK download runs in <code>run_in_executor(None, ...)</code> (default thread pool) to avoid stalling the event loop</td></tr>
+        <tr><td>Cold-start behaviour</td><td>First request triggers a full download + parse. Typical duration: 2–10 s depending on file size. All other requests during that window queue at the lock and receive the same result.</td></tr>
+        <tr><td>Error behaviour</td><td>If no export files are found, an empty DataFrame with the required column schema is cached. APIs return empty/zero results instead of 500 errors.</td></tr>
+        <tr><td>Manual invalidation</td><td><code>POST /api/reload</code> or <code>GET /costs/refresh</code> — clears <code>_cache</code>, then immediately re-loads</td></tr>
+      </tbody>
+    </table>
+
+    <div class="box box-yellow">
+      <strong>Scale-to-zero note:</strong> When the Container App is idle and scales down to zero replicas, the process terminates and the cache is lost.
+      The next request after a cold start always re-downloads from Blob Storage, regardless of when it was last loaded.
+    </div>
+  </section>
+
+  <!-- ── PERIOD SYSTEM ─────────────────────────────────────── -->
+  <section id="period">
+    <h2>Period System</h2>
+    <p>
+      Every category API accepts a <code>period</code> query parameter.
+      The parameter maps to a number of trailing calendar days, measured backward from today.
+    </p>
+
+    <div class="period-grid">
+      <div class="period-card">
+        <div class="pkey">period=day</div>
+        <div class="pval">1 day</div>
+        <div class="psub">Yesterday's charges (or latest available day — see Day Fallback)</div>
+      </div>
+      <div class="period-card">
+        <div class="pkey">period=week</div>
+        <div class="pval">7 days</div>
+        <div class="psub">Default. Last 7 calendar days.</div>
+      </div>
+      <div class="period-card">
+        <div class="pkey">period=month</div>
+        <div class="pval">30 days</div>
+        <div class="psub">Last 30 calendar days.</div>
+      </div>
+    </div>
+
+    <p>The cutoff date is computed at request time:</p>
+    <pre>cutoff = (date.today() - timedelta(days=days)).strftime(<span class="str">"%Y-%m-%d"</span>)
+filtered = df[df[<span class="str">"C_DATE"</span>] >= cutoff]</pre>
+
+    <p>
+      Because the export always contains <em>month-to-date</em> data, requesting <code>period=month</code> when only
+      5 days into the month will return only 5 days of charges — not a projected 30.
+      The <code>data_as_of</code> field in the response tells you the most recent date in the filtered result.
+    </p>
+  </section>
+
+  <!-- ── SERVICE CATEGORIES ────────────────────────────────── -->
+  <section id="service-cats">
+    <h2>Service Categories</h2>
+    <p>
+      Category endpoints filter the DataFrame to a named set of <code>C_SERVICE</code> values (i.e. <code>MeterCategory</code>
+      from the export). The sets are defined as Python frozen sets in <code>main.py</code>.
+    </p>
+
+    <h3>Compute</h3>
+    <p>
+      <span class="cat-chip blue">Virtual Machines</span>
+      <span class="cat-chip blue">App Service</span>
+      <span class="cat-chip blue">Container Apps</span>
+      <span class="cat-chip blue">Azure Functions</span>
+      <span class="cat-chip blue">Container Instances</span>
+      <span class="cat-chip blue">Azure Kubernetes Service</span>
+      <span class="cat-chip blue">Batch</span>
+      <span class="cat-chip blue">Cloud Services</span>
+    </p>
+
+    <h3>Storage</h3>
+    <p>
+      <span class="cat-chip green">Storage</span>
+      <span class="cat-chip green">Azure Data Lake Storage</span>
+      <span class="cat-chip green">Backup</span>
+      <span class="cat-chip green">StorSimple</span>
+      <span class="cat-chip green">Azure NetApp Files</span>
+      <span class="cat-chip green">Managed Disks</span>
+    </p>
+
+    <h3>Network</h3>
+    <p>
+      <span class="cat-chip orange">Virtual Network</span>
+      <span class="cat-chip orange">Load Balancer</span>
+      <span class="cat-chip orange">Application Gateway</span>
+      <span class="cat-chip orange">Azure DNS</span>
+      <span class="cat-chip orange">Azure Front Door</span>
+      <span class="cat-chip orange">Bandwidth</span>
+      <span class="cat-chip orange">VPN Gateway</span>
+      <span class="cat-chip orange">Azure Bastion</span>
+      <span class="cat-chip orange">Azure Firewall</span>
+      <span class="cat-chip orange">Network Watcher</span>
+      <span class="cat-chip orange">Traffic Manager</span>
+    </p>
+
+    <h3>Database</h3>
+    <p>
+      <span class="cat-chip purple">SQL Database</span>
+      <span class="cat-chip purple">Azure Cosmos DB</span>
+      <span class="cat-chip purple">Azure Cache for Redis</span>
+      <span class="cat-chip purple">Azure Database for MySQL</span>
+      <span class="cat-chip purple">Azure Database for PostgreSQL</span>
+      <span class="cat-chip purple">Azure SQL Managed Instance</span>
+      <span class="cat-chip purple">Azure Synapse Analytics</span>
+    </p>
+
+    <div class="box box-blue">
+      <strong>Matching is case-insensitive.</strong> Both the export's <code>C_SERVICE</code> values and the set members are
+      lowercased before comparison, so <em>Virtual Machines</em> matches <em>virtual machines</em> in the export.
+      Services not in any category set appear only in <code>/api/services</code> (the "All Services" view) — they are not lost.
+    </div>
+  </section>
+
+  <!-- ── FILTER HELPERS ────────────────────────────────────── -->
+  <section id="helpers">
+    <h2>Filter Helpers</h2>
+    <p>Four helper functions in <code>main.py</code> compose to build every API response:</p>
+
+    <table class="data-table">
+      <thead><tr><th>Function</th><th>Signature</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>_filter_period(df, days)</code></td>
+          <td><code>(DataFrame, int) → DataFrame</code></td>
+          <td>Keeps only rows where <code>C_DATE ≥ today − days</code>. No-op if <code>C_DATE</code> column is absent.</td>
+        </tr>
+        <tr>
+          <td><code>_filter_services(df, services)</code></td>
+          <td><code>(DataFrame, set[str]) → DataFrame</code></td>
+          <td>Keeps rows where <code>C_SERVICE.lower()</code> is in the lowercased <code>services</code> set. No-op if <code>C_SERVICE</code> is absent.</td>
+        </tr>
+        <tr>
+          <td><code>_filter_rg(df, rg)</code></td>
+          <td><code>(DataFrame, str) → DataFrame</code></td>
+          <td>Keeps rows where <code>C_NAME == rg.lower()</code>. No-op if <code>rg</code> is empty or <code>C_NAME</code> is absent.</td>
+        </tr>
+        <tr>
+          <td><code>_cost_by(df, col)</code></td>
+          <td><code>(DataFrame, str) → dict[str, float]</code></td>
+          <td>Groups by <code>col</code>, sums <code>C_COST</code>, filters out zero-cost groups, sorts descending. Returns <code>{name: cost}</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Typical composition (category API)</h3>
+    <pre>full_df   = <span class="kw">await</span> get_cached_dataframe()
+df        = _filter_rg(full_df, rg)          <span class="cm"># optional RG scope</span>
+filtered  = _filter_services(
+              _filter_period(df, days),      <span class="cm"># time window</span>
+              CAT_COMPUTE                    <span class="cm"># service set</span>
+            )
+by_svc    = _cost_by(filtered, <span class="str">"C_SERVICE"</span>)  <span class="cm"># aggregate</span></pre>
+  </section>
+
+  <!-- ── DAY FALLBACK ──────────────────────────────────────── -->
+  <section id="fallback">
+    <h2>Day Fallback</h2>
+    <p>
+      When <code>period=day</code> is requested and the filtered DataFrame is empty
+      (today's export hasn't run yet, so there's nothing newer than yesterday),
+      the app automatically falls back to the most recent date available in the full dataset.
+    </p>
+
+    <pre><span class="kw">if</span> period == <span class="str">"day"</span> <span class="kw">and</span> filtered.empty <span class="kw">and</span> <span class="str">"C_DATE"</span> <span class="kw">in</span> full_df.columns:
+    last_date = full_df[<span class="str">"C_DATE"</span>].dropna().max()
+    filtered  = df_svc[df_svc[<span class="str">"C_DATE"</span>] == last_date]
+    fallback  = <span class="kw">True</span></pre>
+
+    <p>
+      When fallback is active, the <code>data_as_of</code> field in the response contains the actual date used,
+      and the UI badge changes from e.g. <em>"24 hours"</em> to <em>"Latest: 2026-05-03"</em> so the user
+      can see they're looking at older data.
+    </p>
+  </section>
+
+  <!-- ── STORAGE BREAKDOWN ─────────────────────────────────── -->
+  <section id="storage-breakdown">
+    <h2>Storage Breakdown: Space vs. Transfer</h2>
+    <p>
+      <code>/api/storage/breakdown</code> splits storage cost into two buckets:
+      <strong>Space/Capacity</strong> (data stored, disks, backups) and <strong>Transfer/Bandwidth</strong> (egress, replication, retrieval).
+    </p>
+    <p>
+      The classification uses keyword matching on the combined <code>C_SERVICE</code> + <code>C_SUBCATEGORY</code> string:
+    </p>
+    <pre>_TRANSFER_KEYWORDS = frozenset([
+    <span class="str">"bandwidth"</span>, <span class="str">"transfer"</span>, <span class="str">"egress"</span>,
+    <span class="str">"geo-redundant replication"</span>, <span class="str">"data retrieval"</span>, <span class="str">"replication"</span>,
+])
+
+<span class="kw">def</span> _row_type(svc: str, sub: str) -> str:
+    combined = (svc + <span class="str">" "</span> + sub).lower()
+    <span class="kw">return</span> <span class="str">"transfer"</span> <span class="kw">if</span> any(k <span class="kw">in</span> combined <span class="kw">for</span> k <span class="kw">in</span> _TRANSFER_KEYWORDS) <span class="kw">else</span> <span class="str">"space"</span></pre>
+
+    <p>
+      <code>Bandwidth</code> is included in the storage query for this endpoint (even though it's also part of <code>CAT_NETWORK</code>)
+      because bandwidth charges in Azure are tightly associated with storage egress and make the breakdown useful.
+    </p>
+  </section>
+
+  <!-- ── CATEGORY APIS ──────────────────────────────────────── -->
+  <section id="ep-category">
+    <h2>Category API Endpoints</h2>
+    <p>All category endpoints share the same internal helper <code>_category_api(period, services, rg)</code>.</p>
+
+    <!-- /api/compute -->
+    <div class="ep" id="ep-compute">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/compute</span>
+        <span class="ep-desc">Cost by compute service for a given period</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong>
+          <span class="param">period=week</span> (day/week/month, default week)
+          <span class="param">rg=</span> (resource group name, optional)
+        </p>
+        <p><strong>Returns:</strong> <span class="ret">services</span> array sorted by cost, <span class="ret">total_usd</span>, <span class="ret">data_as_of</span>, <span class="ret">fallback</span> flag</p>
+        <p><strong>Service set:</strong> Virtual Machines, App Service, Container Apps, Azure Functions, Container Instances, AKS, Batch, Cloud Services</p>
+      </div>
+    </div>
+
+    <!-- /api/compute/machines -->
+    <div class="ep" id="ep-machines">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/compute/machines</span>
+        <span class="ep-desc">Compute cost grouped by resource group name (C_NAME), not service</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong>
+          <span class="param">period=week</span>
+          <span class="param">rg=</span>
+        </p>
+        <p><strong>Returns:</strong> <span class="ret">machines</span> array of <code>{name, cost_usd}</code> where <em>name</em> is the resource group</p>
+        <p>
+          <strong>Key difference from <code>/api/compute</code>:</strong>
+          groups by <code>C_NAME</code> (resource group) instead of <code>C_SERVICE</code>.
+          This answers "which resource group is spending the most on compute?" rather than "which Azure service type?".
+          Used by the Technician page's Compute tab.
+        </p>
+      </div>
+    </div>
+
+    <!-- /api/storage -->
+    <div class="ep" id="ep-storage">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/storage</span>
+        <span class="ep-desc">Total storage cost grouped by service type</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Service set:</strong> Storage, Azure Data Lake Storage, Backup, StorSimple, Azure NetApp Files, Managed Disks</p>
+        <p>Used by the Manager page's Storage KPI card. Does not break down space vs. transfer — use <code>/api/storage/breakdown</code> for that.</p>
+      </div>
+    </div>
+
+    <!-- /api/storage/breakdown -->
+    <div class="ep" id="ep-storage-breakdown">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/storage/breakdown</span>
+        <span class="ep-desc">Storage cost split into Space/Capacity vs. Transfer/Bandwidth buckets</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Returns:</strong> <span class="ret">total_usd</span>, <span class="ret">space_usd</span>, <span class="ret">transfer_usd</span>, <span class="ret">by_service</span> array</p>
+        <p>Service scope is <code>CAT_STORAGE ∪ {"Bandwidth"}</code>. Each row is classified as <em>space</em> or <em>transfer</em> via keyword matching (see Storage Breakdown section above).</p>
+        <p>Used by Technician → Storage tab. Shows two KPI cards side-by-side: <strong>Space / Capacity</strong> and <strong>Transfer / Bandwidth</strong>.</p>
+      </div>
+    </div>
+
+    <!-- /api/network -->
+    <div class="ep" id="ep-network">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/network</span>
+        <span class="ep-desc">Network cost grouped by service type</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Service set:</strong> Virtual Network, Load Balancer, Application Gateway, Azure DNS, Azure Front Door, Bandwidth, VPN Gateway, Azure Bastion, Azure Firewall, Network Watcher, Traffic Manager</p>
+      </div>
+    </div>
+
+    <!-- /api/database -->
+    <div class="ep" id="ep-database">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/database</span>
+        <span class="ep-desc">Database cost grouped by service type</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Service set:</strong> SQL Database, Azure Cosmos DB, Azure Cache for Redis, Azure Database for MySQL, Azure Database for PostgreSQL, Azure SQL Managed Instance, Azure Synapse Analytics</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SERVICES & DAILY ───────────────────────────────────── -->
+  <section id="ep-services">
+    <h2>Services &amp; Daily Endpoints</h2>
+
+    <!-- /api/services -->
+    <div class="ep" id="ep-all-services">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/services</span>
+        <span class="ep-desc">All services — no category filter, full MeterCategory breakdown</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Returns:</strong> <span class="ret">services</span> sorted by cost, <span class="ret">total_usd</span>, <span class="ret">data_as_of</span></p>
+        <p>
+          Unlike the category endpoints, this groups the <em>entire</em> filtered DataFrame by <code>C_SERVICE</code>
+          with no service-set filter. It shows every <code>MeterCategory</code> value that appears in the export —
+          including services that don't fall into Compute, Storage, Network, or Database.
+        </p>
+        <p>This is the source for:</p>
+        <ul>
+          <li>The Technician "All Services" tab</li>
+          <li>The status-bar grand total on both Manager and Technician pages</li>
+          <li>The Insights tab (top spender, share analysis)</li>
+          <li>The Insights "Category Breakdown" sub-card (calls all four category endpoints)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- /api/daily -->
+    <div class="ep" id="ep-daily">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/daily</span>
+        <span class="ep-desc">Daily spend timeseries for the last N days</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong>
+          <span class="param">days=30</span> (default 30)
+          <span class="param">rg=</span>
+        </p>
+        <p><strong>Returns:</strong> <span class="ret">points</span> array of <code>{date, cost_usd}</code> sorted by date ascending, <span class="ret">total_usd</span></p>
+        <p>Groups the full DataFrame (no service filter) by <code>C_DATE</code> and sums <code>C_COST</code>. Used to draw the bar chart and last-10-days table on the Technician "All Services" tab.</p>
+        <p>The canvas chart colours weekend bars (<code>getUTCDay() === 0 or 6</code>) in a slightly darker blue than weekdays.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RESOURCE GROUPS ────────────────────────────────────── -->
+  <section id="ep-rg">
+    <h2>Resource Group Endpoints</h2>
+
+    <!-- /api/resource-groups -->
+    <div class="ep" id="ep-rg-cost">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/resource-groups</span>
+        <span class="ep-desc">Total cost aggregated by resource group for a given period</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Parameters:</strong> <span class="param">period=week</span> <span class="param">rg=</span></p>
+        <p><strong>Returns:</strong> <span class="ret">resource_groups</span> array of <code>{name, cost_usd}</code> sorted by cost, <span class="ret">total_usd</span></p>
+        <p>Groups the full period-filtered DataFrame by <code>C_NAME</code> (resource group). No service filter — all spend regardless of category.</p>
+        <p>Used by Technician → Resource Groups tab. Each row has a delete button that triggers the RG deletion modal.</p>
+      </div>
+    </div>
+
+    <!-- /api/resource-groups-list -->
+    <div class="ep" id="ep-rg-list">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/resource-groups-list</span>
+        <span class="ep-desc">Resource group names with their all-time total cost; used to populate the RG dropdown</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>No parameters.</strong></p>
+        <p><strong>Returns:</strong> <span class="ret">resource_groups</span> array of <code>{name, total_cost}</code></p>
+        <p>
+          Unlike <code>/api/resource-groups</code>, this uses the <em>entire</em> DataFrame (no period filter) to build the dropdown list,
+          so every resource group that ever appeared in exports is shown, even if it had no spend in the current period.
+        </p>
+        <p>
+          <strong>ARM fallback:</strong> If no cost export data is loaded yet (empty DataFrame), it falls back to calling
+          <code>list_resource_groups()</code> via the ARM API and returns <code>{name, total_cost: null}</code> for each.
+          In this state the dropdown works but costs are not shown.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RAW & UTILITY ─────────────────────────────────────── -->
+  <section id="ep-raw">
+    <h2>Raw &amp; Utility Endpoints</h2>
+
+    <!-- /costs -->
+    <div class="ep" id="ep-costs">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/costs</span>
+        <span class="ep-desc">Full aggregated DataFrame as JSON — no period filter</span>
+      </div>
+      <div class="ep-body">
+        <p>Groups by <code>[C_SERVICE, C_NAME, C_DATE]</code> and sums <code>C_COST</code>. Returns every row in the loaded export.
+        The response can be large for a full month's export. Intended for debugging and custom analysis, not UI display.</p>
+      </div>
+    </div>
+
+    <!-- /costs/summary -->
+    <div class="ep" id="ep-summary">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/costs/summary</span>
+        <span class="ep-desc">Top 5 services and resource groups across all loaded data</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Returns:</strong> <span class="ret">total_cost</span>, <span class="ret">top_services</span> (top 5), <span class="ret">top_resource_groups</span> (top 5)</p>
+        <p>No period or RG filter. Useful as a quick overview of the entire loaded export.</p>
+      </div>
+    </div>
+
+    <!-- /api/status -->
+    <div class="ep" id="ep-status">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/status</span>
+        <span class="ep-desc">Cache metadata — shown in the status bar on every page</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Returns:</strong></p>
+        <ul>
+          <li><code>storage_account</code> — configured storage account name</li>
+          <li><code>container</code> — blob container name</li>
+          <li><code>row_count</code> — total rows in the cached DataFrame</li>
+          <li><code>date_range</code> — <code>[min_date, max_date]</code> of <code>C_DATE</code> column</li>
+          <li><code>cache_age_s</code> — seconds since the DataFrame was last loaded</li>
+          <li><code>no_data</code> — <code>true</code> if the DataFrame is loaded but empty</li>
+        </ul>
+        <p>The UI polls this on page load to populate the status bar (Date range, Rows, Cache age).</p>
+      </div>
+    </div>
+
+    <!-- /api/reload -->
+    <div class="ep" id="ep-reload">
+      <div class="ep-header">
+        <span class="method post">POST</span>
+        <span class="ep-path">/api/reload</span>
+        <span class="ep-desc">Invalidate the cost export cache and re-download from Blob Storage</span>
+      </div>
+      <div class="ep-body">
+        <p>Clears <code>_cache</code> dict, then immediately calls <code>get_cached_dataframe()</code> to trigger a fresh download.
+        Returns <code>{"status": "reloaded", "rows_loaded": N}</code>.</p>
+        <p>Also available as <code>GET /costs/refresh</code> which does the same thing (kept for convenience).</p>
+        <p>Triggered by the <strong>↻ Reload data</strong> button in the status bar on all pages.</p>
+      </div>
+    </div>
+
+    <!-- /api/debug -->
+    <div class="ep" id="ep-debug">
+      <div class="ep-header">
+        <span class="method get">GET</span>
+        <span class="ep-path">/api/debug</span>
+        <span class="ep-desc">Full diagnostic snapshot — blob listing, column names, date range, top services</span>
+      </div>
+      <div class="ep-body">
+        <p><strong>Returns:</strong></p>
+        <ul>
+          <li><code>blob_count</code> — total blobs in the container</li>
+          <li><code>blob_paths_sample</code> — first 20 blob paths (for verifying folder structure)</li>
+          <li><code>row_count</code> — DataFrame rows</li>
+          <li><code>columns</code> — all column names after mapping</li>
+          <li><code>date_range</code> — <code>{min, max}</code> of <code>C_DATE</code></li>
+          <li><code>total_cost</code> — sum of all <code>C_COST</code></li>
+          <li><code>top_services</code> — top 20 distinct <code>C_SERVICE</code> values by frequency</li>
+          <li><code>top_resource_groups</code> — top 10 distinct <code>C_NAME</code> values by frequency</li>
+        </ul>
+        <p>The most useful endpoint when the dashboard shows no data — check <code>columns</code> to verify column mapping worked, and <code>blob_paths_sample</code> to verify the export landed in the expected path.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── UI: MANAGER ────────────────────────────────────────── -->
+  <section id="ui-manager">
+    <h2>Manager Page (<code>/manager</code>)</h2>
+    <p>
+      A high-level overview page for non-technical stakeholders. Shows four service-category KPI cards and
+      horizontal bar charts. Designed to answer: <em>"How much are we spending, and on what category?"</em>
+    </p>
+
+    <div class="page-mock">
+      <div class="mock-bar">
+        <span class="mock-title">azure-penny <span style="color:var(--muted);font-size:0.75rem;font-weight:400">Manager</span></span>
+        <span style="color:var(--muted);font-size:0.72rem">RG: <strong style="color:var(--blue)">All ▾</strong></span>
+        <div class="mock-nav">
+          <span class="active">Manager</span>
+          <span>Technician</span>
+          <span>Live</span>
+        </div>
+      </div>
+      <div class="mock-status">
+        <span>Source: <strong>Cost Management / Blob Storage</strong></span>
+        <span>Total: <strong style="color:var(--green)">€243.12 (7 days)</strong></span>
+        <span>Date range: <strong>2026-04-27 – 2026-05-03</strong></span>
+        <span>Rows: <strong>41.2K</strong></span>
+        <span>Cache age: <strong>12 min</strong></span>
+      </div>
+      <div class="mock-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <span style="color:var(--muted);font-size:0.78rem">Azure Infrastructure Cost Overview</span>
+          <div style="display:flex;gap:.3rem;font-size:0.72rem">
+            <span style="border:1px solid var(--border);padding:.2rem .6rem;border-radius:12px;color:var(--muted)">Day</span>
+            <span style="border:1px solid var(--blue);padding:.2rem .6rem;border-radius:12px;color:var(--blue);background:#0c4a6e">Week</span>
+            <span style="border:1px solid var(--border);padding:.2rem .6rem;border-radius:12px;color:var(--muted)">Month</span>
+          </div>
+        </div>
+        <div class="mock-kpi-row">
+          <div class="mock-kpi"><div class="mk-label">Compute</div><div class="mk-val" style="color:var(--blue)">€121.40</div></div>
+          <div class="mock-kpi"><div class="mk-label">Storage</div><div class="mk-val" style="color:var(--green)">€43.80</div></div>
+          <div class="mock-kpi"><div class="mk-label">Network</div><div class="mk-val" style="color:var(--orange)">€28.60</div></div>
+          <div class="mock-kpi"><div class="mk-label">Database</div><div class="mk-val" style="color:var(--purple)">€35.20</div></div>
+          <div class="mock-kpi"><div class="mk-label">Total</div><div class="mk-val">€243.12</div></div>
+        </div>
+        <div class="mock-grid">
+          <div class="mock-card">
+            <div class="mc-title">Compute · 7 days · as of 2026-05-03</div>
+            <div class="hbar" style="width:100%;background:linear-gradient(90deg,#38bdf8,#0ea5e9)"></div>
+            <div style="font-size:0.7rem;color:var(--muted);display:flex;justify-content:space-between"><span>Virtual Machines</span><span style="color:var(--text)">€98.40</span></div>
+            <div class="hbar" style="width:60%;background:linear-gradient(90deg,#38bdf8,#0ea5e9)"></div>
+            <div style="font-size:0.7rem;color:var(--muted);display:flex;justify-content:space-between"><span>Container Apps</span><span style="color:var(--text)">€23.00</span></div>
+          </div>
+          <div class="mock-card">
+            <div class="mc-title">Storage · 7 days · as of 2026-05-03</div>
+            <div class="hbar" style="width:100%;background:linear-gradient(90deg,#4ade80,#22c55e)"></div>
+            <div style="font-size:0.7rem;color:var(--muted);display:flex;justify-content:space-between"><span>Storage</span><span style="color:var(--text)">€31.20</span></div>
+            <div class="hbar" style="width:40%;background:linear-gradient(90deg,#4ade80,#22c55e)"></div>
+            <div style="font-size:0.7rem;color:var(--muted);display:flex;justify-content:space-between"><span>Managed Disks</span><span style="color:var(--text)">€12.60</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>API calls made on page load</h3>
+    <table class="data-table">
+      <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/status</code></td><td>Populate status bar (date range, rows, cache age)</td></tr>
+        <tr><td><code>GET /api/resource-groups-list</code></td><td>Populate RG dropdown</td></tr>
+        <tr><td><code>GET /api/services?period={p}&amp;rg={rg}</code></td><td>Grand total in status bar</td></tr>
+        <tr><td><code>GET /api/compute?period={p}&amp;rg={rg}</code></td><td>Compute KPI + bar chart</td></tr>
+        <tr><td><code>GET /api/storage?period={p}&amp;rg={rg}</code></td><td>Storage KPI + bar chart</td></tr>
+        <tr><td><code>GET /api/network?period={p}&amp;rg={rg}</code></td><td>Network KPI + bar chart</td></tr>
+        <tr><td><code>GET /api/database?period={p}&amp;rg={rg}</code></td><td>Database KPI + bar chart</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      The four category calls are fired in parallel. Changing the period pill or the RG dropdown sets <code>loaded = {}</code>
+      and re-fires all seven calls. Simple cache-busting: the backend TTL prevents redundant blob downloads.
+    </p>
+  </section>
+
+  <!-- ── UI: TECHNICIAN ────────────────────────────────────── -->
+  <section id="ui-technician">
+    <h2>Technician Page (<code>/technician</code>)</h2>
+    <p>
+      A detailed breakdown page for engineers. Six tabs, each loading a different API.
+      Only the active tab is loaded (lazy loading — switching tabs triggers the API call for that tab if not yet loaded).
+    </p>
+
+    <div class="tab-strip">
+      <span class="tab-pill active">All Services</span>
+      <span class="tab-pill">Resource Groups</span>
+      <span class="tab-pill">Compute</span>
+      <span class="tab-pill">Storage</span>
+      <span class="tab-pill">Database</span>
+      <span class="tab-pill">Insights</span>
+    </div>
+
+    <table class="data-table">
+      <thead><tr><th>Tab</th><th>API endpoint</th><th>What it shows</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>All Services</strong></td>
+          <td><code>/api/services</code> + <code>/api/daily?days=30</code></td>
+          <td>Full MeterCategory table sorted by cost, daily spend bar chart (30 days), last-10-days cost table</td>
+        </tr>
+        <tr>
+          <td><strong>Resource Groups</strong></td>
+          <td><code>/api/resource-groups</code></td>
+          <td>Cost by RG with inline bar chart; delete button per row; Bulk Delete All RGs button</td>
+        </tr>
+        <tr>
+          <td><strong>Compute</strong></td>
+          <td><code>/api/compute/machines</code></td>
+          <td>Compute cost grouped by resource group (C_NAME) — shows which RG drives compute spend; delete button per row</td>
+        </tr>
+        <tr>
+          <td><strong>Storage</strong></td>
+          <td><code>/api/storage/breakdown</code></td>
+          <td>Total storage with Space vs. Transfer split KPIs; service breakdown table with space/transfer tags</td>
+        </tr>
+        <tr>
+          <td><strong>Database</strong></td>
+          <td><code>/api/database</code></td>
+          <td>Database services sorted by cost with inline bar chart</td>
+        </tr>
+        <tr>
+          <td><strong>Insights</strong></td>
+          <td><code>/api/services</code> + all four category endpoints</td>
+          <td>Auto-generated insight cards (top spender warning, services with >20% share, negligible services count) + category breakdown grid</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Insights auto-generation rules</h3>
+    <table class="data-table">
+      <thead><tr><th>Condition</th><th>Card type</th><th>Message</th></tr></thead>
+      <tbody>
+        <tr><td>Top service share &gt; 50%</td><td style="color:var(--yellow)">⚠ Warn</td><td>"X is your top spender at €N (YY% of total)"</td></tr>
+        <tr><td>Top service share ≤ 50%</td><td style="color:var(--blue)">ℹ Info</td><td>Same message, lower urgency</td></tr>
+        <tr><td>Any other service with share &gt; 20%</td><td style="color:var(--blue)">ℹ Info</td><td>"X accounts for YY% of total cost (€N)"</td></tr>
+        <tr><td>Services with cost &lt; €0.01</td><td style="color:var(--green)">✓ OK</td><td>"N services with cost &lt; €0.01 (negligible spend)"</td></tr>
+        <tr><td>Always</td><td style="color:var(--blue)">ℹ Info</td><td>"Total {period} spend: €N across K services"</td></tr>
+        <tr><td>No data</td><td style="color:var(--blue)">ℹ Info</td><td>"No cost data available for this period"</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── SHARED CONTROLS ────────────────────────────────────── -->
+  <section id="ui-shared">
+    <h2>Shared Controls Across Pages</h2>
+
+    <h3>Period pills (Day / Week / Month)</h3>
+    <p>
+      Present on both Manager and Technician. Default is <strong>Week</strong>.
+      Changing the period sets <code>loaded = {}</code> and re-fires all API calls.
+      The active period is not persisted between page navigations — it resets to Week on each page load.
+    </p>
+
+    <h3>Resource Group dropdown</h3>
+    <p>
+      A dropdown in the page header (centred, absolutely positioned). Populated from <code>/api/resource-groups-list</code>.
+      Selection is stored in <code>localStorage</code> under the key <code>az_penny_rg</code> and restored on every page load,
+      including the Live page — so the RG filter is <strong>shared across all three pages</strong>.
+    </p>
+    <ul>
+      <li>When a RG is selected, all API calls append <code>&amp;rg={name}</code>.</li>
+      <li>The dropdown border changes to blue when a filter is active (<code>class="rg-select filtered"</code>).</li>
+      <li>Select <em>All</em> to clear the filter and remove from localStorage.</li>
+    </ul>
+
+    <h3>Status bar</h3>
+    <p>Loaded via <code>GET /api/status</code> on page load. Shows:</p>
+    <ul>
+      <li><strong>Source:</strong> always "Cost Management / Blob Storage" (hardcoded label)</li>
+      <li><strong>Total:</strong> grand total from <code>/api/services</code> for the active period</li>
+      <li><strong>Date range:</strong> min and max <code>C_DATE</code> in the cached DataFrame</li>
+      <li><strong>Rows:</strong> total row count, formatted with K/M/B suffix</li>
+      <li><strong>Cache age:</strong> seconds since last load, shown as minutes</li>
+    </ul>
+
+    <h3>Reload button</h3>
+    <p>
+      The <strong>↻ Reload data</strong> button in the status bar calls <code>POST /api/reload</code>.
+      On success, it clears the client-side <code>loaded</code> map and re-fires all visible API calls.
+      Use this after a new cost export has landed in Blob Storage to pick up today's data without waiting for the TTL to expire.
+    </p>
+
+    <h3>Data-as-of badge</h3>
+    <p>
+      Each category card has a badge that updates after the API responds.
+      Normally it shows the period length (e.g. <em>"7 days · as of 2026-05-03"</em>).
+      When day-fallback activates it shows <em>"Latest: 2026-05-02"</em> to signal that today's data isn't available yet.
+    </p>
+  </section>
+
+  <!-- ── ENV VARS ───────────────────────────────────────────── -->
+  <section id="env-vars">
+    <h2>Environment Variables</h2>
+    <table class="data-table">
+      <thead><tr><th>Variable</th><th>Default</th><th>Required</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>STORAGE_ACCOUNT_NAME</code></td><td><em>empty</em></td><td>Yes</td><td>Azure storage account that holds the cost export container. App fails to start blob operations without this.</td></tr>
+        <tr><td><code>STORAGE_CONTAINER_NAME</code></td><td><code>cost-exports</code></td><td>No</td><td>Blob container name inside the storage account.</td></tr>
+        <tr><td><code>AZURE_CLIENT_ID</code></td><td><em>null</em></td><td>Prod only</td><td>Client ID of the user-assigned managed identity. Required in ACA; optional locally (uses Azure CLI credential).</td></tr>
+        <tr><td><code>CACHE_TTL_SECONDS</code></td><td><code>3600</code></td><td>No</td><td>How long the DataFrame is kept before a fresh download is triggered.</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      All variables are loaded at startup via <code>python-dotenv</code> (reads <code>.env</code> if present).
+      In production they are injected by the <code>azurerm_container_app</code> Terraform resource as environment variables.
+    </p>
+  </section>
+
+  <!-- ── RELOAD / TTL ───────────────────────────────────────── -->
+  <section id="reload-cache">
+    <h2>Reloading &amp; TTL</h2>
+
+    <h3>When does a reload happen?</h3>
+    <table class="data-table">
+      <thead><tr><th>Trigger</th><th>Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Cache miss on startup or after scale-from-zero</td><td>Automatic — first API call loads the DataFrame</td></tr>
+        <tr><td>TTL expiry</td><td>Automatic — next API call after <code>CACHE_TTL_SECONDS</code> triggers a reload</td></tr>
+        <tr><td>User clicks ↻ Reload data</td><td>Manual — <code>POST /api/reload</code> clears <code>_cache</code> and immediately re-downloads</td></tr>
+        <tr><td><code>GET /costs/refresh</code></td><td>Same as above, GET variant</td></tr>
+      </tbody>
+    </table>
+
+    <h3>When should you manually reload?</h3>
+    <ul>
+      <li>You just uploaded or modified a cost export file in Blob Storage.</li>
+      <li>Today's Azure Cost Management export has finished running (usually by 02:00 UTC) and you want to see it without waiting up to 1 hour.</li>
+      <li>The status bar shows a date range that doesn't include recent data.</li>
+    </ul>
+
+    <h3>What a reload does NOT do</h3>
+    <p>
+      <code>/api/reload</code> only flushes the export DataFrame cache (<code>_cache</code> in <code>storage.py</code>).
+      It does not flush the ARM inventory cache (<code>_live_cache</code> in <code>live_resources.py</code>).
+      To refresh live resource data, use <code>POST /api/live-reload</code> or the Refresh inventory button on the Live page.
+    </p>
+  </section>
+
+  <footer>
+    azure-penny — Cost Export Data Manual &nbsp;·&nbsp; Generated 2026-05-04
+  </footer>
+</main>
+
+</div>
+</body>
+</html>
