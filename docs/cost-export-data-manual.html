@@ -162,6 +162,7 @@
   <div class="nav-section">
     <div class="nav-section-label">Data Ingestion</div>
     <a class="nav-link" href="#blob-auth">Auth &amp; Client</a>
+    <a class="nav-link" href="#export-timing">Export Timing &amp; Timezone</a>
     <a class="nav-link" href="#blob-discovery">Blob Discovery</a>
     <a class="nav-link" href="#file-reading">File Reading</a>
     <a class="nav-link" href="#column-mapping">Column Mapping</a>
@@ -291,6 +292,78 @@ _blob_client = BlobServiceClient(account_url=account_url, credential=credential)
       The client is a module-level singleton — one instance per process lifetime. Because Container Apps run a single
       replica, this means one client for the entire application. SDK connection pooling is handled internally.
     </p>
+  </section>
+
+  <!-- ── EXPORT TIMING ────────────────────────────────────── -->
+  <section id="export-timing">
+    <h2>Export Timing &amp; Timezone</h2>
+
+    <h3>Timezone: always UTC</h3>
+    <p>
+      Azure Cost Management operates entirely in <strong>UTC</strong>. The Terraform schedule is anchored to
+      <code>2026-05-04T00:00:00Z</code> and runs daily with no offset option — Azure does not allow you to
+      pick a specific time of day for daily exports. All dates in the exported CSV (<code>Date</code> column)
+      are also in UTC.
+    </p>
+
+    <h3>When does a new export file appear in Blob Storage?</h3>
+    <p>
+      Azure runs daily exports at a time it chooses, typically somewhere between
+      <strong>midnight and 04:00 UTC</strong>. The exact minute varies day to day and cannot be controlled.
+      After the export process completes, the file is written to the container and becomes visible to the app on the next cache miss.
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>UTC time</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td><strong>00:00</strong></td><td>Azure closes billing for the previous calendar day (Day N−1)</td></tr>
+        <tr><td><strong>00:00 – 04:00</strong></td><td>Azure Cost Management processes charges and generates the MonthToDate CSV</td></tr>
+        <tr><td><strong>~01:00 – 04:00</strong></td><td>New CSV file lands in <code>cost-exports/penny/YYYYMMDD-YYYYMMDD/{guid}/</code></td></tr>
+        <tr><td><strong>after file lands</strong></td><td>Next app cache miss picks up the new file automatically</td></tr>
+      </tbody>
+    </table>
+
+    <div class="box box-yellow">
+      <strong>Practical rule of thumb:</strong> If you open the dashboard after <strong>04:00 UTC</strong>,
+      yesterday's charges should be present. Before 04:00 UTC, the dashboard may still show data from
+      the day before yesterday. The <code>data_as_of</code> field in every API response tells you exactly which day
+      is the most recent in the loaded file — use <code>GET /api/status</code> or <code>GET /api/debug</code> to check it.
+    </div>
+
+    <h3>Data lag: how old is the data?</h3>
+    <p>
+      Azure Cost Management charges have an inherent lag — they are not real-time.
+      Charges for a given day are typically finalised and included in the export <strong>24–48 hours later</strong>.
+      In some cases (marketplace charges, reservation adjustments) the lag can reach <strong>72 hours</strong>.
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>Today (UTC)</th><th>Most recent data you can expect</th><th>What <code>data_as_of</code> shows</th></tr></thead>
+      <tbody>
+        <tr><td>Monday 06:00</td><td>Saturday's charges (best case Sunday)</td><td><code>2026-05-03</code> or <code>2026-05-02</code></td></tr>
+        <tr><td>Monday 02:00</td><td>Friday's or Saturday's charges (export may not have run yet)</td><td><code>2026-05-02</code> or <code>2026-05-01</code></td></tr>
+        <tr><td>1st of month 06:00</td><td>Last 2 days of previous month (new month export just started)</td><td><code>2026-04-29</code> typical</td></tr>
+      </tbody>
+    </table>
+
+    <h3>What the app does when the export is missing or stale</h3>
+    <ul>
+      <li>If today's folder has no file yet, <code>_discover_latest_blobs()</code> moves to the previous date folder and uses that file instead — silently.</li>
+      <li>The <code>data_as_of</code> field will be 1–2 days behind today, which is expected and normal.</li>
+      <li>If <strong>no</strong> export file exists at all (e.g. first deployment before the first scheduled run), the app returns an empty DataFrame and all API endpoints return zero/empty results with no error.</li>
+      <li>You can trigger a one-time manual export from the Azure portal (Cost Management → Exports → Run now) to seed the container immediately without waiting for the overnight job.</li>
+    </ul>
+
+    <h3>Your local time vs. the dashboard</h3>
+    <p>
+      All dates in the dashboard are the raw <code>YYYY-MM-DD</code> values from the export, which are UTC calendar dates.
+      If you are in a UTC+2 timezone and it is 01:00 local time on Tuesday, it is still Monday 23:00 UTC — the dashboard
+      will show Monday as the most recent day, not Tuesday.
+    </p>
+    <div class="box box-blue">
+      <strong>No timezone conversion is performed.</strong> The app passes the <code>C_DATE</code> strings straight through
+      from the CSV to the API response. What you see is always UTC date.
+    </div>
   </section>
 
   <!-- ── BLOB DISCOVERY ────────────────────────────────────── -->
