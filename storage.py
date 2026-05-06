@@ -45,6 +45,9 @@ def get_blob_service_client() -> BlobServiceClient:
 # ---------------------------------------------------------------------------
 
 COLUMN_MAP: dict[str, str] = {
+    # PayG (pre-credit) cost preferred — shows actual consumption even when credits cover it.
+    # Falls back to CostInBillingCurrency for export formats that don't include paygCost.
+    "PaygCostInBillingCurrency": "C_COST",
     "CostInBillingCurrency": "C_COST",
     "Cost":                  "C_COST",
     "PreTaxCost":            "C_COST",
@@ -153,14 +156,21 @@ def _blob_to_dataframe(raw: bytes, blob_name: str) -> pd.DataFrame:
 
 
 def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
+    # Build priority-ordered list: COLUMN_MAP order determines which source column wins
+    # when multiple CSV columns map to the same internal name.
+    priority_map: dict[str, str] = {}  # internal_name -> preferred raw_col
     lower_map = {k.lower(): v for k, v in COLUMN_MAP.items()}
+    for map_key_lower, internal in lower_map.items():
+        for raw_col in df.columns:
+            if raw_col.lower() == map_key_lower:
+                if internal not in priority_map:
+                    priority_map[internal] = raw_col
+                break
 
-    rename: dict[str, str] = {}
+    rename: dict[str, str] = {raw: internal for internal, raw in priority_map.items()}
+
     for raw_col in df.columns:
-        internal = lower_map.get(raw_col.lower())
-        if internal and internal not in rename.values():
-            rename[raw_col] = internal
-        elif raw_col.lower().startswith("tag_") and "C_TAGS" not in rename.values():
+        if raw_col.lower().startswith("tag_") and "C_TAGS" not in rename.values():
             rename[raw_col] = "C_TAGS"
 
     df = df.rename(columns=rename)
