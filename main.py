@@ -14,7 +14,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
+from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, SHOW_DELETE_BUTTONS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
 from live_resources import _get_live_data, _live_cache, _live_lock, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
@@ -151,7 +151,7 @@ async def technician(request: Request):
 
 @app.get("/live", response_class=HTMLResponse, include_in_schema=False)
 async def live_view(request: Request):
-    return templates.TemplateResponse("live.html", {"request": request})
+    return templates.TemplateResponse("live.html", {"request": request, "show_delete": SHOW_DELETE_BUTTONS})
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

@@ -161,7 +161,7 @@
   <span class="status-item" title="Cost matched to live ARM resources">Live: <strong id="st-live" style="color:#4ade80">&mdash;</strong></span>
   <span class="status-item" title="Cost for deleted or ARM-invisible resources (Billed 30d minus Live)">Deleted/hidden: <strong id="st-orphan" style="color:#f87171">&mdash;</strong></span>
   <button class="reload-btn" onclick="reloadLive()">&#x21BB; Refresh inventory</button>
-  <button class="btn-delete-all" onclick="openDeleteAllModal()">🗑️ Delete All Visible</button>
+  {% if show_delete %}<button class="btn-delete-all" onclick="openDeleteAllModal()">🗑️ Delete All Visible</button>{% endif %}
   <span id="st-error" class="status-item error"></span>
 </div>
 
@@ -203,6 +203,7 @@
 
 </div>
 
+{% if show_delete %}
 <!-- Delete All Modal -->
 <div class="modal-overlay" id="delete-all-modal">
   <div class="modal">
@@ -221,6 +222,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- Destroy Resource Modal -->
 <div class="modal-overlay" id="destroy-modal">
@@ -247,6 +249,7 @@
 </div>
 
 <script>
+var SHOW_DELETE = {{ show_delete | tojson }};
 var allResources = [];
 var sortCol = 'monthly_cost';
 var sortDir = -1; // -1 desc, +1 asc
@@ -466,7 +469,7 @@ function renderTable(rows) {
     '<th id="th-status"         onclick="setSort(\'status\')">Status</th>' +
     '<th id="th-private_ip"     onclick="setSort(\'private_ip\')">IP</th>' +
     '<th id="th-monthly_cost"   onclick="setSort(\'monthly_cost\')" style="text-align:right">Monthly Cost</th>' +
-    '<th style="width:70px"></th>' +
+    (SHOW_DELETE ? '<th style="width:70px"></th>' : '') +
     '</tr></thead>';
 
   var tbody = '<tbody>' + rows.map(function(r) {
@@ -479,10 +482,10 @@ function renderTable(rows) {
         '<td></td>' +
         '<td class="dim">&mdash;</td>' +
         '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
-        '<td></td>' +
+        (SHOW_DELETE ? '<td></td>' : '') +
         '</tr>';
     }
-    var destroyBtn = r.id
+    var destroyBtn = (SHOW_DELETE && r.id)
       ? '<button class="btn-row-destroy" onclick=\'openDestroyModal(' + JSON.stringify(r) + ')\'>🗑️</button>'
       : '';
     var isFileShare = (r.type || '').toLowerCase() === 'microsoft.storage/storageaccounts/fileservices/shares';
@@ -512,7 +515,7 @@ function renderTable(rows) {
       '<td>' + statusBadge(r.status, r.category) + '</td>' +
       '<td>' + ipCell + '</td>' +
       '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
-      '<td style="text-align:center">' + destroyBtn + '</td>' +
+      (SHOW_DELETE ? '<td style="text-align:center">' + destroyBtn + '</td>' : '') +
       '</tr>';
   }).join('') + '</tbody>';
 
@@ -781,7 +784,8 @@ async function confirmDeleteAll() {
   }
 }
 
-document.getElementById('delete-all-modal').addEventListener('click', function(e) {
+var _daModal = document.getElementById('delete-all-modal');
+if (_daModal) _daModal.addEventListener('click', function(e) {
   if (e.target === this) closeDeleteAllModal();
 });
 
