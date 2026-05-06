@@ -591,6 +591,7 @@ async def _get_live_data() -> list[dict]:
             monthly_projected = r.get("monthly_cost")
             cost_source = r.get("cost_source")
 
+        rtype = (r.get("type") or "").lower()
         entry: dict = {
             **r,
             "monthly_cost": monthly_projected,
@@ -598,6 +599,7 @@ async def _get_live_data() -> list[dict]:
             "export_cost_raw": export_cost,
             "export_days": export_days if export_cost is not None else None,
             "export_hours": round(export_hours_val, 1) if export_hours_val else None,
+            "known_has_cost": rtype in _RTYPE_CATEGORY,
         }
 
         vm_is_active = (r.get("status") or "").lower() not in ("deallocated", "stopped", "vm deallocated", "vm stopped")
