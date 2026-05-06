@@ -192,6 +192,10 @@
       <input type="number" id="min-cost" class="filter-input" value="0" min="0" step="0.5"
              oninput="applyFilters()" onchange="applyFilters()">
       <label>/month</label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer">
+        <input type="checkbox" id="hide-free" onchange="applyFilters()">
+        <span>Hide no-cost</span>
+      </label>
       <input type="text" id="search" class="search-input" placeholder="Search name or RG&hellip;"
              oninput="applyFilters()">
     </div>
@@ -393,12 +397,14 @@ function setCat(cat) {
 
 function applyFilters() {
   var minCost   = parseFloat(document.getElementById('min-cost').value) || 0;
+  var hideFree  = document.getElementById('hide-free').checked;
   var search    = (document.getElementById('search').value || '').toLowerCase();
   var activeRg  = getCurrentRg().toLowerCase();
 
   var filtered = allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
-    var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : 0;
+    var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
+    if (hideFree && cost === null) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
     if (search) {
@@ -711,11 +717,13 @@ function closeDeleteAllModal() {
 
 function getVisibleResources() {
   var minCost  = parseFloat(document.getElementById('min-cost').value) || 0;
+  var hideFree = document.getElementById('hide-free').checked;
   var search   = (document.getElementById('search').value || '').toLowerCase();
   var activeRg = getCurrentRg().toLowerCase();
   return allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
-    var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : 0;
+    var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
+    if (hideFree && cost === null) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
     if (search) {
