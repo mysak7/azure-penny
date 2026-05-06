@@ -170,6 +170,9 @@
   <div class="nav-section">
     <div class="nav-section-label">Merge & Cost Sources</div>
     <a class="nav-link" href="#merge">Merging the Pipelines</a>
+    <a class="nav-link" href="#price-decision">Price Decision Tree</a>
+    <a class="nav-link sub" href="#why-vms">↳ Why VMs Always Have a Price</a>
+    <a class="nav-link sub" href="#why-null">↳ Why Other Resources Show —</a>
     <a class="nav-link" href="#cost-sources">Cost Source Reference</a>
   </div>
 
@@ -556,6 +559,161 @@ mdf = df[df[<span class="str">"C_DATE"</span>] >= cutoff]</pre>
     </p>
   </section>
 
+  <!-- ── PRICE DECISION TREE ──────────────────────────────── -->
+  <section id="price-decision">
+    <h2>Price Calculation: Full Decision Tree</h2>
+    <p>
+      Every resource goes through a two-phase calculation to produce its <code>monthly_cost</code>.
+      Phase 1 (VM override) always wins for active VMs; Phase 2 (export) handles everything else.
+    </p>
+
+    <div class="arch-box" style="font-size:0.8rem;line-height:2">
+      <div class="layer">
+        <div class="layer-title">For each live ARM resource…</div>
+        <div class="arch-row">
+          <span class="arch-node blue">Has <code>vm_size</code> + <code>location</code> and is active?</span>
+          <span class="arch-arrow">→ yes →</span>
+          <span class="arch-node yellow">Phase 1: VM Live Price API</span>
+          <span class="arch-arrow">→</span>
+          <span class="arch-node green">price_table / spot_rate</span>
+        </div>
+      </div>
+      <div class="layer" style="margin-top:.5rem">
+        <div class="arch-row">
+          <span class="arch-node purple" style="margin-left:2rem">no → Phase 2: Cost Export</span>
+          <span class="arch-arrow">→ export has data?</span>
+          <span class="arch-node green">yes → project to monthly</span>
+        </div>
+      </div>
+      <div class="layer" style="margin-top:.25rem">
+        <div class="arch-row">
+          <span style="margin-left:14rem;color:var(--muted)">no</span>
+          <span class="arch-arrow">→</span>
+          <span class="arch-node blue">is a file share?</span>
+          <span class="arch-arrow">→ yes →</span>
+          <span class="arch-node green">files_rate (quota × $/GiB)</span>
+        </div>
+      </div>
+      <div class="layer" style="margin-top:.25rem">
+        <div class="arch-row">
+          <span style="margin-left:22.5rem;color:var(--muted)">no</span>
+          <span class="arch-arrow">→</span>
+          <span class="arch-node red">null — shown as &mdash;</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- WHY VMS ALWAYS HAVE PRICE -->
+    <h3 id="why-vms">Why VMs Always Have a Price</h3>
+    <p>
+      For any resource with a non-empty <code>vm_size</code> field (populated during ARM inventory for
+      <code>Microsoft.Compute/virtualMachines</code> and <code>Microsoft.Compute/virtualMachineScaleSets</code>),
+      the code calls the Azure Retail Prices API unconditionally — even if the cost export already has data for that VM.
+      This override exists because:
+    </p>
+    <ul>
+      <li>Export data is 1–2 days stale; a VM started today has no export entry yet.</li>
+      <li>The Retail API returns the current on-demand or spot rate — a better estimate of ongoing spend than a partial-period average.</li>
+      <li>Spot prices fluctuate; the API always returns today's market price.</li>
+    </ul>
+
+    <h4>VM price lookup — spot vs on-demand</h4>
+    <div class="flow">
+      <span class="flow-step source">VM priority = Spot?</span>
+      <span class="flow-arrow">→ yes →</span>
+      <span class="flow-step process"><code>_fetch_spot_price(vm_size, region)</code></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step output"><span class="src-badge src-spot_rate">spot_rate</span></span>
+    </div>
+    <div class="flow">
+      <span class="flow-step source">VM priority = Regular?</span>
+      <span class="flow-arrow">→ yes →</span>
+      <span class="flow-step process"><code>_fetch_ondemand_price(vm_size, region)</code></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step output"><span class="src-badge src-price_table">price_table</span></span>
+    </div>
+
+    <h4>Three-tier price fallback (applies to both functions)</h4>
+    <ol>
+      <li>
+        <strong>Azure Retail Prices API</strong> — <code>prices.azure.com/api/retail/prices</code>, filtered by
+        <code>armRegionName</code>, <code>armSkuName</code>, and <code>priceType eq 'Consumption'</code>.
+        Spot lookups add a secondary filter matching <code>"spot"</code> in the returned SKU name.
+        Results are cached in-process for the app lifetime.
+      </li>
+      <li>
+        <strong>Hardcoded table</strong> — <code>_SPOT_PRICES</code> / <code>_ONDEMAND_PRICES</code> in
+        <code>live_resources.py</code>, covering common Dsv3, Esv3, and Fsv7 sizes across major regions.
+        Used only when the API call fails or times out.
+      </li>
+      <li>
+        <strong>40% estimate (spot only)</strong> — if neither the API nor the table has a spot price, the
+        on-demand price × 0.40 is used (a rough industry average spot discount).
+      </li>
+    </ol>
+
+    <p>The final monthly estimate formula:</p>
+    <pre><span class="cm"># on-demand VM (or VMSS)</span>
+monthly_cost = on_demand_$/hr × <span class="num">24</span> × <span class="num">30</span> × instance_count
+
+<span class="cm"># spot VM (or VMSS)</span>
+monthly_cost = spot_$/hr × <span class="num">24</span> × <span class="num">30</span> × instance_count</pre>
+
+    <div class="box box-yellow">
+      <strong>Price is not actual cost:</strong> The Retail Prices API returns <em>list prices</em>, not your negotiated rate.
+      Reserved Instances, Azure Hybrid Benefit (AHUB), and Dev/Test subscriptions all result in lower actual charges.
+      Once the export contains data for the VM, the <code>export</code> / <code>export_hours</code> sources reflect
+      real billed amounts. The live API price is an upper-bound estimate.
+    </div>
+
+    <!-- WHY OTHER RESOURCES SHOW DASH -->
+    <h3 id="why-null">Why Other Resources Show —</h3>
+    <p>
+      Non-VM resources (storage accounts, VNets, load balancers, databases, Container Apps, etc.) have no
+      <code>vm_size</code> to query the price API with. Their cost can only come from the cost export.
+      A resource displays <code class="c-nil">—</code> (null cost) when:
+    </p>
+    <ul>
+      <li>It was created after the most recent export was generated (new resource, not yet billed).</li>
+      <li>It exists in ARM but generates no direct Azure charges — e.g. a VNet or a DNS zone.</li>
+      <li>It costs money but under a parent resource's billing line, without a separate resource ID row in the export.</li>
+      <li>The export has no data for the subscription or scope the managed identity can read.</li>
+    </ul>
+
+    <h4>The <code>known_has_cost</code> flag and Hide no-cost behaviour</h4>
+    <p>
+      Each resource carries a boolean <code>known_has_cost</code> set to <code>true</code> if its ARM resource type
+      appears in <code>_RTYPE_CATEGORY</code> (classified as vm, storage, network, database, or container).
+      Types <em>not</em> in that dictionary fall into the <em>other</em> category and get <code>known_has_cost = false</code>.
+    </p>
+    <p>
+      The <strong>Hide no-cost</strong> checkbox (enabled by default) uses this flag to decide what to hide:
+    </p>
+    <pre><span class="cm">// hides a resource only when ALL THREE conditions are true</span>
+<span class="kw">if</span> (hideFree &amp;&amp; cost === <span class="kw">null</span> &amp;&amp; !r.known_has_cost) <span class="kw">return false</span>;</pre>
+
+    <table class="data-table">
+      <thead><tr><th>cost</th><th>known_has_cost</th><th>Hide no-cost ON</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>any value</td><td>any</td><td>Shown</td><td>Has cost data — always visible</td></tr>
+        <tr><td>null</td><td>true</td><td>Shown</td><td>Known billing type — show even without export data (e.g. brand-new storage account, or a VNet which bills for peering not the VNet itself)</td></tr>
+        <tr><td>null</td><td>false</td><td><strong>Hidden</strong></td><td>Unknown resource type with no cost data — likely free infrastructure (role assignments, policy definitions, diagnostic settings, etc.)</td></tr>
+      </tbody>
+    </table>
+
+    <table class="data-table" style="margin-top:.75rem">
+      <thead><tr><th>Resource type example</th><th>Category</th><th>known_has_cost</th><th>Hidden by checkbox?</th></tr></thead>
+      <tbody>
+        <tr><td><code>Microsoft.Compute/virtualMachines</code></td><td>vm</td><td>true</td><td>Never — VM price always computed</td></tr>
+        <tr><td><code>Microsoft.Network/virtualNetworks</code></td><td>network</td><td>true</td><td>No — shown even with null cost</td></tr>
+        <tr><td><code>Microsoft.Storage/storageAccounts</code></td><td>storage</td><td>true</td><td>No — shown even if new/no export data</td></tr>
+        <tr><td><code>Microsoft.KeyVault/vaults</code></td><td>other</td><td>false</td><td>Yes — hidden if no export cost found</td></tr>
+        <tr><td><code>Microsoft.Authorization/roleAssignments</code></td><td>other</td><td>false</td><td>Yes — no charges, always hidden</td></tr>
+        <tr><td><code>Microsoft.Insights/components</code></td><td>other</td><td>false</td><td>Yes — hidden unless export data exists</td></tr>
+      </tbody>
+    </table>
+  </section>
+
   <!-- ── COST SOURCES ───────────────────────────────────────── -->
   <section id="cost-sources">
     <h2>Cost Source Reference</h2>
@@ -703,6 +861,16 @@ mdf = df[df[<span class="str">"C_DATE"</span>] >= cutoff]</pre>
       <tbody>
         <tr><td>Category pills (All / VMs / Storage / …)</td><td>Filters by <code>category</code> field set during ARM inventory</td><td>All</td></tr>
         <tr><td>Min cost <code>&gt; €</code></td><td>Excludes resources where <code>monthly_cost &lt; threshold</code>; resources with no cost (<code>null</code>) are treated as 0</td><td>0 (show all)</td></tr>
+        <tr>
+          <td>Hide no-cost <small>(checkbox)</small></td>
+          <td>
+            Hides resources where <code>cost === null</code> <strong>and</strong> <code>known_has_cost === false</code>
+            (unknown ARM type — not in the vm/storage/network/database/container category list).
+            Known billing types such as VMs, storage accounts, VNets, and databases are always shown even with null cost.
+            See the <a href="#price-decision">Price Decision Tree</a> section for full details.
+          </td>
+          <td>On (checked)</td>
+        </tr>
         <tr><td>Search box</td><td>Case-insensitive substring match on resource <code>name</code> and <code>resource_group</code></td><td>empty</td></tr>
         <tr><td>RG dropdown (header)</td><td>Exact match on <code>resource_group</code>; persisted in <code>localStorage</code></td><td>All</td></tr>
         <tr><td>Column headers</td><td>Click to sort ascending; click again to reverse; default sort is monthly cost descending</td><td>monthly_cost desc</td></tr>
@@ -849,7 +1017,7 @@ mdf = df[df[<span class="str">"C_DATE"</span>] >= cutoff]</pre>
   </section>
 
   <footer>
-    azure-penny — Live Cost Data Manual &nbsp;·&nbsp; Generated 2026-05-04
+    azure-penny — Live Cost Data Manual &nbsp;·&nbsp; Updated 2026-05-06
   </footer>
 </main>
 
