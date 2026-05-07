@@ -111,7 +111,7 @@ resource "terraform_data" "penny_custom_domain" {
       az containerapp hostname add \
         --name ${azurerm_container_app.this.name} \
         --resource-group ${azurerm_resource_group.this.name} \
-        --hostname penny.mysak.fun && \
+        --hostname penny.mysak.fun 2>&1 | grep -v "already exists" || true
       az containerapp hostname bind \
         --name ${azurerm_container_app.this.name} \
         --resource-group ${azurerm_resource_group.this.name} \

@@ -19,7 +19,8 @@ resource "azuread_application" "penny" {
 
   web {
     redirect_uris = [
-      "https://${local.container_app_fqdn}/.auth/login/aad/callback"
+      "https://${local.container_app_fqdn}/.auth/login/aad/callback",
+      "https://penny.mysak.fun/.auth/login/aad/callback",
     ]
     implicit_grant {
       id_token_issuance_enabled = true
