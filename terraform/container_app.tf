@@ -104,7 +104,7 @@ resource "azurerm_container_app" "this" {
 }
 
 resource "terraform_data" "penny_custom_domain" {
-  triggers_replace = [azurerm_container_app.this.id]
+  triggers_replace = [azurerm_container_app.this.id, azurerm_container_app_environment.this.id]
 
   provisioner "local-exec" {
     command = <<-EOT

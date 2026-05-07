@@ -18,6 +18,11 @@ output "container_app_url" {
   value       = "https://${azurerm_container_app.this.latest_revision_fqdn}"
 }
 
+output "container_app_fqdn" {
+  description = "Stable FQDN of the Container App ingress, used as the CNAME target for penny.mysak.fun."
+  value       = azurerm_container_app.this.ingress[0].fqdn
+}
+
 output "managed_identity_client_id" {
   description = "Client ID of the user-assigned managed identity."
   value       = azurerm_user_assigned_identity.this.client_id
