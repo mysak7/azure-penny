@@ -102,3 +102,22 @@ resource "azurerm_container_app" "this" {
     azurerm_role_assignment.acr_pull,
   ]
 }
+
+resource "terraform_data" "penny_custom_domain" {
+  triggers_replace = [azurerm_container_app.this.id]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      az containerapp hostname add \
+        --name ${azurerm_container_app.this.name} \
+        --resource-group ${azurerm_resource_group.this.name} \
+        --hostname penny.mysak.fun && \
+      az containerapp hostname bind \
+        --name ${azurerm_container_app.this.name} \
+        --resource-group ${azurerm_resource_group.this.name} \
+        --hostname penny.mysak.fun \
+        --environment ${azurerm_container_app_environment.this.name} \
+        --validation-method CNAME
+    EOT
+  }
+}
