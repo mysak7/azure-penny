@@ -14,6 +14,7 @@ from azure.storage.blob import BlobServiceClient
 
 from config import (
     AZURE_CLIENT_ID,
+    AZURE_SUBSCRIPTION_ID,
     STORAGE_ACCOUNT_NAME,
     STORAGE_CONTAINER_NAME,
     TTL_SECONDS,
@@ -187,9 +188,80 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _load_from_cost_management_api() -> pd.DataFrame:
+    """Query the Azure Cost Management API directly (fallback when no blob exports exist)."""
+    import json
+    import urllib.error
+    import urllib.request
+    from datetime import date, timedelta
+
+    if not AZURE_SUBSCRIPTION_ID:
+        raise ValueError("AZURE_SUBSCRIPTION_ID is not set; cannot query Cost Management API.")
+
+    cred = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+    token = cred.get_token("https://management.azure.com/.default").token
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    start = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+    end = date.today().strftime("%Y-%m-%d")
+    body = json.dumps({
+        "type": "Usage",
+        "timeframe": "Custom",
+        "timePeriod": {"from": f"{start}T00:00:00+00:00", "to": f"{end}T23:59:59+00:00"},
+        "dataset": {
+            "granularity": "Daily",
+            "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
+            "grouping": [
+                {"type": "Dimension", "name": "MeterCategory"},
+                {"type": "Dimension", "name": "ResourceGroup"},
+            ],
+        },
+    }).encode()
+
+    base_url = (
+        f"https://management.azure.com/subscriptions/{AZURE_SUBSCRIPTION_ID}"
+        "/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+    )
+
+    all_rows: list = []
+    col_names: list[str] = []
+    url: str | None = base_url
+
+    while url:
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Cost Management API error {exc.code}: {exc.read().decode()}") from exc
+
+        props = data.get("properties", {})
+        if not col_names:
+            col_names = [c["name"] for c in props.get("columns", [])]
+        all_rows.extend(props.get("rows", []))
+        url = props.get("nextLink")
+
+    if not all_rows:
+        log.warning("Cost Management API returned 0 rows.")
+        return pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))
+
+    df = pd.DataFrame(all_rows, columns=col_names)
+
+    # UsageDate comes back as an integer YYYYMMDD
+    if "UsageDate" in df.columns:
+        df["UsageDate"] = pd.to_datetime(df["UsageDate"].astype(str), format="%Y%m%d").dt.strftime("%Y-%m-%d")
+
+    log.info("Cost Management API returned %d rows (90-day window).", len(df))
+    return df
+
+
 def _load_dataframe() -> pd.DataFrame:
     blob_names = _discover_latest_blobs(STORAGE_CONTAINER_NAME)
     if not blob_names:
+        if AZURE_SUBSCRIPTION_ID:
+            log.info("No blob exports found — falling back to Cost Management API.")
+            df = _load_from_cost_management_api()
+            return _apply_column_map(df)
         raise ValueError(f"No cost export files found in container '{STORAGE_CONTAINER_NAME}'.")
 
     frames: list[pd.DataFrame] = []
