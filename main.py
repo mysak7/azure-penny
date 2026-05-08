@@ -54,6 +54,10 @@ CAT_DATABASE = {
     "Azure Database for MySQL", "Azure Database for PostgreSQL",
     "Azure SQL Managed Instance", "Azure Synapse Analytics",
 }
+CAT_MONITORING = {
+    "Azure Grafana Service", "Log Analytics", "Azure Monitor",
+    "Application Insights",
+}
 
 # ---------------------------------------------------------------------------
 # Filtering / aggregation helpers
@@ -325,6 +329,14 @@ async def api_network(period: str = "week", rg: str = "") -> JSONResponse:
 async def api_database(period: str = "week", rg: str = "") -> JSONResponse:
     try:
         return JSONResponse(await _category_api(period, CAT_DATABASE, rg))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/monitoring", tags=["api"])
+async def api_monitoring(period: str = "week", rg: str = "") -> JSONResponse:
+    try:
+        return JSONResponse(await _category_api(period, CAT_MONITORING, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 

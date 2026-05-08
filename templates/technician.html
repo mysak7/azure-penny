@@ -68,6 +68,7 @@
     .kpi-card.yellow { border-top: 2px solid #fbbf24; }
     .kpi-card.orange { border-top: 2px solid #f97316; }
     .kpi-card.purple { border-top: 2px solid #a78bfa; }
+    .kpi-card.cyan   { border-top: 2px solid #06b6d4; }
     .kpi-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
     .kpi-val { font-size: 1.2rem; font-weight: 700; color: #e2e8f0; font-family: monospace; }
     .kpi-sub { font-size: 0.7rem; color: #475569; margin-top: .15rem; }
@@ -92,6 +93,7 @@
     .bar.green  { background: #4ade80; }
     .bar.orange { background: #f97316; }
     .bar.purple { background: #a78bfa; }
+    .bar.cyan   { background: #06b6d4; }
     .scroll-table { overflow-x: auto; }
 
     /* Chart */
@@ -178,6 +180,7 @@
       <button class="tab-btn"        data-tab="compute"         onclick="setTab('compute')">Compute</button>
       <button class="tab-btn"        data-tab="storage"         onclick="setTab('storage')">Storage</button>
       <button class="tab-btn"        data-tab="database"        onclick="setTab('database')">Database</button>
+      <button class="tab-btn"        data-tab="monitoring"      onclick="setTab('monitoring')">Monitoring</button>
       <button class="tab-btn"        data-tab="insights"        onclick="setTab('insights')">Insights</button>
     </div>
     <div class="period-pills" id="period-pills-row">
@@ -261,6 +264,19 @@
       <div id="db-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
       <div id="db-table"></div>
       <div id="db-error" class="error"></div>
+    </div>
+  </div>
+
+  <!-- ── MONITORING ──────────────────────────────────────────────────────── -->
+  <div id="section-monitoring" class="cards" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Monitoring Services <span class="az-badge">Grafana &bull; Log Analytics &bull; Monitor</span></h2>
+        <span id="mon-badge" class="card-badge">7 days</span>
+      </div>
+      <div id="mon-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+      <div id="mon-table"></div>
+      <div id="mon-error" class="error"></div>
     </div>
   </div>
 
@@ -354,7 +370,7 @@ function setTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function(b) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
-  ['all-services','resource-groups','compute','storage','database','insights'].forEach(function(t) {
+  ['all-services','resource-groups','compute','storage','database','monitoring','insights'].forEach(function(t) {
     document.getElementById('section-' + t).style.display = t === tab ? '' : 'none';
   });
   currentTab = tab;
@@ -384,7 +400,8 @@ function loadCurrentTab() {
     case 'resource-groups': loadResourceGroups(); break;
     case 'compute':         loadComputeMachines(); break;
     case 'storage':         loadStorage(); break;
-    case 'database':        loadCategoryDetail('database', '/api/database?period=', 'db',  'purple'); break;
+    case 'database':        loadCategoryDetail('database',   '/api/database?period=',   'db',  'purple'); break;
+    case 'monitoring':      loadCategoryDetail('monitoring', '/api/monitoring?period=', 'mon', 'cyan');   break;
     case 'insights':        loadInsights(); loadBreakdown(); break;
   }
 }

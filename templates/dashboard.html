@@ -73,6 +73,7 @@
     .hbar-fill.green  { background: linear-gradient(90deg, #4ade80, #22c55e); }
     .hbar-fill.orange { background: linear-gradient(90deg, #f97316, #ea580c); }
     .hbar-fill.purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
+    .hbar-fill.cyan   { background: linear-gradient(90deg, #22d3ee, #06b6d4); }
     .hbar-cost { font-size: 0.72rem; color: #e2e8f0; font-family: monospace; width: 68px; text-align: right; flex-shrink: 0; }
 
     /* Nav */
@@ -166,6 +167,11 @@
       <div class="summary-val" id="kpi-database">&mdash;</div>
       <div class="summary-sub" id="kpi-database-sub">&nbsp;</div>
     </div>
+    <div class="summary-card" style="border-top-color:#06b6d4;">
+      <div class="summary-label" style="color:#06b6d4;">Monitoring</div>
+      <div class="summary-val" id="kpi-monitoring">&mdash;</div>
+      <div class="summary-sub" id="kpi-monitoring-sub">&nbsp;</div>
+    </div>
     <div class="summary-card" style="border-top-color:#f1f5f9;">
       <div class="summary-label" style="color:#94a3b8;">Total</div>
       <div class="summary-val" id="kpi-total" style="color:#f1f5f9;">&mdash;</div>
@@ -228,6 +234,19 @@
       </div>
     </div>
 
+    <div class="cat-card">
+      <div class="cat-header">
+        <div class="cat-title"><h2>Monitoring</h2></div>
+        <span id="mon-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="mon-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="mon-table"></div>
+        <div id="mon-error" class="error-msg"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -275,10 +294,11 @@ function periodLabel() {
 
 // ── Load all ──────────────────────────────────────────────────────────────────
 function loadAll() {
-  loadCategory('compute',  '/api/compute?period='  +currentPeriod+rgParam(), 'cp',  'blue');
-  loadCategory('storage',  '/api/storage?period='  +currentPeriod+rgParam(), 'st',  'green');
-  loadCategory('network',  '/api/network?period='  +currentPeriod+rgParam(), 'net', 'orange');
-  loadCategory('database', '/api/database?period=' +currentPeriod+rgParam(), 'db',  'purple');
+  loadCategory('compute',    '/api/compute?period='    +currentPeriod+rgParam(), 'cp',  'blue');
+  loadCategory('storage',    '/api/storage?period='    +currentPeriod+rgParam(), 'st',  'green');
+  loadCategory('network',    '/api/network?period='    +currentPeriod+rgParam(), 'net', 'orange');
+  loadCategory('database',   '/api/database?period='   +currentPeriod+rgParam(), 'db',  'purple');
+  loadCategory('monitoring', '/api/monitoring?period=' +currentPeriod+rgParam(), 'mon', 'cyan');
   loadTotal();
 }
 
