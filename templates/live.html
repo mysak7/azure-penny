@@ -404,7 +404,7 @@ function applyFilters() {
   var filtered = allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
-    if (hideFree && cost === null && !r.known_has_cost) return false;
+    if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
     if (search) {
@@ -723,7 +723,7 @@ function getVisibleResources() {
   return allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
-    if (hideFree && cost === null && !r.known_has_cost) return false;
+    if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
     if (search) {

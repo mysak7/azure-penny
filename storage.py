@@ -189,7 +189,12 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _load_from_cost_management_api() -> pd.DataFrame:
-    """Query the Azure Cost Management API directly (fallback when no blob exports exist)."""
+    """Query the Azure Cost Management API directly (fallback when no blob exports exist).
+
+    Groups by ResourceId + MeterCategory so that the live-page resource matching
+    (which joins on C_RESOURCE_ID) works correctly.  ResourceGroup (C_NAME) is
+    derived from the ResourceId after loading.
+    """
     import json
     import urllib.error
     import urllib.request
@@ -212,8 +217,8 @@ def _load_from_cost_management_api() -> pd.DataFrame:
             "granularity": "Daily",
             "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
             "grouping": [
+                {"type": "Dimension", "name": "ResourceId"},
                 {"type": "Dimension", "name": "MeterCategory"},
-                {"type": "Dimension", "name": "ResourceGroup"},
             ],
         },
     }).encode()
@@ -251,6 +256,16 @@ def _load_from_cost_management_api() -> pd.DataFrame:
     if "UsageDate" in df.columns:
         df["UsageDate"] = pd.to_datetime(df["UsageDate"].astype(str), format="%Y%m%d").dt.strftime("%Y-%m-%d")
 
+    # Derive ResourceGroup from ResourceId so C_NAME is available for dashboards.
+    # The ARM resource ID format is: /subscriptions/{sub}/resourceGroups/{rg}/...
+    if "ResourceId" in df.columns:
+        df["ResourceGroupName"] = (
+            df["ResourceId"]
+            .str.extract(r"/resourceGroups/([^/]+)", flags=re.IGNORECASE)[0]
+            .fillna("")
+            .str.lower()
+        )
+
     log.info("Cost Management API returned %d rows (90-day window).", len(df))
     return df
 
@@ -261,7 +276,11 @@ def _load_dataframe() -> pd.DataFrame:
         if AZURE_SUBSCRIPTION_ID:
             log.info("No blob exports found — falling back to Cost Management API.")
             df = _load_from_cost_management_api()
-            return _apply_column_map(df)
+            df = _apply_column_map(df)
+            # The API grouping omits subscription; fill C_ACCOUNT so required cols are met.
+            if "C_ACCOUNT" not in df.columns:
+                df["C_ACCOUNT"] = AZURE_SUBSCRIPTION_ID
+            return df
         raise ValueError(f"No cost export files found in container '{STORAGE_CONTAINER_NAME}'.")
 
     frames: list[pd.DataFrame] = []
