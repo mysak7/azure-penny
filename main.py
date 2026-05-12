@@ -134,12 +134,13 @@ async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
 # Forecast
 # ---------------------------------------------------------------------------
 
-async def _build_forecast() -> dict:
+async def _build_forecast(rg: str = "") -> dict:
     today = date.today()
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     month_str = today.strftime("%Y-%m")
 
     df = await get_cached_dataframe()
+    df = _filter_rg(df, rg)
     actual_points: list[dict] = []
     spent_so_far = 0.0
     per_rg_actual: dict[str, float] = {}
@@ -167,14 +168,16 @@ async def _build_forecast() -> dict:
 
     try:
         resources = await _get_live_data()
+        if rg:
+            resources = [r for r in resources if (r.get("resource_group") or "").lower() == rg.lower()]
         live_monthly = 0.0
         for r in resources:
             mc = r.get("monthly_cost") or 0.0
             if mc > 0:
                 live_monthly += mc
-                rg = (r.get("resource_group") or "").lower()
-                if rg:
-                    per_rg_live[rg] = per_rg_live.get(rg, 0.0) + mc
+                r_rg = (r.get("resource_group") or "").lower()
+                if r_rg:
+                    per_rg_live[r_rg] = per_rg_live.get(r_rg, 0.0) + mc
         live_daily_rate = live_monthly / 30
 
         if live_daily_rate > 0 and not df.empty and "C_DATE" in df.columns and "C_COST" in df.columns:
@@ -943,9 +946,9 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
 
 
 @app.get("/api/forecast", tags=["api"])
-async def api_forecast() -> JSONResponse:
+async def api_forecast(rg: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _build_forecast())
+        return JSONResponse(await _build_forecast(rg))
     except Exception as exc:
         log.exception("Forecast endpoint failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
