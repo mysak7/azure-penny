@@ -103,6 +103,20 @@
     .error-msg { color: #f87171; font-size: 0.78rem; padding: .5rem 0; }
     .empty { color: #475569; font-size: 0.78rem; text-align: center; padding: 1.25rem 0; font-style: italic; }
     .cat-divider { border: none; border-top: 1px solid #334155; margin: .85rem 0; }
+
+    /* Forecast card */
+    .forecast-grid { display: grid; grid-template-columns: 180px 1fr; gap: 1.5rem; align-items: center; }
+    @media (max-width: 600px) { .forecast-grid { grid-template-columns: 1fr; } }
+    .fc-eom { font-size: 2rem; font-weight: 700; font-family: monospace; color: #f97316; line-height: 1.1; }
+    .fc-meta { font-size: 0.72rem; color: #475569; margin-top: .3rem; line-height: 1.6; }
+    .fc-source { font-size: 0.68rem; color: #64748b; margin-top: .4rem; }
+    .fc-legend { display: flex; gap: 1rem; font-size: 0.68rem; color: #64748b; margin-top: .4rem; }
+    .fc-legend span { display: flex; align-items: center; gap: .3rem; }
+    .fc-dot { display: inline-block; width: 10px; height: 8px; border-radius: 1px; }
+    .fc-rg-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: .25rem; }
+    .fc-rg-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #334155; }
+    .fc-rg-table td { padding: .4rem .5rem; border-bottom: 1px solid #1e293b; }
+    .fc-rg-table tr:last-child td { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -176,6 +190,33 @@
       <div class="summary-label" style="color:#94a3b8;">Total</div>
       <div class="summary-val" id="kpi-total" style="color:#f1f5f9;">&mdash;</div>
       <div class="summary-sub" id="kpi-total-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Forecast card -->
+  <div class="cat-card" style="margin-bottom:1.25rem;">
+    <div class="cat-header">
+      <div class="cat-title"><h2>Monthly Forecast</h2></div>
+      <span id="fc-badge" class="cat-badge">loading&hellip;</span>
+    </div>
+    <div class="cat-body">
+      <div class="forecast-grid">
+        <div>
+          <div class="summary-label">End of Month</div>
+          <div class="fc-eom" id="fc-eom">&mdash;</div>
+          <div class="fc-meta" id="fc-meta"></div>
+          <div class="fc-source" id="fc-source"></div>
+        </div>
+        <div>
+          <div id="fc-chart"><div class="loading">Loading&hellip;</div></div>
+          <div class="fc-legend">
+            <span><span class="fc-dot" style="background:#38bdf8;opacity:0.85;"></span>Actual</span>
+            <span><span class="fc-dot" style="background:#f97316;opacity:0.4;"></span>Projected</span>
+          </div>
+        </div>
+      </div>
+      <div id="fc-rgs" style="margin-top:.85rem;"></div>
+      <div id="fc-error" class="error-msg"></div>
     </div>
   </div>
 
@@ -433,10 +474,78 @@ function fmtNum(n) {
   return String(n);
 }
 
+// ── Forecast ──────────────────────────────────────────────────────────────────
+function buildForecastSvg(actual, projected) {
+  var all = actual.concat(projected);
+  if (!all.length) return '<p class="empty">No data available.</p>';
+  var maxVal = 0.001;
+  all.forEach(function(p) { if (p.cost_usd > maxVal) maxVal = p.cost_usd; });
+  var W = 560, H = 90, pT = 6, pB = 4, pL = 2, pR = 2;
+  var cW = W - pL - pR, cH = H - pT - pB;
+  var n = all.length, gap = 1;
+  var barW = Math.max(2, Math.floor(cW / n) - gap);
+  var svg = '';
+  actual.forEach(function(p, i) {
+    var x = pL + i * (barW + gap);
+    var h = Math.max(1, (p.cost_usd / maxVal) * cH);
+    var y = pT + cH - h;
+    svg += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW+'" height="'+h.toFixed(1)+'" fill="#38bdf8" opacity="0.85" rx="1"/>';
+  });
+  if (projected.length) {
+    projected.forEach(function(p, i) {
+      var x = pL + (actual.length + i) * (barW + gap);
+      var h = Math.max(1, (p.cost_usd / maxVal) * cH);
+      var y = pT + cH - h;
+      svg += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW+'" height="'+h.toFixed(1)+'" fill="#f97316" opacity="0.2" rx="1"/>';
+    });
+    var projH = Math.max(1, (projected[0].cost_usd / maxVal) * cH);
+    var lineY = (pT + cH - projH).toFixed(1);
+    var lx1 = (pL + actual.length * (barW + gap)).toFixed(1);
+    var lx2 = (pL + (actual.length + projected.length - 1) * (barW + gap) + barW).toFixed(1);
+    svg += '<line x1="'+lx1+'" y1="'+lineY+'" x2="'+lx2+'" y2="'+lineY+'" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>';
+    var divX = (pL + actual.length * (barW + gap) - 0.5).toFixed(1);
+    svg += '<line x1="'+divX+'" y1="'+pT+'" x2="'+divX+'" y2="'+(pT+cH)+'" stroke="#475569" stroke-width="1" stroke-dasharray="2,2"/>';
+  }
+  svg += '<line x1="'+pL+'" y1="'+(pT+cH)+'" x2="'+(W-pR)+'" y2="'+(pT+cH)+'" stroke="#334155" stroke-width="1"/>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;display:block;" preserveAspectRatio="none">'+svg+'</svg>';
+}
+
+function loadForecast() {
+  fetch('/api/forecast')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      document.getElementById('fc-badge').textContent = data.month + ' \xb7 ' + data.days_remaining + ' days remaining';
+      document.getElementById('fc-eom').textContent = fmtCost(data.end_of_month_usd);
+      document.getElementById('fc-meta').innerHTML =
+        'Spent so far: ' + fmtCost(data.spent_so_far_usd) + '<br>' +
+        'Daily rate: ' + fmtCost(data.live_daily_rate_usd) + '/day';
+      document.getElementById('fc-source').textContent = data.data_source === 'hybrid'
+        ? 'Live-calibrated (factor: ' + data.calibration_factor.toFixed(2) + ')'
+        : 'Linear extrapolation — live data unavailable';
+      document.getElementById('fc-chart').innerHTML = buildForecastSvg(data.actual_points, data.projected_points);
+      if (data.top_rgs && data.top_rgs.length) {
+        var rows = data.top_rgs.map(function(rg) {
+          return '<tr><td>' + escHtml(rg.name) + '</td>' +
+            '<td style="font-family:monospace;text-align:right">' + fmtCost(rg.projected_usd) + '</td></tr>';
+        }).join('');
+        document.getElementById('fc-rgs').innerHTML =
+          '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:.4rem;">Top Resource Groups (Projected)</div>' +
+          '<table class="fc-rg-table"><tr><th>Resource Group</th><th style="text-align:right">Projected Cost</th></tr>' + rows + '</table>';
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('fc-badge').textContent = 'error';
+      document.getElementById('fc-error').textContent = 'Forecast error: ' + err.message;
+      document.getElementById('fc-chart').innerHTML = '';
+    });
+}
+
 // Boot
 loadStatus();
 loadRgList();
 loadAll();
+loadForecast();
 </script>
 </body>
 </html>

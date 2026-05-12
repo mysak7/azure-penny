@@ -5,6 +5,7 @@ Storage and exposes aggregated cost data via a REST API.
 """
 
 import asyncio
+import calendar
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -126,6 +127,118 @@ async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
         "total_usd": round(sum(by_svc.values()), 4),
         "data_as_of": data_as_of,
         "fallback": fallback,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Forecast
+# ---------------------------------------------------------------------------
+
+async def _build_forecast() -> dict:
+    today = date.today()
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    month_str = today.strftime("%Y-%m")
+
+    df = await get_cached_dataframe()
+    actual_points: list[dict] = []
+    spent_so_far = 0.0
+    per_rg_actual: dict[str, float] = {}
+
+    if not df.empty and "C_DATE" in df.columns and "C_COST" in df.columns:
+        this_month = df[df["C_DATE"].str.startswith(month_str)]
+        if not this_month.empty:
+            daily = this_month.groupby("C_DATE")["C_COST"].sum().sort_index()
+            actual_points = [{"date": d, "cost_usd": round(float(v), 4)} for d, v in daily.items()]
+            spent_so_far = round(float(daily.sum()), 4)
+            if "C_NAME" in this_month.columns:
+                rg_agg = this_month.groupby("C_NAME")["C_COST"].sum()
+                per_rg_actual = {
+                    str(k): float(v) for k, v in rg_agg.items()
+                    if v > 0 and str(k).strip()
+                }
+
+    days_elapsed = len(actual_points) if actual_points else today.day
+    days_remaining = days_in_month - days_elapsed
+
+    data_source = "hybrid"
+    live_daily_rate = 0.0
+    calibration_factor = 1.0
+    per_rg_live: dict[str, float] = {}
+
+    try:
+        resources = await _get_live_data()
+        live_monthly = 0.0
+        for r in resources:
+            mc = r.get("monthly_cost") or 0.0
+            if mc > 0:
+                live_monthly += mc
+                rg = (r.get("resource_group") or "").lower()
+                if rg:
+                    per_rg_live[rg] = per_rg_live.get(rg, 0.0) + mc
+        live_daily_rate = live_monthly / 30
+
+        if live_daily_rate > 0 and not df.empty and "C_DATE" in df.columns and "C_COST" in df.columns:
+            cutoff_7 = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+            recent = df[df["C_DATE"] >= cutoff_7]
+            if not recent.empty:
+                actual_7 = float(recent["C_COST"].sum())
+                raw = actual_7 / (live_daily_rate * 7)
+                calibration_factor = round(max(0.5, min(2.0, raw)), 3)
+    except Exception:
+        data_source = "linear_fallback"
+
+    if data_source == "hybrid" and live_daily_rate <= 0:
+        data_source = "linear_fallback"
+
+    if data_source == "hybrid":
+        daily_fwd = live_daily_rate * calibration_factor
+    else:
+        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
+
+    last_date = (
+        date.fromisoformat(actual_points[-1]["date"]) if actual_points
+        else today.replace(day=1) - timedelta(days=1)
+    )
+    projected_points: list[dict] = []
+    for i in range(1, days_remaining + 1):
+        d = last_date + timedelta(days=i)
+        if d.month != today.month:
+            break
+        projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
+
+    end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
+
+    combined: dict[str, float] = dict(per_rg_actual)
+    if data_source == "hybrid":
+        for rg, monthly in per_rg_live.items():
+            fwd = (monthly / 30) * calibration_factor * len(projected_points)
+            combined[rg] = combined.get(rg, 0.0) + fwd
+    elif days_elapsed > 0:
+        scale = days_in_month / days_elapsed
+        combined = {rg: v * scale for rg, v in combined.items()}
+
+    top_rgs = sorted(
+        [
+            {"name": rg, "projected_usd": round(cost, 2)}
+            for rg, cost in combined.items()
+            if cost > 0 and rg.strip()
+        ],
+        key=lambda x: x["projected_usd"],
+        reverse=True,
+    )[:3]
+
+    return {
+        "actual_points": actual_points,
+        "projected_points": projected_points,
+        "end_of_month_usd": end_of_month,
+        "spent_so_far_usd": spent_so_far,
+        "live_daily_rate_usd": round(live_daily_rate, 4),
+        "calibration_factor": calibration_factor,
+        "data_source": data_source,
+        "top_rgs": top_rgs,
+        "days_remaining": days_remaining,
+        "days_elapsed": days_elapsed,
+        "month": today.strftime("%B %Y"),
     }
 
 
@@ -827,6 +940,15 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
         })
     except Exception as exc:
         return JSONResponse({"error": str(exc), "vm_size": vm_size, "region": region}, status_code=500)
+
+
+@app.get("/api/forecast", tags=["api"])
+async def api_forecast() -> JSONResponse:
+    try:
+        return JSONResponse(await _build_forecast())
+    except Exception as exc:
+        log.exception("Forecast endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/daily", tags=["api"])
