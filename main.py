@@ -5,17 +5,19 @@ Storage and exposes aggregated cost data via a REST API.
 """
 
 import asyncio
+import base64
 import calendar
+import json
 import time
 from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, SHOW_DELETE_BUTTONS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
+from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
 from live_resources import _get_live_data, _live_cache, _live_lock, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
@@ -32,6 +34,31 @@ app = FastAPI(
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+# ---------------------------------------------------------------------------
+# Role-based access (ACA Easy Auth injects X-MS-CLIENT-PRINCIPAL)
+# ---------------------------------------------------------------------------
+
+def _get_user_roles(request: Request) -> list[str]:
+    """Return Entra app role values from the ACA Easy Auth principal header."""
+    header = request.headers.get("X-MS-CLIENT-PRINCIPAL")
+    if not header:
+        return []  # no Easy Auth (local dev) — caller decides how to handle
+    try:
+        principal = json.loads(base64.b64decode(header + "=="))
+        return [c["val"] for c in principal.get("claims", []) if c.get("typ") == "roles"]
+    except Exception:
+        return []
+
+
+def _require_admin(request: Request) -> None:
+    """FastAPI dependency — blocks non-admin users when Easy Auth is active."""
+    header = request.headers.get("X-MS-CLIENT-PRINCIPAL")
+    if not header:
+        return  # local dev: no Easy Auth header, allow through
+    if "penny-admin" not in _get_user_roles(request):
+        raise HTTPException(status_code=403, detail="penny-admin role required")
+
 
 # ---------------------------------------------------------------------------
 # Azure service categories  (MeterCategory values)
@@ -271,7 +298,8 @@ async def technician(request: Request):
 
 @app.get("/live", response_class=HTMLResponse, include_in_schema=False)
 async def live_view(request: Request):
-    return templates.TemplateResponse("live.html", {"request": request, "show_delete": SHOW_DELETE_BUTTONS})
+    is_admin = "penny-admin" in _get_user_roles(request)
+    return templates.TemplateResponse("live.html", {"request": request, "is_admin": is_admin})
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -283,6 +311,16 @@ async def health_check() -> JSONResponse:
         "service": "azure-penny",
         "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
         "container": STORAGE_CONTAINER_NAME,
+    })
+
+
+@app.get("/api/me", tags=["api"])
+async def api_me(request: Request) -> JSONResponse:
+    roles = _get_user_roles(request)
+    return JSONResponse({
+        "name": request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", ""),
+        "roles": roles,
+        "is_admin": "penny-admin" in roles,
     })
 
 
@@ -740,7 +778,7 @@ async def api_live_reload() -> JSONResponse:
 # ── Infrastructure mutation ───────────────────────────────────────────────────
 
 @app.delete("/api/resource", tags=["infrastructure"])
-async def api_delete_resource(resource_id: str) -> StreamingResponse:
+async def api_delete_resource(resource_id: str, _: None = Depends(_require_admin)) -> StreamingResponse:
     """Delete a live Azure resource by its full ARM resource ID."""
     if not resource_id.lower().startswith("/subscriptions/"):
         raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
@@ -830,7 +868,7 @@ async def api_delete_resource(resource_id: str) -> StreamingResponse:
 
 
 @app.delete("/api/resource-group", tags=["infrastructure"])
-async def api_delete_resource_group(resource_group_name: str) -> StreamingResponse:
+async def api_delete_resource_group(resource_group_name: str, _: None = Depends(_require_admin)) -> StreamingResponse:
     """Delete all resources in an Azure resource group by deleting the group itself."""
     if not resource_group_name or not resource_group_name.strip():
         raise HTTPException(status_code=400, detail="resource_group_name is required")
@@ -874,7 +912,7 @@ async def api_delete_resource_group(resource_group_name: str) -> StreamingRespon
 
 
 @app.delete("/api/resource-groups/all", tags=["infrastructure"])
-async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...)) -> StreamingResponse:
+async def api_delete_all_resource_groups(resource_groups: list[str] = Body(...), _: None = Depends(_require_admin)) -> StreamingResponse:
     """Delete multiple Azure resource groups sequentially."""
     if not resource_groups:
         raise HTTPException(status_code=400, detail="resource_groups list is empty")

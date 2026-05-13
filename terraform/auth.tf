@@ -17,6 +17,19 @@ resource "azuread_application" "penny" {
   sign_in_audience = "AzureADMyOrg"
   owners           = [data.azuread_client_config.current.object_id]
 
+  # penny-admin: grants access to resource deletion endpoints.
+  # Additional users should be managed in the Azure Portal:
+  #   Enterprise Applications → penny-prd → Users and groups → Add user
+  # Assign "Penny Admin" for delete access, or the default role for read-only.
+  app_role {
+    allowed_member_types = ["User"]
+    description          = "Full access including resource deletion"
+    display_name         = "Penny Admin"
+    enabled              = true
+    id                   = "f0e1d2c3-b4a5-4968-9c8d-7e6f5a4b3c2d"
+    value                = "penny-admin"
+  }
+
   web {
     redirect_uris = [
       "https://${local.container_app_fqdn}/.auth/login/aad/callback",
@@ -74,7 +87,7 @@ resource "azuread_invitation" "owner" {
 }
 
 resource "azuread_app_role_assignment" "owner" {
-  app_role_id         = "00000000-0000-0000-0000-000000000000"
+  app_role_id         = "f0e1d2c3-b4a5-4968-9c8d-7e6f5a4b3c2d" # penny-admin
   principal_object_id = azuread_invitation.owner.user_id
   resource_object_id  = azuread_service_principal.penny.object_id
 }

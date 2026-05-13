@@ -20,4 +20,3 @@ LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))
 PROTECTED_RGS: set[str] = {
     rg.strip().lower() for rg in os.environ.get("PROTECTED_RGS", "").split(",") if rg.strip()
 }
-SHOW_DELETE_BUTTONS: bool = os.environ.get("SHOW_DELETE_BUTTONS", "false").lower() in ("1", "true", "yes")

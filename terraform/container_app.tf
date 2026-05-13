@@ -74,6 +74,9 @@ resource "azurerm_container_app" "this" {
         value = "900"
       }
 
+      # Delete access is now controlled by the penny-admin Entra app role.
+      # No SHOW_DELETE_BUTTONS env var needed.
+
       env {
         name  = "PROTECTED_RGS"
         value = azurerm_resource_group.this.name

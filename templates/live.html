@@ -161,7 +161,7 @@
   <span class="status-item" title="Cost matched to live ARM resources">Live: <strong id="st-live" style="color:#4ade80">&mdash;</strong></span>
   <span class="status-item" title="Cost for deleted or ARM-invisible resources (Billed 30d minus Live)">Deleted/hidden: <strong id="st-orphan" style="color:#f87171">&mdash;</strong></span>
   <button class="reload-btn" onclick="reloadLive()">&#x21BB; Refresh inventory</button>
-  {% if show_delete %}<button class="btn-delete-all" onclick="openDeleteAllModal()">🗑️ Delete All Visible</button>{% endif %}
+  {% if is_admin %}<button class="btn-delete-all" onclick="openDeleteAllModal()">🗑️ Delete All Visible</button>{% endif %}
   <span id="st-error" class="status-item error"></span>
 </div>
 
@@ -207,7 +207,7 @@
 
 </div>
 
-{% if show_delete %}
+{% if is_admin %}
 <!-- Delete All Modal -->
 <div class="modal-overlay" id="delete-all-modal">
   <div class="modal">
@@ -253,7 +253,7 @@
 </div>
 
 <script>
-var SHOW_DELETE = {{ show_delete | tojson }};
+var SHOW_DELETE = {{ is_admin | tojson }}; // true only for penny-admin role holders
 var allResources = [];
 var sortCol = 'monthly_cost';
 var sortDir = -1; // -1 desc, +1 asc
