@@ -1,43 +1,12 @@
-# azurerm_subscription_cost_management_export uses an API version not supported for
-# MCA/PAYG subscriptions. Using azapi_resource at the billing profile scope instead.
-resource "azapi_resource" "cost_export" {
-  count     = var.enable_cost_export ? 1 : 0
-  type      = "Microsoft.CostManagement/exports@2023-11-01"
-  name      = "penny-${var.environment}-daily-export"
-  parent_id = var.billing_profile_id
+# The Cost Management export was created at MCA billing profile scope.
+# Azure does not permit billing-scope RBAC assignment via REST API for
+# MSA-owned MCA accounts, so the CI/CD SP cannot read this resource during
+# terraform plan. Resource removed from state (destroy = false) — the live
+# export in Azure is unaffected.
+removed {
+  from = azapi_resource.cost_export
 
   lifecycle {
-    precondition {
-      condition     = var.billing_profile_id != ""
-      error_message = "billing_profile_id must be set when enable_cost_export is true."
-    }
-  }
-
-  body = {
-    properties = {
-      schedule = {
-        status    = "Active"
-        recurrence = "Daily"
-        recurrencePeriod = {
-          from = "2026-05-04T00:00:00Z"
-          to   = "2099-12-31T00:00:00Z"
-        }
-      }
-      format = "Csv"
-      deliveryInfo = {
-        destination = {
-          resourceId  = azurerm_storage_account.this.id
-          container   = azurerm_storage_container.this.name
-          rootFolderPath = "penny"
-        }
-      }
-      definition = {
-        type      = "ActualCost"
-        timeframe = "MonthToDate"
-        dataSet = {
-          granularity = "Daily"
-        }
-      }
-    }
+    destroy = false
   }
 }
