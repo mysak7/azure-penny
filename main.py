@@ -188,25 +188,31 @@ async def _build_forecast(rg: str = "") -> dict:
     days_elapsed = len(actual_points) if actual_points else today.day
     days_remaining = days_in_month - days_elapsed
 
-    # Always extrapolate from actual billing data. The hybrid approach (ARM live
-    # prices + calibration) was causing the global forecast to show 140€ while a
-    # single RG (sc-hub) showed 697€ — impossible. The calibration was broken
-    # because the export lags 3-5 days, so the 7-day window had too little data
-    # and the factor always clamped to 0.5, making the global total unrealistically
-    # low. Linear extrapolation is honest and guarantees per-RG ≤ global.
+    # For the global (all-RG) forecast: actual billing for elapsed days + live ARM
+    # pricing for remaining days. This captures resources spun up/down after the
+    # billing export cutoff without needing calibration.
+    # For per-RG: live ARM rates are unreliable (hub RG costs land under different
+    # RG names in billing), so we always use linear extrapolation from billing data.
     data_source = "linear"
     live_daily_rate = 0.0
-    calibration_factor = 1.0
     try:
         all_resources = await _get_live_data()
+        filtered_resources = all_resources if not rg else [
+            r for r in all_resources if (r.get("resource_group") or "").lower() == rg.lower()
+        ]
         live_monthly = sum(
-            (r.get("monthly_cost") or 0.0) for r in all_resources if (r.get("monthly_cost") or 0.0) > 0
+            (r.get("monthly_cost") or 0.0) for r in filtered_resources if (r.get("monthly_cost") or 0.0) > 0
         )
         live_daily_rate = live_monthly / 30
+        if not rg and live_daily_rate > 0:
+            data_source = "live"
     except Exception:
         pass
 
-    daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
+    if data_source == "live":
+        daily_fwd = live_daily_rate
+    else:
+        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
 
     last_date = (
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
