@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny &mdash; Guide</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    /* Header */
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: .75rem 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .hdr-left { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; letter-spacing: .02em; white-space: nowrap; }
+    header h1 span { color: #64748b; font-weight: 400; font-size: 0.85rem; margin-left: .5rem; }
+    .nav { display: flex; gap: .5rem; align-items: center; }
+    .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
+    .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
+    .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+
+    /* Layout */
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem; display: flex; flex-direction: column; gap: 2rem; }
+
+    /* Section */
+    .section-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .1em; color: #475569; font-weight: 700; margin-bottom: 1rem; }
+
+    /* Stat cards row */
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 900px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .stat-row { grid-template-columns: 1fr; } }
+    .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: .3rem; position: relative; overflow: hidden; }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .stat-card.blue::before   { background: #38bdf8; }
+    .stat-card.green::before  { background: #4ade80; }
+    .stat-card.orange::before { background: #f97316; }
+    .stat-card.purple::before { background: #a78bfa; }
+    .stat-card.amber::before  { background: #fbbf24; }
+    .stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
+    .stat-val { font-size: 1.4rem; font-weight: 700; font-family: monospace; }
+    .stat-card.blue   .stat-val { color: #38bdf8; }
+    .stat-card.green  .stat-val { color: #4ade80; }
+    .stat-card.orange .stat-val { color: #f97316; }
+    .stat-card.purple .stat-val { color: #a78bfa; }
+    .stat-card.amber  .stat-val { color: #fbbf24; }
+    .stat-sub { font-size: 0.7rem; color: #475569; line-height: 1.5; }
+
+    /* Card */
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+    .card-header { padding: .8rem 1.25rem; border-bottom: 1px solid #1e3a5a; display: flex; justify-content: space-between; align-items: center; }
+    .card-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; }
+    .card-body { padding: 1.25rem; }
+
+    /* Source tags table */
+    .tag-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .tag-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .5rem .75rem; text-align: left; border-bottom: 1px solid #334155; }
+    .tag-table td { padding: .55rem .75rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
+    .tag-table tr:last-child td { border-bottom: none; }
+    .tag-table tr:hover td { background: rgba(56,189,248,.03); }
+    .tag-badge { display: inline-block; font-family: monospace; font-size: 0.75rem; background: #0f172a; border: 1px solid #334155; color: #38bdf8; padding: .1rem .45rem; border-radius: 4px; white-space: nowrap; }
+    .tag-count { font-family: monospace; font-size: 0.85rem; color: #e2e8f0; font-weight: 600; }
+    .tag-desc { color: #94a3b8; line-height: 1.55; }
+    .tag-desc em { color: #64748b; font-style: normal; font-size: 0.72rem; }
+    .tag-accuracy { display: inline-block; font-size: 0.65rem; padding: .1rem .4rem; border-radius: 3px; font-weight: 600; letter-spacing: .04em; margin-left: .4rem; }
+    .acc-high   { background: #14532d; color: #4ade80; }
+    .acc-medium { background: #78350f; color: #fbbf24; }
+    .acc-low    { background: #450a0a; color: #f87171; }
+
+    /* Data source cards grid */
+    .source-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    @media (max-width: 800px) { .source-grid { grid-template-columns: 1fr; } }
+    .source-card { background: #162032; border: 1px solid #1e3a5a; border-radius: 10px; padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .6rem; }
+    .source-card-title { font-size: 0.78rem; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: .5rem; }
+    .source-icon { font-size: 1rem; }
+    .source-card p { font-size: 0.78rem; color: #94a3b8; line-height: 1.6; }
+    .source-pill { display: inline-block; font-size: 0.65rem; padding: .1rem .4rem; border-radius: 3px; font-weight: 600; }
+    .pill-primary  { background: #0c4a6e; color: #38bdf8; border: 1px solid #0284c7; }
+    .pill-fallback { background: #312e81; color: #a78bfa; border: 1px solid #6d28d9; }
+    .pill-overlay  { background: #1c3a1c; color: #4ade80; border: 1px solid #166534; }
+    .source-meta { font-size: 0.7rem; color: #475569; line-height: 1.6; }
+    .source-meta strong { color: #64748b; }
+
+    /* Formula block */
+    .formula { background: #0f172a; border: 1px solid #1e3a5a; border-radius: 8px; padding: .9rem 1.1rem; font-family: monospace; font-size: 0.82rem; color: #7dd3fc; line-height: 1.9; }
+    .formula .comment { color: #475569; }
+
+    /* Prose */
+    .prose { font-size: 0.82rem; color: #94a3b8; line-height: 1.7; display: flex; flex-direction: column; gap: .75rem; }
+    .prose strong { color: #e2e8f0; }
+    .prose code { font-family: monospace; font-size: 0.78rem; background: #0f172a; border: 1px solid #334155; color: #38bdf8; padding: .05rem .3rem; border-radius: 3px; }
+
+    /* Limitations list */
+    .limit-list { list-style: none; display: flex; flex-direction: column; gap: .6rem; }
+    .limit-list li { font-size: 0.8rem; color: #94a3b8; line-height: 1.55; padding-left: 1.2rem; position: relative; }
+    .limit-list li::before { content: '⚠'; position: absolute; left: 0; color: #f97316; font-size: 0.7rem; top: .1rem; }
+    .limit-list li strong { color: #e2e8f0; }
+
+    /* Loading */
+    .loading-val { color: #334155; font-family: monospace; }
+    .error-val { color: #f87171; font-family: monospace; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-left">
+    <h1>azure-penny <span>Guide</span></h1>
+  </div>
+  <div class="nav">
+    <a href="/manager"    class="nav-link">Manager</a>
+    <a href="/technician" class="nav-link">Technician</a>
+    <a href="/live"       class="nav-link">Live</a>
+    <a href="/guide"      class="nav-link active">Guide</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── Live System State ─────────────────────────────────────────────────── -->
+  <div>
+    <div class="section-title">Live System State</div>
+    <div class="stat-row">
+
+      <div class="stat-card blue">
+        <div class="stat-label">Export cache age</div>
+        <div class="stat-val" id="blob-age">…</div>
+        <div class="stat-sub" id="blob-range">loading…</div>
+      </div>
+
+      <div class="stat-card green">
+        <div class="stat-label">Live inventory age</div>
+        <div class="stat-val" id="live-age">…</div>
+        <div class="stat-sub" id="live-count">loading…</div>
+      </div>
+
+      <div class="stat-card orange">
+        <div class="stat-label">Calibration factor</div>
+        <div class="stat-val" id="calib-factor">…</div>
+        <div class="stat-sub" id="calib-source">loading…</div>
+      </div>
+
+      <div class="stat-card purple">
+        <div class="stat-label">Export rows</div>
+        <div class="stat-val" id="export-rows">…</div>
+        <div class="stat-sub" id="export-days">loading…</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Cost Source Tags ───────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Cost Source Tags</span>
+      <span style="font-size:0.72rem;color:#475569">Each resource carries a <code style="font-family:monospace;font-size:0.72rem;background:#0f172a;border:1px solid #334155;color:#38bdf8;padding:.05rem .3rem;border-radius:3px">cost_source</code> tag explaining how its cost was derived</span>
+    </div>
+    <div class="card-body">
+      <table class="tag-table">
+        <thead>
+          <tr>
+            <th style="width:160px">Tag</th>
+            <th style="width:60px">Count</th>
+            <th>Description</th>
+            <th style="width:80px">Accuracy</th>
+          </tr>
+        </thead>
+        <tbody id="tag-tbody">
+          <tr><td colspan="4" style="color:#475569;font-size:0.78rem;padding:.75rem">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Data Sources ───────────────────────────────────────────────────────── -->
+  <div>
+    <div class="section-title">Data Sources</div>
+    <div class="source-grid">
+
+      <div class="source-card">
+        <div class="source-card-title">
+          <span class="source-icon">🗂</span>
+          Cost Export Blobs
+          <span class="source-pill pill-primary">Primary</span>
+        </div>
+        <p>Daily cumulative CSV/Parquet files exported by Azure Cost Management to Blob Storage. The app reads only the single newest file from the latest date-range folder to avoid double-counting.</p>
+        <div class="source-meta">
+          <strong>Lag:</strong> 1–2 days (export runs 00:00–04:00 UTC)<br>
+          <strong>Window:</strong> month-to-date, then filtered to last 30 days<br>
+          <strong>Accuracy:</strong> Actual billed cost (EA/MCA rates applied)
+        </div>
+      </div>
+
+      <div class="source-card">
+        <div class="source-card-title">
+          <span class="source-icon">☁️</span>
+          Cost Management API
+          <span class="source-pill pill-fallback">Fallback</span>
+        </div>
+        <p>Used automatically when no blob exports are found in the container. Queries the <code style="font-family:monospace;font-size:0.75rem;background:#0f172a;border:1px solid #1e3a5a;color:#38bdf8;padding:.05rem .3rem;border-radius:3px">/query</code> endpoint with a 90-day window, grouped by ResourceId + MeterCategory.</p>
+        <div class="source-meta">
+          <strong>Lag:</strong> Same as export (Cost Management data age)<br>
+          <strong>Window:</strong> 90 days<br>
+          <strong>Accuracy:</strong> Same billed cost, less granular (no tags/subscription fields)
+        </div>
+      </div>
+
+      <div class="source-card">
+        <div class="source-card-title">
+          <span class="source-icon">⚡</span>
+          Live ARM + Pricing API
+          <span class="source-pill pill-overlay">Overlay</span>
+        </div>
+        <p>ARM resource inventory fetched in real-time. For VMs and VMSS, the Azure Retail Prices API (or hardcoded fallback tables) provides hourly rates. Used in the Live view and to project the forecast forward.</p>
+        <div class="source-meta">
+          <strong>Lag:</strong> ~0 (current to the minute)<br>
+          <strong>Window:</strong> N/A — current state only<br>
+          <strong>Accuracy:</strong> List price only — does not reflect RIs, AHUB, or EA discounts
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Forecast & Calibration ─────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Forecast &amp; Calibration</span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:1.25rem">
+
+      <div class="prose">
+        <p>The end-of-month forecast combines <strong>actual spend so far</strong> (from export data) with a <strong>forward projection</strong> based on live resource pricing. Because live pricing uses retail list rates, a calibration factor is applied to bring the projection in line with what the subscription actually pays.</p>
+      </div>
+
+      <div class="formula">
+        <span class="comment"># Step 1 — compute global calibration (subscription-level)</span><br>
+        all_live_daily  = sum(resource.monthly_cost for all resources) / 30<br>
+        actual_7d_total = sum of all-RG export costs over last 7 days<br>
+        raw             = actual_7d_total / (all_live_daily × 7)<br>
+        calibration     = clamp(raw, min=0.5, max=2.0)<br>
+        <br>
+        <span class="comment"># Step 2 — project forward for selected RG</span><br>
+        daily_fwd   = rg_live_daily × calibration<br>
+        end_of_month = spent_so_far + daily_fwd × days_remaining
+      </div>
+
+      <div class="prose">
+        <p><strong>Why global calibration?</strong> Hub RGs (network, shared services) have expensive ARM resources at list prices, but their actual export cost is low — billed to other RGs, or covered by reservations. A per-RG calibration collapses to the 0.5 floor for those RGs, inflating their forecast. Global calibration uses the real subscription-wide actual-vs-list ratio instead.</p>
+        <p><strong>Clamp [0.5 – 2.0]</strong> prevents extreme swings from days with anomalous spend or very few data points. The 0.5 floor means the forecast will never project less than half of what live pricing suggests, even for heavily discounted subscriptions.</p>
+        <p><strong>Data source</strong> is <code>hybrid</code> when live pricing is available, <code>linear_fallback</code> when the live inventory call fails (uses historical daily average instead).</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Known Limitations ──────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Known Limitations</span>
+    </div>
+    <div class="card-body">
+      <ul class="limit-list">
+        <li><strong>Reserved Instances &amp; Azure Hybrid Benefit not reflected in live pricing.</strong> The Retail Prices API returns list rates. Resources covered by RIs or AHUB will show higher estimates on the Live page than what appears on the invoice.</li>
+        <li><strong>Calibration floor of 0.5 can still overestimate.</strong> If the actual discount is &gt;50% (e.g. heavy RI coverage), the calibration clamps at 0.5 and the forecast will be up to 2× the real spend.</li>
+        <li><strong>Hardcoded VM price fallback covers only ~5 SKUs.</strong> If the Retail Prices API is unavailable and the VM size is not in the table, no cost is shown for that resource.</li>
+        <li><strong>Export lag is 1–2 days by design.</strong> Azure Cost Management exports run between midnight and 04:00 UTC. Today's charges are never in the data.</li>
+        <li><strong>Monthly cost uses a fixed 30-day multiplier</strong> (<code>price/hr × 24 × 30</code>), not actual days in the month. February projections will be slightly overstated.</li>
+        <li><strong>Single subscription only.</strong> The app reads from one <code>AZURE_SUBSCRIPTION_ID</code>. Multi-subscription setups require separate deployments.</li>
+        <li><strong>File share cost uses provisioned quota, not actual usage.</strong> Azure Files Premium bills for provisioned capacity, so this is correct for Premium tier but will overstate Standard tier shares.</li>
+        <li><strong>In-memory cache is single-replica.</strong> If the Container App scales beyond 1 replica, each instance has its own cache and will make independent ARM/Blob calls.</li>
+      </ul>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+const TAG_META = {
+  export:            { desc: 'Full 30-day billed total from export data. Most accurate — uses actual invoice charges.', acc: 'high' },
+  export_projected:  { desc: 'Fewer than 28 days of export data: (total_cost / days) × 30. Reliable once >7 days exist.', acc: 'medium' },
+  export_period:     { desc: 'Storage account with <28 days data shown as-is (not projected). Cumulative exports grow through the month.', acc: 'medium' },
+  export_hours:      { desc: 'VM with usage hours in export: (cost / hours) × 24 × 30. Better than linear projection for VMs with variable uptime.', acc: 'medium' },
+  export_last_day:   { desc: 'Last-day spike detected: last_day_cost × 30 used when it exceeds the projected window average. Catches storage shares that suddenly grew.', acc: 'medium' },
+  spot_rate:         { desc: 'Live spot price from Retail Prices API (or hardcoded fallback). Spot prices fluctuate; result is a point-in-time estimate.', acc: 'low' },
+  price_table:       { desc: 'On-demand retail price from Retail Prices API (or hardcoded fallback). Does not reflect RIs, AHUB, or EA/MCA discounts.', acc: 'low' },
+  files_rate:        { desc: 'Azure Files Premium: provisioned_quota_GiB × $/GiB/month. Correct for Premium tier; overstates Standard tier.', acc: 'medium' },
+  in_shares:         { desc: 'Storage account suppressed — its cost is already shown via individual file share rows to avoid double-counting.', acc: 'high' },
+  none:              { desc: 'No cost data available. Resource exists in ARM but has no export record and no known pricing.', acc: null },
+};
+
+const ACC_LABELS = { high: 'High', medium: 'Medium', low: 'Low (list price)' };
+const ACC_CLASS  = { high: 'acc-high', medium: 'acc-medium', low: 'acc-low' };
+
+function fmtAge(seconds) {
+  if (seconds === null || seconds === undefined) return '—';
+  if (seconds < 60)   return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
+}
+
+function fmtCount(n) {
+  if (n === null || n === undefined) return '—';
+  return n.toLocaleString();
+}
+
+async function loadDiagnostics() {
+  try {
+    const r = await fetch('/api/diagnostics');
+    const d = await r.json();
+
+    // Export cache
+    document.getElementById('blob-age').textContent = fmtAge(d.blob_cache_age_seconds);
+    const min = d.export_date_min || '—';
+    const max = d.export_date_max || '—';
+    const days = d.export_unique_days != null ? `${d.export_unique_days} unique days` : '';
+    document.getElementById('blob-range').textContent = min === max ? min : `${min} → ${max}  ${days}`;
+
+    // Live inventory
+    document.getElementById('live-age').textContent = fmtAge(d.live_cache_age_seconds);
+    document.getElementById('live-count').textContent =
+      d.live_resource_count != null ? `${fmtCount(d.live_resource_count)} resources` : 'not loaded yet';
+
+    // Calibration
+    if (d.calibration_factor != null) {
+      document.getElementById('calib-factor').textContent = d.calibration_factor.toFixed(3);
+      document.getElementById('calib-source').textContent =
+        `source: ${d.forecast_data_source || '—'}  ·  live $${(d.live_daily_rate_usd || 0).toFixed(2)}/day`;
+    } else {
+      document.getElementById('calib-factor').textContent = '—';
+      document.getElementById('calib-source').textContent = d.forecast_error || 'unavailable';
+    }
+
+    // Export rows
+    document.getElementById('export-rows').textContent = fmtCount(d.export_row_count);
+    document.getElementById('export-days').textContent =
+      d.export_unique_days != null ? `${d.export_unique_days} unique days` : '';
+
+    // Cost source tag table
+    const breakdown = d.cost_source_breakdown || {};
+    const tbody = document.getElementById('tag-tbody');
+    const tags = Object.keys(TAG_META);
+    // Include any tags from the live data not in our known list
+    Object.keys(breakdown).forEach(k => { if (!tags.includes(k)) tags.push(k); });
+
+    const rows = tags
+      .filter(tag => breakdown[tag] != null || TAG_META[tag])
+      .sort((a, b) => (breakdown[b] || 0) - (breakdown[a] || 0));
+
+    tbody.innerHTML = rows.map(tag => {
+      const meta  = TAG_META[tag] || { desc: 'Unknown tag.', acc: null };
+      const count = breakdown[tag] != null ? breakdown[tag] : '—';
+      const accHtml = meta.acc
+        ? `<span class="tag-accuracy ${ACC_CLASS[meta.acc]}">${ACC_LABELS[meta.acc]}</span>`
+        : '<span style="color:#334155;font-size:0.7rem">n/a</span>';
+      return `<tr>
+        <td><span class="tag-badge">${tag}</span></td>
+        <td><span class="tag-count">${count}</span></td>
+        <td class="tag-desc">${meta.desc}</td>
+        <td>${accHtml}</td>
+      </tr>`;
+    }).join('');
+
+  } catch (e) {
+    document.getElementById('blob-age').textContent = 'err';
+    document.getElementById('live-age').textContent = 'err';
+    document.getElementById('calib-factor').textContent = 'err';
+    document.getElementById('export-rows').textContent = 'err';
+    document.getElementById('tag-tbody').innerHTML =
+      `<tr><td colspan="4" class="error-val">Failed to load: ${e.message}</td></tr>`;
+  }
+}
+
+loadDiagnostics();
+</script>
+</body>
+</html>

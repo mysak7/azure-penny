@@ -312,6 +312,11 @@ async def live_view(request: Request):
     return templates.TemplateResponse("live.html", {"request": request, "is_admin": is_admin})
 
 
+@app.get("/guide", response_class=HTMLResponse, include_in_schema=False)
+async def guide_view(request: Request):
+    return templates.TemplateResponse("guide.html", {"request": request})
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["health"])
@@ -1000,6 +1005,57 @@ async def api_forecast(rg: str = "") -> JSONResponse:
     except Exception as exc:
         log.exception("Forecast endpoint failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/diagnostics", tags=["api"])
+async def api_diagnostics() -> JSONResponse:
+    now = time.monotonic()
+    result: dict = {}
+
+    # Export (blob/API) cache state
+    loaded_at = _cache.get("loaded_at", 0.0)
+    result["blob_cache_age_seconds"] = round(now - loaded_at) if loaded_at else None
+    df = _cache.get("df")
+    if df is not None and not df.empty:
+        result["export_row_count"] = len(df)
+        if "C_DATE" in df.columns:
+            result["export_date_min"] = str(df["C_DATE"].min())
+            result["export_date_max"] = str(df["C_DATE"].max())
+            result["export_unique_days"] = int(df["C_DATE"].nunique())
+    else:
+        result["export_row_count"] = 0
+
+    # Live inventory cache state
+    live_ts = _live_cache.get("ts", 0.0)
+    result["live_cache_age_seconds"] = round(now - live_ts) if live_ts else None
+    inv = _live_cache.get("inv")
+    result["live_resource_count"] = len(inv) if inv else None
+
+    # Forecast calibration state (uses cached data — fast if warm)
+    try:
+        fc = await _build_forecast("")
+        result["calibration_factor"] = fc["calibration_factor"]
+        result["forecast_data_source"] = fc["data_source"]
+        result["live_daily_rate_usd"] = fc["live_daily_rate_usd"]
+    except Exception as exc:
+        result["calibration_factor"] = None
+        result["forecast_error"] = str(exc)
+
+    # Cost source tag breakdown from live enriched resources
+    try:
+        resources = await _get_live_data()
+        source_counts: dict[str, int] = {}
+        for r in resources:
+            src = r.get("cost_source") or "none"
+            source_counts[src] = source_counts.get(src, 0) + 1
+        result["cost_source_breakdown"] = dict(
+            sorted(source_counts.items(), key=lambda x: x[1], reverse=True)
+        )
+    except Exception as exc:
+        result["cost_source_breakdown"] = {}
+        result["live_error"] = str(exc)
+
+    return JSONResponse(result)
 
 
 @app.get("/api/daily", tags=["api"])
