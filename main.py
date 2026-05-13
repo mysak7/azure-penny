@@ -166,8 +166,8 @@ async def _build_forecast(rg: str = "") -> dict:
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     month_str = today.strftime("%Y-%m")
 
-    df = await get_cached_dataframe()
-    df = _filter_rg(df, rg)
+    full_df = await get_cached_dataframe()
+    df = _filter_rg(full_df, rg)
     actual_points: list[dict] = []
     spent_so_far = 0.0
     per_rg_actual: dict[str, float] = {}
@@ -194,9 +194,27 @@ async def _build_forecast(rg: str = "") -> dict:
     per_rg_live: dict[str, float] = {}
 
     try:
-        resources = await _get_live_data()
-        if rg:
-            resources = [r for r in resources if (r.get("resource_group") or "").lower() == rg.lower()]
+        all_resources = await _get_live_data()
+
+        # Calibration must use global (all-RG) data: it represents subscription-level
+        # discounts/reservations, not per-RG ratios. Per-RG calibration breaks for hub
+        # RGs whose ARM resources have high list prices but whose costs appear under
+        # different RG names in the export.
+        all_live_monthly = sum(
+            (r.get("monthly_cost") or 0.0) for r in all_resources if (r.get("monthly_cost") or 0.0) > 0
+        )
+        all_live_daily = all_live_monthly / 30
+        if all_live_daily > 0 and not full_df.empty and "C_DATE" in full_df.columns and "C_COST" in full_df.columns:
+            cutoff_7 = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+            recent_all = full_df[full_df["C_DATE"] >= cutoff_7]
+            if not recent_all.empty:
+                actual_7_all = float(recent_all["C_COST"].sum())
+                raw = actual_7_all / (all_live_daily * 7)
+                calibration_factor = round(max(0.5, min(2.0, raw)), 3)
+
+        resources = all_resources if not rg else [
+            r for r in all_resources if (r.get("resource_group") or "").lower() == rg.lower()
+        ]
         live_monthly = 0.0
         for r in resources:
             mc = r.get("monthly_cost") or 0.0
@@ -206,14 +224,6 @@ async def _build_forecast(rg: str = "") -> dict:
                 if r_rg:
                     per_rg_live[r_rg] = per_rg_live.get(r_rg, 0.0) + mc
         live_daily_rate = live_monthly / 30
-
-        if live_daily_rate > 0 and not df.empty and "C_DATE" in df.columns and "C_COST" in df.columns:
-            cutoff_7 = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-            recent = df[df["C_DATE"] >= cutoff_7]
-            if not recent.empty:
-                actual_7 = float(recent["C_COST"].sum())
-                raw = actual_7 / (live_daily_rate * 7)
-                calibration_factor = round(max(0.5, min(2.0, raw)), 3)
     except Exception:
         data_source = "linear_fallback"
 
@@ -240,12 +250,12 @@ async def _build_forecast(rg: str = "") -> dict:
 
     combined: dict[str, float] = dict(per_rg_actual)
     if data_source == "hybrid":
-        for rg, monthly in per_rg_live.items():
+        for rg_name, monthly in per_rg_live.items():
             fwd = (monthly / 30) * calibration_factor * len(projected_points)
-            combined[rg] = combined.get(rg, 0.0) + fwd
+            combined[rg_name] = combined.get(rg_name, 0.0) + fwd
     elif days_elapsed > 0:
         scale = days_in_month / days_elapsed
-        combined = {rg: v * scale for rg, v in combined.items()}
+        combined = {rg_name: v * scale for rg_name, v in combined.items()}
 
     top_rgs = sorted(
         [
