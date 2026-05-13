@@ -238,13 +238,13 @@ async def _build_forecast(rg: str = "") -> dict:
             actual_points.append({"date": gap_day.strftime("%Y-%m-%d"), "cost_usd": 0.0})
             gap_day += timedelta(days=1)
 
-    # Project only truly future days (tomorrow onwards) — orange bars never appear over past dates.
+    # Project future days (tomorrow onwards) — orange bars never appear over past dates.
+    # Always generate even when daily_fwd == 0 so the chart spans the full month.
     projected_points: list[dict] = []
-    if daily_fwd > 0:
-        d = today + timedelta(days=1)
-        while d.month == today.month:
-            projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
-            d += timedelta(days=1)
+    d = today + timedelta(days=1)
+    while d.month == today.month:
+        projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
+        d += timedelta(days=1)
 
     # end_of_month projection covers billing lag + future (full window from last billed day).
     full_remaining_days = (date(today.year, today.month, days_in_month) - last_date).days
