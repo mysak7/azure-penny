@@ -521,18 +521,22 @@ function loadForecast() {
       document.getElementById('fc-meta').innerHTML =
         'Spent so far: ' + fmtCost(data.spent_so_far_usd) + '<br>' +
         'Daily rate: ' + fmtCost(data.live_daily_rate_usd) + '/day';
+      var noLive = data.live_daily_rate_usd === 0 && data.data_source !== 'live';
       document.getElementById('fc-source').textContent = data.data_source === 'live'
         ? 'Live resources \xb7 ' + fmtCost(data.live_daily_rate_usd) + '/day (ARM pricing)'
-        : 'Linear extrapolation from billing export';
+        : (noLive && getCurrentRg() ? 'No live resources \xb7 showing billed cost only' : 'Linear extrapolation from billing export');
       document.getElementById('fc-chart').innerHTML = buildForecastSvg(data.actual_points, data.projected_points);
-      if (data.top_rgs && data.top_rgs.length) {
+      var rgEl = document.getElementById('fc-rgs');
+      if (!getCurrentRg() && data.top_rgs && data.top_rgs.length) {
         var rows = data.top_rgs.map(function(rg) {
           return '<tr><td>' + escHtml(rg.name) + '</td>' +
             '<td style="font-family:monospace;text-align:right">' + fmtCost(rg.projected_usd) + '</td></tr>';
         }).join('');
-        document.getElementById('fc-rgs').innerHTML =
+        rgEl.innerHTML =
           '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:.4rem;">Top Resource Groups (Projected)</div>' +
           '<table class="fc-rg-table"><tr><th>Resource Group</th><th style="text-align:right">Projected Cost</th></tr>' + rows + '</table>';
+      } else {
+        rgEl.innerHTML = '';
       }
     })
     .catch(function(err) {

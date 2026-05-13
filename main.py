@@ -217,6 +217,10 @@ async def _build_forecast(rg: str = "") -> dict:
 
     if data_source == "live":
         daily_fwd = live_daily_rate
+    elif rg and live_daily_rate == 0:
+        # Specific RG selected, no live ARM resources found — nothing is running,
+        # so don't project future spend beyond what's already been billed.
+        daily_fwd = 0.0
     else:
         # Spread known spend over full elapsed calendar days to avoid inflated rates
         # when billing lags (e.g. only 2 billing data points 11 days into the month).
