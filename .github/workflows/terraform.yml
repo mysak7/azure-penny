@@ -99,11 +99,14 @@ jobs:
         if: steps.detect.outputs.env_name == 'prd'
         run: |
           cat > variables/prd.tfvars <<EOF
-          environment           = "prd"
-          location              = "eastus"
-          location_short        = "eus"
-          enable_cost_export    = true
-          billing_profile_id    = "${{ vars.BILLING_PROFILE_ID }}"
+          environment              = "prd"
+          location                 = "eastus"
+          location_short           = "eus"
+          enable_cost_export       = true
+          billing_profile_id       = "${{ vars.BILLING_PROFILE_ID }}"
+          cicd_principal_object_id = "${{ vars.CICD_PRINCIPAL_OBJECT_ID }}"
+          owner_email              = "${{ vars.OWNER_EMAIL }}"
+          custom_domain            = "${{ vars.CUSTOM_DOMAIN }}"
           tags = {
             project     = "penny"
             managed_by  = "terraform"
@@ -115,10 +118,13 @@ jobs:
         if: steps.detect.outputs.env_name == 'dev'
         run: |
           cat > variables/dev.tfvars <<EOF
-          environment        = "dev"
-          location           = "swedencentral"
-          location_short     = "sc"
-          enable_cost_export = false
+          environment              = "dev"
+          location                 = "swedencentral"
+          location_short           = "sc"
+          enable_cost_export       = false
+          cicd_principal_object_id = "${{ vars.CICD_PRINCIPAL_OBJECT_ID }}"
+          owner_email              = "${{ vars.OWNER_EMAIL }}"
+          custom_domain            = "${{ vars.DEV_CUSTOM_DOMAIN }}"
           tags = {
             project     = "penny"
             managed_by  = "terraform"
