@@ -35,7 +35,7 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
-    min_replicas = 1
+    min_replicas = var.always_on ? 1 : 0
     max_replicas = 1
 
     container {

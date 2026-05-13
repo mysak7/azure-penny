@@ -59,6 +59,12 @@ variable "owner_email" {
   type        = string
 }
 
+variable "always_on" {
+  description = "Set to true to keep 1 replica running at all times (no cold start). Set to false to scale to zero when idle (saves ~$30-35/mo)."
+  type        = bool
+  default     = true
+}
+
 variable "custom_domain" {
   description = "Optional custom hostname to bind to the Container App (e.g. penny.example.com). Requires a pre-existing CNAME pointing to the ACA environment. Leave empty to use the default *.azurecontainerapps.io hostname."
   type        = string
