@@ -17,6 +17,9 @@
     .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
     .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
     .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+    .help-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: none; border: 1px solid #334155; color: #64748b; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all .15s; margin-left: .25rem; flex-shrink: 0; }
+    .help-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+    .help-btn.active { border-color: #38bdf8; color: #38bdf8; background: #0c4a6e22; }
 
     /* Layout */
     .container { max-width: 1100px; margin: 0 auto; padding: 2rem; display: flex; flex-direction: column; gap: 2rem; }
@@ -109,8 +112,8 @@
     <a href="/manager"    class="nav-link">Manager</a>
     <a href="/technician" class="nav-link">Technician</a>
     <a href="/live"       class="nav-link">Live</a>
-    <a href="/guide"      class="nav-link active">Guide</a>
   </div>
+  <a href="/guide" class="help-btn active" title="Guide">?</a>
 </header>
 
 <div class="container">

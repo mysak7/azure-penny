@@ -17,6 +17,8 @@
     .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
     .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
     .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+    .help-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: none; border: 1px solid #334155; color: #64748b; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all .15s; margin-left: .25rem; flex-shrink: 0; }
+    .help-btn:hover { border-color: #38bdf8; color: #38bdf8; }
 
     /* RG filter dropdown */
     .rg-select-wrap { position: absolute; left: 50%; transform: translateX(-50%); top: calc(50% - 10px); display: flex; align-items: center; gap: .4rem; }
@@ -149,8 +151,8 @@
     <a href="/manager"    class="nav-link">Manager</a>
     <a href="/technician" class="nav-link">Technician</a>
     <a href="/live"       class="nav-link active">Live</a>
-    <a href="/guide"      class="nav-link">Guide</a>
   </div>
+  <a href="/guide" class="help-btn" title="Guide">?</a>
 </header>
 
 <div class="status-bar">
