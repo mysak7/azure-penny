@@ -253,7 +253,7 @@ async def _build_forecast(rg: str = "") -> dict:
         "end_of_month_usd": end_of_month,
         "spent_so_far_usd": spent_so_far,
         "live_daily_rate_usd": round(live_daily_rate, 4),
-        "calibration_factor": calibration_factor,
+        "calibration_factor": None,
         "data_source": data_source,
         "top_rgs": top_rgs,
         "days_remaining": days_remaining,
