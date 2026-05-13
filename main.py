@@ -191,8 +191,8 @@ async def _build_forecast(rg: str = "") -> dict:
     # For the global (all-RG) forecast: actual billing for elapsed days + live ARM
     # pricing for remaining days. This captures resources spun up/down after the
     # billing export cutoff without needing calibration.
-    # For per-RG: live ARM rates are unreliable (hub RG costs land under different
-    # RG names in billing), so we always use linear extrapolation from billing data.
+    # Both global and per-RG forecasts use live ARM pricing when available —
+    # billing history can include shared/pass-through costs that inflate per-RG baselines.
     data_source = "linear"
     live_daily_rate = 0.0
     try:
@@ -204,7 +204,7 @@ async def _build_forecast(rg: str = "") -> dict:
             (r.get("monthly_cost") or 0.0) for r in filtered_resources if (r.get("monthly_cost") or 0.0) > 0
         )
         live_daily_rate = live_monthly / 30
-        if not rg and live_daily_rate > 0:
+        if live_daily_rate > 0:
             data_source = "live"
     except Exception:
         pass
