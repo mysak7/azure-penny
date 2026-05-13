@@ -212,18 +212,20 @@ async def _build_forecast(rg: str = "") -> dict:
                 raw = actual_7_all / (all_live_daily * 7)
                 calibration_factor = round(max(0.5, min(2.0, raw)), 3)
 
-        resources = all_resources if not rg else [
-            r for r in all_resources if (r.get("resource_group") or "").lower() == rg.lower()
-        ]
-        live_monthly = 0.0
-        for r in resources:
-            mc = r.get("monthly_cost") or 0.0
-            if mc > 0:
-                live_monthly += mc
-                r_rg = (r.get("resource_group") or "").lower()
-                if r_rg:
-                    per_rg_live[r_rg] = per_rg_live.get(r_rg, 0.0) + mc
-        live_daily_rate = live_monthly / 30
+        # For per-RG forecasts, ARM pricing is unreliable: hub RGs carry expensive
+        # resources (gateways, firewalls) whose billing costs land in other RGs.
+        # Only use live rate for the global (all-RG) forecast; per-RG falls back
+        # to linear extrapolation from the actual billing export.
+        if not rg:
+            live_monthly = 0.0
+            for r in all_resources:
+                mc = r.get("monthly_cost") or 0.0
+                if mc > 0:
+                    live_monthly += mc
+                    r_rg = (r.get("resource_group") or "").lower()
+                    if r_rg:
+                        per_rg_live[r_rg] = per_rg_live.get(r_rg, 0.0) + mc
+            live_daily_rate = live_monthly / 30
     except Exception:
         data_source = "linear_fallback"
 
