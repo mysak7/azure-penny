@@ -195,6 +195,7 @@ async def _build_forecast(rg: str = "") -> dict:
     # billing history can include shared/pass-through costs that inflate per-RG baselines.
     data_source = "linear"
     live_daily_rate = 0.0
+    per_rg_live_monthly: dict[str, float] = {}
     try:
         all_resources = await _get_live_data()
         filtered_resources = all_resources if not rg else [
@@ -206,6 +207,11 @@ async def _build_forecast(rg: str = "") -> dict:
         live_daily_rate = live_monthly / 30
         if live_daily_rate > 0:
             data_source = "live"
+            for r in filtered_resources:
+                rg_name = (r.get("resource_group") or "").strip()
+                monthly = r.get("monthly_cost") or 0.0
+                if rg_name and monthly > 0:
+                    per_rg_live_monthly[rg_name] = per_rg_live_monthly.get(rg_name, 0.0) + monthly
     except Exception:
         pass
 
@@ -230,8 +236,13 @@ async def _build_forecast(rg: str = "") -> dict:
 
     end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
 
+    # Per-RG projections use the same ARM rates as the overall forecast so the numbers sum correctly.
     combined: dict[str, float] = {}
-    if days_elapsed > 0:
+    if data_source == "live" and per_rg_live_monthly:
+        for rg_name, live_monthly_rg in per_rg_live_monthly.items():
+            actual_so_far = per_rg_actual.get(rg_name, 0.0)
+            combined[rg_name] = actual_so_far + (live_monthly_rg / 30) * len(projected_points)
+    elif days_elapsed > 0:
         daily_per_rg = {name: v / days_elapsed for name, v in per_rg_actual.items()}
         for name, actual_so_far in per_rg_actual.items():
             combined[name] = actual_so_far + daily_per_rg[name] * len(projected_points)
