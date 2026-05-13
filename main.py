@@ -212,24 +212,27 @@ async def _build_forecast(rg: str = "") -> dict:
     if data_source == "live":
         daily_fwd = live_daily_rate
     else:
-        daily_fwd = (spent_so_far / billing_days) if billing_days > 0 else 0.0
+        # Spread known spend over full elapsed calendar days to avoid inflated rates
+        # when billing lags (e.g. only 2 billing data points 11 days into the month).
+        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
 
     last_date = (
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
         else today.replace(day=1) - timedelta(days=1)
     )
+    # Project from last billing date all the way to end of month (covers billing lag gap
+    # plus future days). days_remaining is for display only and must not limit this range.
     projected_points: list[dict] = []
-    for i in range(1, days_remaining + 1):
-        d = last_date + timedelta(days=i)
-        if d.month != today.month:
-            break
+    d = last_date + timedelta(days=1)
+    while d.month == today.month:
         projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
+        d += timedelta(days=1)
 
     end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
 
     combined: dict[str, float] = {}
-    if billing_days > 0:
-        daily_per_rg = {name: v / billing_days for name, v in per_rg_actual.items()}
+    if days_elapsed > 0:
+        daily_per_rg = {name: v / days_elapsed for name, v in per_rg_actual.items()}
         for name, actual_so_far in per_rg_actual.items():
             combined[name] = actual_so_far + daily_per_rg[name] * len(projected_points)
 
