@@ -185,12 +185,12 @@ async def _build_forecast(rg: str = "") -> dict:
                     if v > 0 and str(k).strip()
                 }
 
-    days_elapsed = len(actual_points) if actual_points else today.day
+    # billing_days = how many days of billing data we actually have (lags by 1-3 days).
+    # days_elapsed = calendar position in the month (always today.day).
+    billing_days = len(actual_points) if actual_points else today.day
+    days_elapsed = today.day
     days_remaining = days_in_month - days_elapsed
 
-    # For the global (all-RG) forecast: actual billing for elapsed days + live ARM
-    # pricing for remaining days. This captures resources spun up/down after the
-    # billing export cutoff without needing calibration.
     # Both global and per-RG forecasts use live ARM pricing when available —
     # billing history can include shared/pass-through costs that inflate per-RG baselines.
     data_source = "linear"
@@ -212,7 +212,7 @@ async def _build_forecast(rg: str = "") -> dict:
     if data_source == "live":
         daily_fwd = live_daily_rate
     else:
-        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
+        daily_fwd = (spent_so_far / billing_days) if billing_days > 0 else 0.0
 
     last_date = (
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
@@ -227,13 +227,9 @@ async def _build_forecast(rg: str = "") -> dict:
 
     end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
 
-    # Always use linear extrapolation from actual billing data for per-RG breakdown.
-    # ARM live prices are unreliable per-RG (hub RGs have high-priced resources
-    # whose costs land in other RGs in billing), causing individual RG projections
-    # to exceed the global total.
     combined: dict[str, float] = {}
-    if days_elapsed > 0:
-        daily_per_rg = {name: v / days_elapsed for name, v in per_rg_actual.items()}
+    if billing_days > 0:
+        daily_per_rg = {name: v / billing_days for name, v in per_rg_actual.items()}
         for name, actual_so_far in per_rg_actual.items():
             combined[name] = actual_so_far + daily_per_rg[name] * len(projected_points)
 
