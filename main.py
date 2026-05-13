@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
-from live_resources import _get_live_data, _live_cache, _live_lock, list_resource_groups
+from live_resources import _get_live_data, _live_cache, _live_lock, fetch_resource_metrics, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
 # ---------------------------------------------------------------------------
@@ -792,6 +792,20 @@ async def api_live_reload() -> JSONResponse:
         return JSONResponse({"status": "reloaded", "count": len(resources)})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/resource-metrics", tags=["api"])
+async def api_resource_metrics(resource_id: str, hours: int = 24) -> JSONResponse:
+    """Fetch Azure Monitor metrics for a single ARM resource."""
+    if not resource_id.lower().startswith("/subscriptions/"):
+        raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
+    try:
+        data = await asyncio.get_event_loop().run_in_executor(
+            None, fetch_resource_metrics, resource_id, hours
+        )
+        return JSONResponse(data)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 # ── Infrastructure mutation ───────────────────────────────────────────────────

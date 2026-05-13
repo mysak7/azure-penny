@@ -131,6 +131,29 @@
     .btn-row-destroy { background: none; border: 1px solid #7f1d1d; color: #f87171; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .btn-row-destroy:hover { background: #7f1d1d; color: #fff; }
 
+    /* Per-row monitor button */
+    .btn-row-monitor { background: none; border: 1px solid #1e3a5a; color: #38bdf8; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .btn-row-monitor:hover { background: #0c4a6e44; border-color: #38bdf8; }
+
+    /* Monitoring modal */
+    .mon-modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; max-width: 760px; width: 95%; max-height: 90vh; overflow-y: auto; box-shadow: 0 12px 48px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 1rem; }
+    .mon-modal h2 { color: #38bdf8; font-size: 1rem; margin: 0; display: flex; align-items: center; gap: .5rem; }
+    .mon-modal h2 span { color: #64748b; font-weight: 400; font-size: 0.82rem; }
+    .mon-timespan { display: flex; gap: .3rem; }
+    .mon-ts-btn { background: none; border: 1px solid #334155; color: #64748b; font-size: 0.72rem; padding: .2rem .55rem; border-radius: 4px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .mon-ts-btn.active { border-color: #38bdf8; color: #38bdf8; background: #0c4a6e22; }
+    .mon-ts-btn:hover:not(.active) { border-color: #475569; color: #94a3b8; }
+    .mon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .75rem; }
+    .mon-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .75rem; display: flex; flex-direction: column; gap: .4rem; }
+    .mon-card-title { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .mon-card-value { font-family: monospace; font-size: 1rem; color: #e2e8f0; font-weight: 600; }
+    .mon-card-stats { display: flex; gap: .75rem; font-size: 0.68rem; color: #475569; }
+    .mon-card-stats span { color: #64748b; }
+    .mon-chart { overflow: visible; display: block; }
+    .mon-loading { color: #64748b; font-size: 0.82rem; text-align: center; padding: 2rem 0; }
+    .mon-error { color: #f87171; font-size: 0.8rem; padding: .75rem; background: #1c0a0a; border: 1px solid #7f1d1d; border-radius: 6px; }
+    .mon-nodata { color: #475569; font-size: 0.75rem; font-style: italic; }
+
     /* Delete All button */
     .btn-delete-all { background: #7f1d1d; border: 1px solid #991b1b; color: #fca5a5; font-size: 0.8rem; padding: .3rem .85rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all .15s; white-space: nowrap; }
     .btn-delete-all:hover { background: #991b1b; color: #fff; }
@@ -234,6 +257,25 @@
 </div>
 {% endif %}
 
+<!-- Monitoring Modal -->
+<div class="modal-overlay" id="mon-modal">
+  <div class="mon-modal">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+      <h2 id="mon-title">Monitoring <span id="mon-subtitle"></span></h2>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+        <div class="mon-timespan">
+          <button class="mon-ts-btn active" data-h="1"  onclick="setMonTimespan(1)">1h</button>
+          <button class="mon-ts-btn"        data-h="6"  onclick="setMonTimespan(6)">6h</button>
+          <button class="mon-ts-btn"        data-h="24" onclick="setMonTimespan(24)">24h</button>
+          <button class="mon-ts-btn"        data-h="168" onclick="setMonTimespan(168)">7d</button>
+        </div>
+        <button class="btn-modal-cancel" style="padding:.2rem .65rem;font-size:0.8rem" onclick="closeMonModal()">✕</button>
+      </div>
+    </div>
+    <div id="mon-body"><div class="mon-loading">Loading metrics…</div></div>
+  </div>
+</div>
+
 <!-- Destroy Resource Modal -->
 <div class="modal-overlay" id="destroy-modal">
   <div class="modal">
@@ -259,7 +301,16 @@
 </div>
 
 <script>
-var SHOW_DELETE = {{ is_admin | tojson }}; // true only for penny-admin role holders
+var SHOW_DELETE  = {{ is_admin | tojson }}; // true only for penny-admin role holders
+var MONITORED_TYPES = new Set([
+  'microsoft.compute/virtualmachines',
+  'microsoft.compute/virtualmachinescalesets',
+  'microsoft.app/containerapps',
+  'microsoft.containerservice/managedclusters',
+  'microsoft.web/sites',
+  'microsoft.storage/storageaccounts',
+  'microsoft.cache/redis',
+]);
 var allResources = [];
 var sortCol = 'monthly_cost';
 var sortDir = -1; // -1 desc, +1 asc
@@ -481,7 +532,8 @@ function renderTable(rows) {
     '<th id="th-status"         onclick="setSort(\'status\')">Status</th>' +
     '<th id="th-private_ip"     onclick="setSort(\'private_ip\')">IP</th>' +
     '<th id="th-monthly_cost"   onclick="setSort(\'monthly_cost\')" style="text-align:right">Monthly Cost</th>' +
-    (SHOW_DELETE ? '<th style="width:70px"></th>' : '') +
+    '<th style="width:60px"></th>' +
+    (SHOW_DELETE ? '<th style="width:60px"></th>' : '') +
     '</tr></thead>';
 
   var tbody = '<tbody>' + rows.map(function(r) {
@@ -494,9 +546,14 @@ function renderTable(rows) {
         '<td></td>' +
         '<td class="dim">&mdash;</td>' +
         '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
+        '<td></td>' +
         (SHOW_DELETE ? '<td></td>' : '') +
         '</tr>';
     }
+    var hasMonitor = r.id && MONITORED_TYPES.has((r.type || '').toLowerCase());
+    var monitorBtn = hasMonitor
+      ? '<button class="btn-row-monitor" onclick=\'openMonModal(' + JSON.stringify({id: r.id, name: r.name, type: r.type}) + ')\' title="Monitoring">📊</button>'
+      : '';
     var destroyBtn = (SHOW_DELETE && r.id)
       ? '<button class="btn-row-destroy" onclick=\'openDestroyModal(' + JSON.stringify(r) + ')\'>🗑️</button>'
       : '';
@@ -527,6 +584,7 @@ function renderTable(rows) {
       '<td>' + statusBadge(r.status, r.category) + '</td>' +
       '<td>' + ipCell + '</td>' +
       '<td style="text-align:right">' + costCell(r.monthly_cost, r.cost_source, r) + '</td>' +
+      '<td style="text-align:center">' + monitorBtn + '</td>' +
       (SHOW_DELETE ? '<td style="text-align:center">' + destroyBtn + '</td>' : '') +
       '</tr>';
   }).join('') + '</tbody>';
@@ -580,6 +638,132 @@ function reloadLive() {
       loadResources(); // still try to show cached data
     });
 }
+
+// ── Monitoring modal ──────────────────────────────────────────────────────────
+var _monResource = null;
+var _monHours = 1;
+
+function openMonModal(r) {
+  _monResource = r;
+  _monHours = 1;
+  document.getElementById('mon-title').innerHTML = '📊 Monitoring <span>' + escHtml(r.name) + '</span>';
+  document.getElementById('mon-subtitle').textContent = '';
+  document.querySelectorAll('.mon-ts-btn').forEach(function(b) {
+    b.classList.toggle('active', Number(b.dataset.h) === _monHours);
+  });
+  document.getElementById('mon-modal').classList.add('active');
+  loadMonMetrics();
+}
+
+function closeMonModal() {
+  document.getElementById('mon-modal').classList.remove('active');
+  _monResource = null;
+}
+
+function setMonTimespan(h) {
+  _monHours = h;
+  document.querySelectorAll('.mon-ts-btn').forEach(function(b) {
+    b.classList.toggle('active', Number(b.dataset.h) === h);
+  });
+  loadMonMetrics();
+}
+
+function loadMonMetrics() {
+  if (!_monResource) return;
+  document.getElementById('mon-body').innerHTML = '<div class="mon-loading">Loading metrics…</div>';
+  fetch('/api/resource-metrics?resource_id=' + encodeURIComponent(_monResource.id) + '&hours=' + _monHours)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        document.getElementById('mon-body').innerHTML = '<div class="mon-error">' + escHtml(data.error) + '</div>';
+        return;
+      }
+      renderMonMetrics(data.metrics || []);
+    })
+    .catch(function(err) {
+      document.getElementById('mon-body').innerHTML = '<div class="mon-error">Request failed: ' + escHtml(err.message) + '</div>';
+    });
+}
+
+function renderMonMetrics(metrics) {
+  if (!metrics.length) {
+    document.getElementById('mon-body').innerHTML = '<div class="mon-loading">No metrics returned for this resource.</div>';
+    return;
+  }
+
+  var cards = metrics.map(function(m) {
+    var vals = (m.data || []).map(function(d) { return d.v; }).filter(function(v) { return v !== null && v !== undefined; });
+    var current = vals.length ? vals[vals.length - 1] : null;
+    var avg = vals.length ? vals.reduce(function(a, b) { return a + b; }, 0) / vals.length : null;
+    var maxV = vals.length ? Math.max.apply(null, vals) : null;
+    var minV = vals.length ? Math.min.apply(null, vals) : null;
+
+    return '<div class="mon-card">' +
+      '<div class="mon-card-title">' + escHtml(m.label || m.name) + '</div>' +
+      '<div class="mon-card-value">' + (current !== null ? fmtMetric(current, m.unit) : '<span class="mon-nodata">—</span>') + '</div>' +
+      monSparkline(m.data || [], m.unit) +
+      '<div class="mon-card-stats">' +
+        (minV !== null ? '<span>Min: ' + fmtMetric(minV, m.unit) + '</span>' : '') +
+        (avg  !== null ? '<span>Avg: ' + fmtMetric(avg,  m.unit) + '</span>' : '') +
+        (maxV !== null ? '<span>Max: ' + fmtMetric(maxV, m.unit) + '</span>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('mon-body').innerHTML = '<div class="mon-grid">' + cards + '</div>';
+}
+
+function monSparkline(data, unit) {
+  var pts = data.filter(function(d) { return d.v !== null && d.v !== undefined; });
+  if (pts.length < 2) return '<div style="height:40px;display:flex;align-items:center"><span class="mon-nodata">no data</span></div>';
+
+  var W = 200, H = 40;
+  var vals = pts.map(function(d) { return d.v; });
+  var minV = Math.min.apply(null, vals);
+  var maxV = Math.max.apply(null, vals);
+  var range = maxV - minV || 1;
+  var color = '#38bdf8';
+  if (unit === '%') color = vals[vals.length-1] > 80 ? '#f87171' : vals[vals.length-1] > 50 ? '#fbbf24' : '#4ade80';
+
+  var coords = pts.map(function(d, i) {
+    var x = Math.round((i / (pts.length - 1)) * W);
+    var y = Math.round(H - ((d.v - minV) / range) * (H - 4) - 2);
+    return x + ',' + y;
+  });
+  var pathD = 'M' + coords.join(' L');
+  var areaD = 'M0,' + H + ' L' + coords.join(' L') + ' L' + W + ',' + H + ' Z';
+
+  return '<svg class="mon-chart" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' +
+    '<defs><linearGradient id="mg-' + Math.random().toString(36).slice(2) + '" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="' + color + '" stop-opacity="0.25"/>' +
+    '<stop offset="100%" stop-color="' + color + '" stop-opacity="0.03"/>' +
+    '</linearGradient></defs>' +
+    '<path d="' + areaD + '" fill="' + color + '" fill-opacity="0.15"/>' +
+    '<path d="' + pathD + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '</svg>';
+}
+
+function fmtMetric(v, unit) {
+  if (v === null || v === undefined) return '—';
+  var n = Number(v);
+  if (unit === '%')      return n.toFixed(1) + '%';
+  if (unit === 'ncores') return (n / 1e6).toFixed(0) + ' mcores';
+  if (unit === 'B' || unit === 'B/s') {
+    var suffix = unit === 'B/s' ? '/s' : '';
+    if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB' + suffix;
+    if (n >= 1048576)    return (n / 1048576).toFixed(1) + ' MB' + suffix;
+    if (n >= 1024)       return (n / 1024).toFixed(1) + ' KB' + suffix;
+    return n.toFixed(0) + ' B' + suffix;
+  }
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return n % 1 === 0 ? n.toString() : n.toFixed(2);
+}
+
+document.getElementById('mon-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeMonModal();
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtCost(v) {

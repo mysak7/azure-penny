@@ -22,6 +22,14 @@ except ImportError:
     StorageManagementClient = None  # type: ignore[assignment,misc]
     _HAS_STORAGE_MGMT = False
 
+try:
+    from azure.monitor.query import MetricsQueryClient, MetricAggregationType
+    _HAS_MONITOR = True
+except ImportError:
+    MetricsQueryClient = None  # type: ignore[assignment,misc]
+    MetricAggregationType = None  # type: ignore[assignment]
+    _HAS_MONITOR = False
+
 from config import AZURE_CLIENT_ID, AZURE_SUBSCRIPTION_ID, LIVE_CACHE_TTL, log
 from storage import get_cached_dataframe
 
@@ -62,6 +70,129 @@ def _get_storage_mgmt_client():
         credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
         _storage_mgmt_client = StorageManagementClient(credential, AZURE_SUBSCRIPTION_ID)
     return _storage_mgmt_client
+
+
+_monitor_client = None
+
+
+def _get_monitor_client():
+    global _monitor_client
+    if _monitor_client is None:
+        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+        _monitor_client = MetricsQueryClient(credential)
+    return _monitor_client
+
+
+# (metric_name, aggregation, unit, friendly_label)
+_RESOURCE_METRICS: dict[str, list[tuple[str, str, str, str]]] = {
+    "microsoft.compute/virtualmachines": [
+        ("Percentage CPU",       "Average", "%",   "CPU"),
+        ("Network In Total",     "Total",   "B",   "Net In"),
+        ("Network Out Total",    "Total",   "B",   "Net Out"),
+        ("Disk Read Bytes/sec",  "Average", "B/s", "Disk Read"),
+        ("Disk Write Bytes/sec", "Average", "B/s", "Disk Write"),
+    ],
+    "microsoft.compute/virtualmachinescalesets": [
+        ("Percentage CPU",   "Average", "%", "CPU"),
+        ("Network In Total", "Total",   "B", "Net In"),
+        ("Network Out Total","Total",   "B", "Net Out"),
+    ],
+    "microsoft.app/containerapps": [
+        ("CpuUsageNanoCores",    "Average", "ncores", "CPU"),
+        ("MemoryWorkingSetBytes","Average", "B",      "Memory"),
+        ("Requests",             "Count",   "",       "Requests"),
+        ("RestartCount",         "Count",   "",       "Restarts"),
+    ],
+    "microsoft.containerservice/managedclusters": [
+        ("node_cpu_usage_percentage",          "Average", "%", "CPU"),
+        ("node_memory_working_set_percentage", "Average", "%", "Memory"),
+    ],
+    "microsoft.web/sites": [
+        ("CpuPercentage",   "Average", "%", "CPU"),
+        ("MemoryWorkingSet","Average", "B", "Memory"),
+        ("Requests",        "Total",   "",  "Requests"),
+        ("Http5xx",         "Total",   "",  "5xx Errors"),
+    ],
+    "microsoft.storage/storageaccounts": [
+        ("Transactions", "Total",   "",  "Transactions"),
+        ("Ingress",      "Total",   "B", "Ingress"),
+        ("Egress",       "Total",   "B", "Egress"),
+        ("UsedCapacity", "Average", "B", "Capacity"),
+    ],
+    "microsoft.cache/redis": [
+        ("connectedclients","Average", "",  "Connections"),
+        ("serverLoad",      "Average", "%", "Server Load"),
+        ("usedmemory",      "Average", "B", "Memory Used"),
+    ],
+}
+
+# Resource types that have monitoring metrics
+MONITORED_TYPES: frozenset[str] = frozenset(_RESOURCE_METRICS)
+
+
+def fetch_resource_metrics(resource_id: str, hours: int = 24) -> dict:
+    if not _HAS_MONITOR:
+        return {"error": "azure-monitor-query is not installed"}
+
+    parts = resource_id.lower().split("/providers/")
+    if len(parts) < 2:
+        return {"error": "Cannot parse resource type from resource ID"}
+
+    segs = parts[-1].split("/")
+    rtype = segs[0] + "/" + segs[1] if len(segs) >= 2 else segs[0]
+
+    metric_defs = _RESOURCE_METRICS.get(rtype)
+    if not metric_defs:
+        return {"error": f"No metrics configured for type: {rtype}"}
+
+    agg_map = {
+        "Average": MetricAggregationType.AVERAGE,
+        "Total":   MetricAggregationType.TOTAL,
+        "Count":   MetricAggregationType.COUNT,
+        "Maximum": MetricAggregationType.MAXIMUM,
+        "Minimum": MetricAggregationType.MINIMUM,
+    }
+    aggregations = list({agg_map[m[1]] for m in metric_defs if m[1] in agg_map})
+    metric_names = [m[0] for m in metric_defs]
+    def_by_name = {m[0].lower(): m for m in metric_defs}
+
+    try:
+        client = _get_monitor_client()
+        result = client.query_resource(
+            resource_id,
+            metric_names=metric_names,
+            timespan=timedelta(hours=hours),
+            granularity=timedelta(hours=1 if hours <= 24 else 6),
+            aggregations=aggregations,
+        )
+    except Exception as exc:
+        log.warning("Metrics fetch error for %s: %s", resource_id, exc)
+        return {"error": str(exc)}
+
+    out = []
+    for metric in result.metrics:
+        mdef = def_by_name.get(metric.name.lower())
+        if not mdef:
+            continue
+        _, agg_type, unit, label = mdef
+
+        ts_data = []
+        for ts in metric.timeseries:
+            for dp in ts.data:
+                val = None
+                for attr in (agg_type.lower(), "average", "total", "count", "maximum", "minimum"):
+                    v = getattr(dp, attr, None)
+                    if v is not None:
+                        val = v
+                        break
+                ts_data.append({
+                    "t": dp.timestamp.isoformat() if dp.timestamp else None,
+                    "v": round(float(val), 4) if val is not None else None,
+                })
+
+        out.append({"name": metric.name, "label": label, "unit": unit, "data": ts_data})
+
+    return {"metrics": out, "hours": hours, "resource_id": resource_id}
 
 
 # ---------------------------------------------------------------------------
