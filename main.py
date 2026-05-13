@@ -230,28 +230,36 @@ async def _build_forecast(rg: str = "") -> dict:
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
         else today.replace(day=1) - timedelta(days=1)
     )
-    # Project from last billing date to end of month (covers billing lag + future days).
-    # Skip entirely when daily_fwd == 0 (ghost RG or no spend) — avoids orange bars
-    # appearing over already-elapsed days when there is nothing left to project.
+    # Fill billing-lag gap (days after last billed date up to today) with $0 actual points
+    # so the chart always spans the full elapsed period without fake orange bars over the past.
+    if actual_points:
+        gap_day = last_date + timedelta(days=1)
+        while gap_day <= today and gap_day.month == today.month:
+            actual_points.append({"date": gap_day.strftime("%Y-%m-%d"), "cost_usd": 0.0})
+            gap_day += timedelta(days=1)
+
+    # Project only truly future days (tomorrow onwards) — orange bars never appear over past dates.
     projected_points: list[dict] = []
     if daily_fwd > 0:
-        d = last_date + timedelta(days=1)
+        d = today + timedelta(days=1)
         while d.month == today.month:
             projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
             d += timedelta(days=1)
 
-    end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
+    # end_of_month projection covers billing lag + future (full window from last billed day).
+    full_remaining_days = (date(today.year, today.month, days_in_month) - last_date).days
+    end_of_month = round(spent_so_far + daily_fwd * full_remaining_days, 2)
 
-    # Per-RG projections use the same ARM rates as the overall forecast so the numbers sum correctly.
+    # Per-RG projections also use full_remaining_days so the totals stay consistent.
     combined: dict[str, float] = {}
     if data_source == "live" and per_rg_live_monthly:
         for rg_name, live_monthly_rg in per_rg_live_monthly.items():
             actual_so_far = per_rg_actual.get(rg_name, 0.0)
-            combined[rg_name] = actual_so_far + (live_monthly_rg / 30) * len(projected_points)
+            combined[rg_name] = actual_so_far + (live_monthly_rg / 30) * full_remaining_days
     elif days_elapsed > 0:
         daily_per_rg = {name: v / days_elapsed for name, v in per_rg_actual.items()}
         for name, actual_so_far in per_rg_actual.items():
-            combined[name] = actual_so_far + daily_per_rg[name] * len(projected_points)
+            combined[name] = actual_so_far + daily_per_rg[name] * full_remaining_days
 
     top_rgs = sorted(
         [
