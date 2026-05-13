@@ -188,46 +188,25 @@ async def _build_forecast(rg: str = "") -> dict:
     days_elapsed = len(actual_points) if actual_points else today.day
     days_remaining = days_in_month - days_elapsed
 
-    data_source = "hybrid"
+    # Always extrapolate from actual billing data. The hybrid approach (ARM live
+    # prices + calibration) was causing the global forecast to show 140€ while a
+    # single RG (sc-hub) showed 697€ — impossible. The calibration was broken
+    # because the export lags 3-5 days, so the 7-day window had too little data
+    # and the factor always clamped to 0.5, making the global total unrealistically
+    # low. Linear extrapolation is honest and guarantees per-RG ≤ global.
+    data_source = "linear"
     live_daily_rate = 0.0
     calibration_factor = 1.0
     try:
         all_resources = await _get_live_data()
-
-        # Calibration must use global (all-RG) data: it represents subscription-level
-        # discounts/reservations, not per-RG ratios. Per-RG calibration breaks for hub
-        # RGs whose ARM resources have high list prices but whose costs appear under
-        # different RG names in the export.
-        all_live_monthly = sum(
+        live_monthly = sum(
             (r.get("monthly_cost") or 0.0) for r in all_resources if (r.get("monthly_cost") or 0.0) > 0
         )
-        all_live_daily = all_live_monthly / 30
-        if all_live_daily > 0 and not full_df.empty and "C_DATE" in full_df.columns and "C_COST" in full_df.columns:
-            cutoff_7 = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-            recent_all = full_df[full_df["C_DATE"] >= cutoff_7]
-            if not recent_all.empty:
-                actual_7_all = float(recent_all["C_COST"].sum())
-                raw = actual_7_all / (all_live_daily * 7)
-                calibration_factor = round(max(0.5, min(2.0, raw)), 3)
-
-        # Only use live ARM rate for the global (all-RG) forecast.
-        # Per-RG live rates are unreliable: hub RGs have expensive ARM resources
-        # (firewalls, gateways) whose billing costs land in other RGs.
-        if not rg:
-            live_monthly = sum(
-                (r.get("monthly_cost") or 0.0) for r in all_resources if (r.get("monthly_cost") or 0.0) > 0
-            )
-            live_daily_rate = live_monthly / 30
+        live_daily_rate = live_monthly / 30
     except Exception:
-        data_source = "linear_fallback"
+        pass
 
-    if data_source == "hybrid" and live_daily_rate <= 0:
-        data_source = "linear_fallback"
-
-    if data_source == "hybrid":
-        daily_fwd = live_daily_rate * calibration_factor
-    else:
-        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
+    daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
 
     last_date = (
         date.fromisoformat(actual_points[-1]["date"]) if actual_points

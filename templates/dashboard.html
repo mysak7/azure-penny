@@ -521,9 +521,7 @@ function loadForecast() {
       document.getElementById('fc-meta').innerHTML =
         'Spent so far: ' + fmtCost(data.spent_so_far_usd) + '<br>' +
         'Daily rate: ' + fmtCost(data.live_daily_rate_usd) + '/day';
-      document.getElementById('fc-source').textContent = data.data_source === 'hybrid'
-        ? 'Live-calibrated (factor: ' + data.calibration_factor.toFixed(2) + ')'
-        : 'Linear extrapolation — live data unavailable';
+      document.getElementById('fc-source').textContent = 'Linear extrapolation from billing export';
       document.getElementById('fc-chart').innerHTML = buildForecastSvg(data.actual_points, data.projected_points);
       if (data.top_rgs && data.top_rgs.length) {
         var rows = data.top_rgs.map(function(rg) {
