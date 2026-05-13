@@ -52,11 +52,15 @@ variable "billing_profile_id" {
 variable "cicd_principal_object_id" {
   description = "Object ID of the service principal used by CI/CD (GitHub Actions OIDC) to push images to ACR."
   type        = string
-  default     = "5bcc93c5-b6e3-4a5c-91cb-3defb9254151"
 }
 
 variable "owner_email" {
   description = "Email address of the user granted access via Easy Auth. Invited as a guest if not already in the tenant."
   type        = string
-  default     = "michal.burdik@gmail.com"
+}
+
+variable "custom_domain" {
+  description = "Optional custom hostname to bind to the Container App (e.g. penny.example.com). Requires a pre-existing CNAME pointing to the ACA environment. Leave empty to use the default *.azurecontainerapps.io hostname."
+  type        = string
+  default     = ""
 }

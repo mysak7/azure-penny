@@ -1,0 +1,29 @@
+# azure-penny — Terraform variable values
+# Copy to terraform.tfvars and fill in your values.
+# terraform.tfvars is git-ignored; never commit it.
+
+# Azure subscription to deploy into
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Azure region (default: swedencentral)
+# location       = "swedencentral"
+# location_short = "sc"
+
+# Object ID of the service principal used by GitHub Actions OIDC to push to ACR.
+# Find it: az ad sp show --id <client-id> --query id -o tsv
+cicd_principal_object_id = "00000000-0000-0000-0000-000000000000"
+
+# Email of the first user to invite and grant penny-admin access.
+owner_email = "you@example.com"
+
+# Optional: custom hostname to bind (requires CNAME to ACA environment beforehand).
+# Leave empty to use the default *.azurecontainerapps.io hostname.
+# custom_domain = "penny.example.com"
+
+# Optional: full billing profile resource ID for Cost Management exports.
+# Required when enable_cost_export = true.
+# Find it: az billing profile list --account-name <billing-account>
+# billing_profile_id = "/providers/Microsoft.Billing/billingAccounts/.../billingProfiles/..."
+
+# Set to false for trial or dev subscriptions that don't support Cost Management exports.
+# enable_cost_export = false

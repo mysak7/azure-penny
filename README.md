@@ -1,6 +1,35 @@
 # azure-penny
 
+[![CI](https://github.com/mysak7/azure-penny/actions/workflows/ci.yml/badge.svg)](https://github.com/mysak7/azure-penny/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A serverless Azure cost management dashboard. Reads Cost Management Parquet/CSV exports from Azure Blob Storage and serves aggregated cost data through a FastAPI web app deployed on Azure Container Apps.
+
+> **Screenshots:** Dashboard · Live Resources · Forecast
+>
+> *(Add your own screenshots here — e.g. `docs/screenshots/dashboard.png`)*
+
+## Features
+
+- **Cost dashboard** — daily spend by resource group and service category, current-month MTD total
+- **Forecast** — linear extrapolation of MTD spend to end-of-month estimate, scoped per resource group
+- **Live Resources tab** — real-time inventory of all subscription resources with cost correlation and spot-price savings hints
+- **Scale to zero** — Container App idles at 0 replicas; you pay nothing when nobody is looking at it
+- **No secrets** — authenticates entirely via User-Assigned Managed Identity; no connection strings, SAS tokens, or service principal secrets anywhere
+- **Easy Auth** — Entra ID login gate on the Container App; `penny-admin` app role controls delete access
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Azure subscription | Pay-As-You-Go, EA, or MCA — **not** a free trial (Cost Management exports require a paid subscription) |
+| Azure Entra ID (AAD) | Required for Easy Auth and the Entra app registration provisioned by Terraform |
+| Terraform ≥ 1.12 | State is stored in Azure Blob Storage (bootstrapped separately) |
+| Docker | For building the container image locally or in CI |
+| Azure CLI | For `az login` during local development and for the bootstrap scripts |
+| GitHub repository | CI/CD workflows use GitHub Actions OIDC — no stored Azure credentials |
+
+> **Entra ID note:** The Terraform `auth.tf` creates an app registration and Easy Auth config. This requires an account with permission to register applications in your Entra tenant (Application Administrator or Global Administrator role, or a delegated permission).
 
 ## Architecture
 
@@ -82,6 +111,17 @@ Authentication uses `DefaultAzureCredential`, which resolves automatically in:
 - Local dev (Azure CLI or VS Code credential)
 - CI/CD (service principal via environment variables)
 
+## IAM / Permissions
+
+The managed identity holds **`Contributor` at subscription scope**. This is intentional:
+
+- **Read** — lists all resources in the subscription for the Live Resources tab
+- **Write** — allows the optional delete action on the Live Resources tab (gated behind the `penny-admin` Entra app role)
+
+If you don't need delete functionality, change `role_definition_name` in `terraform/identity.tf` from `Contributor` to `Reader`. The azure-penny resource group is always in `PROTECTED_RGS` so the app cannot delete itself.
+
+See [SECURITY.md](SECURITY.md) for a full security design summary.
+
 ## Local development
 
 ```bash
@@ -136,15 +176,19 @@ All workflows authenticate to Azure via OIDC (no stored secrets).
 ## Infrastructure deployment
 
 ```bash
+# 1. Copy and fill in the variable values
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+# Edit terraform.tfvars — set subscription_id, cicd_principal_object_id, owner_email
+
 cd terraform
 
-# First time — initialise with the remote backend
+# 2. Initialise with the remote backend (see scripts/bootstrap-tfstate.sh for first-time setup)
 terraform init
 
-# Preview changes
+# 3. Preview changes
 terraform plan -var="container_image=<acr-login-server>/azure-penny:latest"
 
-# Apply
+# 4. Apply
 terraform apply -var="container_image=<acr-login-server>/azure-penny:latest"
 ```
 

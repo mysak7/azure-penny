@@ -31,10 +31,10 @@ resource "azuread_application" "penny" {
   }
 
   web {
-    redirect_uris = [
+    redirect_uris = compact([
       "https://${local.container_app_fqdn}/.auth/login/aad/callback",
-      "https://penny.mysak.fun/.auth/login/aad/callback",
-    ]
+      var.custom_domain != "" ? "https://${var.custom_domain}/.auth/login/aad/callback" : "",
+    ])
     implicit_grant {
       id_token_issuance_enabled = true
     }
