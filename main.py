@@ -230,13 +230,15 @@ async def _build_forecast(rg: str = "") -> dict:
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
         else today.replace(day=1) - timedelta(days=1)
     )
-    # Project from last billing date all the way to end of month (covers billing lag gap
-    # plus future days). days_remaining is for display only and must not limit this range.
+    # Project from last billing date to end of month (covers billing lag + future days).
+    # Skip entirely when daily_fwd == 0 (ghost RG or no spend) — avoids orange bars
+    # appearing over already-elapsed days when there is nothing left to project.
     projected_points: list[dict] = []
-    d = last_date + timedelta(days=1)
-    while d.month == today.month:
-        projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
-        d += timedelta(days=1)
+    if daily_fwd > 0:
+        d = last_date + timedelta(days=1)
+        while d.month == today.month:
+            projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
+            d += timedelta(days=1)
 
     end_of_month = round(spent_so_far + daily_fwd * len(projected_points), 2)
 
