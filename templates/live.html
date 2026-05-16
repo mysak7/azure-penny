@@ -172,7 +172,6 @@
     <select id="ghost-filter" class="ghost-select" onchange="onGhostFilterChange(this.value)" title="Filter resource groups">
       <option value="all">All RGs</option>
       <option value="nonzero">No zero cost</option>
-      <option value="notempty">No empty</option>
     </select>
     <span class="rg-select-label">RG:</span>
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
@@ -342,9 +341,7 @@ function onGhostFilterChange(val) {
   applyFilters();
 }
 function applyGhostFilter(rgs) {
-  var f = getGhostFilter();
-  if (f === 'nonzero') return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
-  if (f === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
+  if (getGhostFilter() === 'nonzero') return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
   return rgs;
 }
 function renderRgDropdown() {
@@ -352,8 +349,7 @@ function renderRgDropdown() {
   var gf = document.getElementById('ghost-filter');
   if (!sel) return;
   var current = getCurrentRg();
-  var f = getGhostFilter();
-  if (gf) gf.value = f;
+  if (gf) gf.value = getGhostFilter();
   var rgs = applyGhostFilter(allRgs);
   if (current && !rgs.find(function(r) { return r.name === current; })) {
     localStorage.removeItem('az_penny_rg');
@@ -368,24 +364,13 @@ function renderRgDropdown() {
 function loadRgList() {
   var gf = document.getElementById('ghost-filter');
   if (gf) gf.value = getGhostFilter();
-  // RG list is built from live resources once they load — nothing to fetch here
-}
-function buildRgListFromResources() {
-  var byRg = {};
-  allResources.forEach(function(r) {
-    var name = r.resource_group || '';
-    if (!name) return;
-    if (!byRg[name]) byRg[name] = { name: name, total_cost: null };
-    var c = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
-    if (c !== null) byRg[name].total_cost = (byRg[name].total_cost || 0) + c;
-  });
-  allRgs = Object.values(byRg).sort(function(a, b) {
-    if (a.total_cost === null && b.total_cost === null) return a.name.localeCompare(b.name);
-    if (a.total_cost === null) return 1;
-    if (b.total_cost === null) return -1;
-    return b.total_cost - a.total_cost;
-  });
-  renderRgDropdown();
+  fetch('/api/resource-groups-list')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      allRgs = data.resource_groups || [];
+      renderRgDropdown();
+    })
+    .catch(function() {});
 }
 function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 
@@ -503,7 +488,6 @@ function applyFilters() {
   var hideFree  = document.getElementById('hide-free').checked;
   var search    = (document.getElementById('search').value || '').toLowerCase();
   var activeRg  = getCurrentRg().toLowerCase();
-  var allowedRgs = allRgs.length ? new Set(applyGhostFilter(allRgs).map(function(r) { return r.name.toLowerCase(); })) : null;
 
   var filtered = allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
@@ -511,7 +495,6 @@ function applyFilters() {
     if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
-    if (allowedRgs && !allowedRgs.has((r.resource_group || '').toLowerCase())) return false;
     if (search) {
       var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
       if (hay.indexOf(search) === -1) return false;
@@ -655,7 +638,6 @@ function loadResources() {
 
     var resources = resData.resources || [];
     allResources = resources;
-    buildRgListFromResources();
     document.getElementById('st-count').textContent = resData.count || 0;
     document.getElementById('st-sub').textContent   = resData.subscription_id || '&mdash;';
     // Authoritative 30-day billed total straight from cost exports (not filtered/correlated)
@@ -919,7 +901,6 @@ async function confirmDestroy() {
 
     // Remove the destroyed resource from the local list and re-render
     allResources = allResources.filter(function(r) { return r.id !== resourceId; });
-    buildRgListFromResources();
     applyFilters();
 
   } catch (err) {
@@ -960,14 +941,12 @@ function getVisibleResources() {
   var hideFree = document.getElementById('hide-free').checked;
   var search   = (document.getElementById('search').value || '').toLowerCase();
   var activeRg = getCurrentRg().toLowerCase();
-  var allowedRgs = allRgs.length ? new Set(applyGhostFilter(allRgs).map(function(r) { return r.name.toLowerCase(); })) : null;
   return allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
     if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
-    if (allowedRgs && !allowedRgs.has((r.resource_group || '').toLowerCase())) return false;
     if (search) {
       var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
       if (hay.indexOf(search) === -1) return false;
@@ -1025,7 +1004,6 @@ async function confirmDeleteAll() {
     cancelBtn.style.display = 'none';
 
     allResources = allResources.filter(function(r) { return !rgs.includes(r.resource_group); });
-    buildRgListFromResources();
     applyFilters();
 
   } catch (err) {

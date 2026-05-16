@@ -158,7 +158,6 @@
     <select id="ghost-filter" class="ghost-select" onchange="onGhostFilterChange(this.value)" title="Filter resource groups">
       <option value="all">All RGs</option>
       <option value="nonzero">No zero cost</option>
-      <option value="notempty">No empty</option>
     </select>
     <span class="rg-select-label">RG:</span>
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
@@ -368,9 +367,7 @@ function onGhostFilterChange(val) {
   renderRgDropdown();
 }
 function applyGhostFilter(rgs) {
-  var f = getGhostFilter();
-  if (f === 'nonzero') return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
-  if (f === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
+  if (getGhostFilter() === 'nonzero') return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
   return rgs;
 }
 function renderRgDropdown() {
