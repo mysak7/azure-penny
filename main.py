@@ -27,6 +27,25 @@ from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
+_rg_names_cache: dict = {}   # {"names": set[str], "ts": float}
+_RG_NAMES_TTL = 900          # 15 min
+
+async def _get_arm_rg_names() -> set[str]:
+    """Return ARM resource group names, cached for 15 min."""
+    now = time.monotonic()
+    if "names" in _rg_names_cache and (now - _rg_names_cache.get("ts", 0)) < _RG_NAMES_TTL:
+        return _rg_names_cache["names"]
+    # Prefer live inventory cache if already populated (no extra call)
+    async with _live_lock:
+        inv = _live_cache.get("inv")
+    if inv is not None:
+        names = {r.get("resource_group", "") for r in inv if r.get("resource_group")}
+    else:
+        names = set(await asyncio.get_event_loop().run_in_executor(None, list_resource_groups))
+    _rg_names_cache["names"] = names
+    _rg_names_cache["ts"] = now
+    return names
+
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -749,13 +768,7 @@ async def api_resource_groups_list() -> JSONResponse:
     try:
         df = await get_cached_dataframe()
 
-        # Collect ARM RG names from live inventory cache (free if already loaded)
-        async with _live_lock:
-            inv = _live_cache.get("inv")
-        arm_rg_names: set[str] = (
-            {r.get("resource_group", "") for r in inv if r.get("resource_group")}
-            if inv is not None else set()
-        )
+        arm_rg_names = await _get_arm_rg_names()
 
         if not df.empty and "C_NAME" in df.columns and "C_COST" in df.columns:
             by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum()
@@ -810,6 +823,7 @@ async def api_live_resources() -> JSONResponse:
 async def api_live_reload() -> JSONResponse:
     async with _live_lock:
         _live_cache.clear()
+    _rg_names_cache.clear()
     try:
         resources = await _get_live_data()
         return JSONResponse({"status": "reloaded", "count": len(resources)})
