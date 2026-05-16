@@ -309,10 +309,10 @@
 var currentPeriod = 'week';
 var loaded = {};
 var allRgs = [];
+var ghostFilter = 'all';
 
 // ── Resource group filter ─────────────────────────────────────────────────────
 function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
-function getGhostFilter() { return localStorage.getItem('az_penny_ghost') || 'all'; }
 function rgParam() { var rg = getCurrentRg(); return rg ? '&rg=' + encodeURIComponent(rg) : ''; }
 function onRgChange(val) {
   if (val) localStorage.setItem('az_penny_rg', val);
@@ -322,23 +322,18 @@ function onRgChange(val) {
   loaded = {}; loadAll(); loadForecast();
 }
 function onGhostFilterChange(val) {
-  if (val && val !== 'all') localStorage.setItem('az_penny_ghost', val);
-  else localStorage.removeItem('az_penny_ghost');
+  ghostFilter = val || 'all';
   renderRgDropdown();
 }
 function applyGhostFilter(rgs) {
-  var f = getGhostFilter();
-  if (f === 'nonzero')  return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
-  if (f === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
+  if (ghostFilter === 'nonzero')  return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
+  if (ghostFilter === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
   return rgs;
 }
 function renderRgDropdown() {
   var sel = document.getElementById('rg-select');
-  var gf = document.getElementById('ghost-filter');
   if (!sel) return;
   var current = getCurrentRg();
-  var f = getGhostFilter();
-  if (gf) gf.value = f;
   var rgs = applyGhostFilter(allRgs);
   if (current && !rgs.find(function(r) { return r.name === current; })) {
     localStorage.removeItem('az_penny_rg');
@@ -351,9 +346,6 @@ function renderRgDropdown() {
   sel.classList.toggle('filtered', !!current);
 }
 function loadRgList() {
-  var f = getGhostFilter();
-  var gf = document.getElementById('ghost-filter');
-  if (gf) gf.value = f;
   fetch('/api/resource-groups-list')
     .then(function(r) { return r.json(); })
     .then(function(data) {
