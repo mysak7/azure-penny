@@ -740,13 +740,28 @@ async def api_resource_groups(period: str = "week", rg: str = "") -> JSONRespons
 async def api_resource_groups_list() -> JSONResponse:
     try:
         df = await get_cached_dataframe()
+
+        # Collect ARM RG names from live inventory cache (free if already loaded)
+        async with _live_lock:
+            inv = _live_cache.get("inv")
+        arm_rg_names: set[str] = (
+            {r.get("resource_group", "") for r in inv if r.get("resource_group")}
+            if inv is not None else set()
+        )
+
         if not df.empty and "C_NAME" in df.columns and "C_COST" in df.columns:
-            by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum().sort_values(ascending=False)
-            rgs = [
-                {"name": str(k), "total_cost": round(float(v), 2)}
+            by_rg = df.groupby("C_NAME", dropna=False)["C_COST"].sum()
+            cost_rgs: dict[str, float] = {
+                str(k): round(float(v), 2)
                 for k, v in by_rg.items()
                 if str(k).strip()
-            ]
+            }
+            rgs = [{"name": n, "total_cost": c} for n, c in cost_rgs.items()]
+            # Append ARM-only RGs (exist in ARM but never appeared in cost export)
+            for name in arm_rg_names:
+                if name not in cost_rgs:
+                    rgs.append({"name": name, "total_cost": None})
+            rgs.sort(key=lambda r: (r["total_cost"] is None, -(r["total_cost"] or 0)))
             return JSONResponse({"resource_groups": rgs})
 
         # No cost export data yet — fall back to ARM resource group list
