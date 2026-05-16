@@ -366,16 +366,26 @@ function renderRgDropdown() {
   sel.classList.toggle('filtered', !!current);
 }
 function loadRgList() {
-  var f = getGhostFilter();
   var gf = document.getElementById('ghost-filter');
-  if (gf) gf.value = f;
-  fetch('/api/resource-groups-list')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      allRgs = data.resource_groups || [];
-      renderRgDropdown();
-    })
-    .catch(function() {});
+  if (gf) gf.value = getGhostFilter();
+  // RG list is built from live resources once they load — nothing to fetch here
+}
+function buildRgListFromResources() {
+  var byRg = {};
+  allResources.forEach(function(r) {
+    var name = r.resource_group || '';
+    if (!name) return;
+    if (!byRg[name]) byRg[name] = { name: name, total_cost: null };
+    var c = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
+    if (c !== null) byRg[name].total_cost = (byRg[name].total_cost || 0) + c;
+  });
+  allRgs = Object.values(byRg).sort(function(a, b) {
+    if (a.total_cost === null && b.total_cost === null) return a.name.localeCompare(b.name);
+    if (a.total_cost === null) return 1;
+    if (b.total_cost === null) return -1;
+    return b.total_cost - a.total_cost;
+  });
+  renderRgDropdown();
 }
 function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 
@@ -645,6 +655,7 @@ function loadResources() {
 
     var resources = resData.resources || [];
     allResources = resources;
+    buildRgListFromResources();
     document.getElementById('st-count').textContent = resData.count || 0;
     document.getElementById('st-sub').textContent   = resData.subscription_id || '&mdash;';
     // Authoritative 30-day billed total straight from cost exports (not filtered/correlated)
@@ -908,6 +919,7 @@ async function confirmDestroy() {
 
     // Remove the destroyed resource from the local list and re-render
     allResources = allResources.filter(function(r) { return r.id !== resourceId; });
+    buildRgListFromResources();
     applyFilters();
 
   } catch (err) {
@@ -1013,6 +1025,7 @@ async function confirmDeleteAll() {
     cancelBtn.style.display = 'none';
 
     allResources = allResources.filter(function(r) { return !rgs.includes(r.resource_group); });
+    buildRgListFromResources();
     applyFilters();
 
   } catch (err) {
