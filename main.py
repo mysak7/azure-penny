@@ -777,17 +777,17 @@ async def api_resource_groups_list() -> JSONResponse:
                 for k, v in by_rg.items()
                 if str(k).strip()
             }
-            rgs = [{"name": n, "total_cost": c} for n, c in cost_rgs.items()]
+            rgs = [{"name": n, "total_cost": c, "in_arm": n in arm_rg_names} for n, c in cost_rgs.items()]
             # Append ARM-only RGs (exist in ARM but never appeared in cost export)
             for name in arm_rg_names:
                 if name not in cost_rgs:
-                    rgs.append({"name": name, "total_cost": None})
+                    rgs.append({"name": name, "total_cost": None, "in_arm": True})
             rgs.sort(key=lambda r: (r["total_cost"] is None, -(r["total_cost"] or 0)))
             return JSONResponse({"resource_groups": rgs})
 
         # No cost export data yet — fall back to ARM resource group list
         names = await asyncio.get_event_loop().run_in_executor(None, list_resource_groups)
-        rgs = [{"name": n, "total_cost": None} for n in sorted(names) if n.strip()]
+        rgs = [{"name": n, "total_cost": None, "in_arm": True} for n in sorted(names) if n.strip()]
         return JSONResponse({"resource_groups": rgs, "source": "arm"})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)

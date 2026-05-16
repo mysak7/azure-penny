@@ -326,8 +326,8 @@ function onGhostFilterChange(val) {
   renderRgDropdown();
 }
 function applyGhostFilter(rgs) {
-  if (ghostFilter === 'nonzero')  return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
-  if (ghostFilter === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
+  if (ghostFilter === 'nonzero')  return rgs.filter(function(rg) { return rg.in_arm && rg.total_cost !== null && rg.total_cost > 0; });
+  if (ghostFilter === 'notempty') return rgs.filter(function(rg) { return rg.in_arm === true; });
   return rgs;
 }
 function renderRgDropdown() {
