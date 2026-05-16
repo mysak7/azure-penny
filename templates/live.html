@@ -28,6 +28,9 @@
     .rg-select:focus { outline: none; border-color: #38bdf8; }
     .rg-select.filtered { border-color: #38bdf8; color: #38bdf8; background: #0c4a6e22; }
     .rg-select option { background: #1e293b; color: #e2e8f0; }
+    .ghost-select { background: #1e293b; border: 1px solid #334155; color: #64748b; font-size: 0.72rem; padding: .25rem .45rem; border-radius: 6px; font-family: inherit; cursor: pointer; color-scheme: dark; }
+    .ghost-select:focus { outline: none; border-color: #38bdf8; }
+    .ghost-select option { background: #1e293b; color: #e2e8f0; }
 
     /* Status bar */
     .status-bar { background: #162032; border-bottom: 1px solid #1e3a5a; padding: .35rem 2rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
@@ -166,6 +169,11 @@
     <h1>azure-penny <span>Live Resources</span></h1>
   </div>
   <div class="rg-select-wrap">
+    <select id="ghost-filter" class="ghost-select" onchange="onGhostFilterChange(this.value)" title="Filter resource groups">
+      <option value="all">All RGs</option>
+      <option value="nonzero">No zero cost</option>
+      <option value="notempty">No empty</option>
+    </select>
     <span class="rg-select-label">RG:</span>
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
       <option value="">All</option>
@@ -317,7 +325,9 @@ var sortDir = -1; // -1 desc, +1 asc
 var currentCat = 'all';
 
 // ── Resource group filter ─────────────────────────────────────────────────────
+var allRgs = [];
 function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
+function getGhostFilter() { return localStorage.getItem('az_penny_ghost') || 'all'; }
 function onRgChange(val) {
   if (val) localStorage.setItem('az_penny_rg', val);
   else localStorage.removeItem('az_penny_rg');
@@ -325,19 +335,45 @@ function onRgChange(val) {
   if (sel) sel.classList.toggle('filtered', !!val);
   applyFilters();
 }
+function onGhostFilterChange(val) {
+  if (val && val !== 'all') localStorage.setItem('az_penny_ghost', val);
+  else localStorage.removeItem('az_penny_ghost');
+  renderRgDropdown();
+  applyFilters();
+}
+function applyGhostFilter(rgs) {
+  var f = getGhostFilter();
+  if (f === 'nonzero') return rgs.filter(function(rg) { return rg.total_cost !== null && rg.total_cost > 0; });
+  if (f === 'notempty') return rgs.filter(function(rg) { return rg.total_cost !== null; });
+  return rgs;
+}
+function renderRgDropdown() {
+  var sel = document.getElementById('rg-select');
+  var gf = document.getElementById('ghost-filter');
+  if (!sel) return;
+  var current = getCurrentRg();
+  var f = getGhostFilter();
+  if (gf) gf.value = f;
+  var rgs = applyGhostFilter(allRgs);
+  if (current && !rgs.find(function(r) { return r.name === current; })) {
+    localStorage.removeItem('az_penny_rg');
+    current = '';
+  }
+  sel.innerHTML = '<option value="">All</option>' + rgs.map(function(rg) {
+    return '<option value="' + escAttr(rg.name) + '"' + (rg.name === current ? ' selected' : '') + '>' +
+           escHtml(rg.name) + ' (' + fmtCost(rg.total_cost) + ')</option>';
+  }).join('');
+  sel.classList.toggle('filtered', !!current);
+}
 function loadRgList() {
+  var f = getGhostFilter();
+  var gf = document.getElementById('ghost-filter');
+  if (gf) gf.value = f;
   fetch('/api/resource-groups-list')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      var sel = document.getElementById('rg-select');
-      if (!sel) return;
-      var current = getCurrentRg();
-      var rgs = data.resource_groups || [];
-      sel.innerHTML = '<option value="">All</option>' + rgs.map(function(rg) {
-        return '<option value="' + escAttr(rg.name) + '"' + (rg.name === current ? ' selected' : '') + '>' +
-               escHtml(rg.name) + ' (' + fmtCost(rg.total_cost) + ')</option>';
-      }).join('');
-      sel.classList.toggle('filtered', !!current);
+      allRgs = data.resource_groups || [];
+      renderRgDropdown();
     })
     .catch(function() {});
 }
@@ -457,6 +493,7 @@ function applyFilters() {
   var hideFree  = document.getElementById('hide-free').checked;
   var search    = (document.getElementById('search').value || '').toLowerCase();
   var activeRg  = getCurrentRg().toLowerCase();
+  var allowedRgs = allRgs.length ? new Set(applyGhostFilter(allRgs).map(function(r) { return r.name.toLowerCase(); })) : null;
 
   var filtered = allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
@@ -464,6 +501,7 @@ function applyFilters() {
     if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
+    if (allowedRgs && !allowedRgs.has((r.resource_group || '').toLowerCase())) return false;
     if (search) {
       var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
       if (hay.indexOf(search) === -1) return false;
@@ -910,12 +948,14 @@ function getVisibleResources() {
   var hideFree = document.getElementById('hide-free').checked;
   var search   = (document.getElementById('search').value || '').toLowerCase();
   var activeRg = getCurrentRg().toLowerCase();
+  var allowedRgs = allRgs.length ? new Set(applyGhostFilter(allRgs).map(function(r) { return r.name.toLowerCase(); })) : null;
   return allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
     var cost = (r.monthly_cost !== null && r.monthly_cost !== undefined) ? Number(r.monthly_cost) : null;
     if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
+    if (allowedRgs && !allowedRgs.has((r.resource_group || '').toLowerCase())) return false;
     if (search) {
       var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
       if (hay.indexOf(search) === -1) return false;

@@ -745,7 +745,7 @@ async def api_resource_groups_list() -> JSONResponse:
             rgs = [
                 {"name": str(k), "total_cost": round(float(v), 2)}
                 for k, v in by_rg.items()
-                if v > 0 and str(k).strip()
+                if str(k).strip()
             ]
             return JSONResponse({"resource_groups": rgs})
 
