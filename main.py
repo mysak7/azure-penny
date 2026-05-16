@@ -27,10 +27,18 @@ from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    asyncio.create_task(_get_live_data())
+    yield
+
 app = FastAPI(
     title="azure-penny",
     description="Azure Cost Management dashboard — reads Cost exports from Blob Storage.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
