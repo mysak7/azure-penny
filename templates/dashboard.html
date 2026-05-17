@@ -508,16 +508,23 @@ function fmtNum(n) {
 }
 
 // ── Forecast ──────────────────────────────────────────────────────────────────
+function fmtSvgCost(v) {
+  if (v >= 1000) return '$' + (v / 1000).toFixed(1) + 'K';
+  if (v >= 10)   return '$' + v.toFixed(0);
+  return '$' + v.toFixed(2);
+}
 function buildForecastSvg(actual, projected) {
   var all = actual.concat(projected);
   if (!all.length) return '<p class="empty">No data available.</p>';
   var maxVal = 0.001;
   all.forEach(function(p) { if (p.cost_usd > maxVal) maxVal = p.cost_usd; });
-  var W = 560, H = 90, pT = 6, pB = 4, pL = 2, pR = 2;
+  var W = 560, H = 90, pT = 14, pB = 4, pL = 2, pR = 2;
   var cW = W - pL - pR, cH = H - pT - pB;
   var n = all.length, gap = 1;
   var barW = Math.max(2, Math.floor(cW / n) - gap);
   var svg = '';
+  // Y-max label (top-left, above chart area)
+  svg += '<text x="'+pL+'" y="'+(pT-3)+'" font-size="9" fill="#94a3b8" font-family="monospace">'+fmtSvgCost(maxVal)+'/d</text>';
   actual.forEach(function(p, i) {
     var x = pL + i * (barW + gap);
     var h = Math.max(1, (p.cost_usd / maxVal) * cH);
@@ -538,6 +545,12 @@ function buildForecastSvg(actual, projected) {
     svg += '<line x1="'+lx1+'" y1="'+lineY+'" x2="'+lx2+'" y2="'+lineY+'" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>';
     var divX = (pL + actual.length * (barW + gap) - 0.5).toFixed(1);
     svg += '<line x1="'+divX+'" y1="'+pT+'" x2="'+divX+'" y2="'+(pT+cH)+'" stroke="#475569" stroke-width="1" stroke-dasharray="2,2"/>';
+    // Projected rate label on the dashed line (right-aligned, above the line)
+    if (projected[0].cost_usd > 0) {
+      var projLabel = fmtSvgCost(projected[0].cost_usd) + '/d';
+      var lblY = (parseFloat(lineY) - 2).toFixed(1);
+      svg += '<text x="'+(W-pR)+'" y="'+lblY+'" text-anchor="end" font-size="9" fill="#f97316" font-family="monospace" opacity="0.9">'+projLabel+'</text>';
+    }
   }
   svg += '<line x1="'+pL+'" y1="'+(pT+cH)+'" x2="'+(W-pR)+'" y2="'+(pT+cH)+'" stroke="#334155" stroke-width="1"/>';
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;display:block;" preserveAspectRatio="none">'+svg+'</svg>';
