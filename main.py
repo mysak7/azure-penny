@@ -257,18 +257,19 @@ async def _build_forecast(rg: str = "") -> dict:
         date.fromisoformat(actual_points[-1]["date"]) if actual_points
         else today.replace(day=1) - timedelta(days=1)
     )
-    # Fill billing-lag gap (days after last billed date up to today) with $0 actual points
-    # so the chart always spans the full elapsed period without fake orange bars over the past.
+    # Fill billing-lag gap (days after last billed date up to yesterday) with $0 actual points
+    # so the chart spans the full past period. Today is excluded — it has no billing data yet
+    # and belongs in the projected section instead of appearing as a misleading zero blue bar.
     if actual_points:
         gap_day = last_date + timedelta(days=1)
-        while gap_day <= today and gap_day.month == today.month:
+        while gap_day < today and gap_day.month == today.month:
             actual_points.append({"date": gap_day.strftime("%Y-%m-%d"), "cost_usd": 0.0})
             gap_day += timedelta(days=1)
 
-    # Project future days (tomorrow onwards) — orange bars never appear over past dates.
+    # Project from today onwards — today has no billing data yet so it gets an orange bar.
     # Always generate even when daily_fwd == 0 so the chart spans the full month.
     projected_points: list[dict] = []
-    d = today + timedelta(days=1)
+    d = today
     while d.month == today.month:
         projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
         d += timedelta(days=1)
