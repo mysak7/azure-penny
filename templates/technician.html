@@ -352,7 +352,7 @@ var loaded = {};
 
 // ── Resource group filter ─────────────────────────────────────────────────────
 var allRgs = [];
-var ghostFilter = 'all';
+var ghostFilter = localStorage.getItem('az_penny_ghost') || 'all';
 function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
 function rgParam() { var rg = getCurrentRg(); return rg ? '&rg=' + encodeURIComponent(rg) : ''; }
 function onRgChange(val) {
@@ -364,6 +364,7 @@ function onRgChange(val) {
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
+  localStorage.setItem('az_penny_ghost', ghostFilter);
   renderRgDropdown();
 }
 function applyGhostFilter(rgs) {
@@ -1071,6 +1072,7 @@ document.getElementById('rg-delete-modal').addEventListener('click', function(e)
 });
 
 // Boot
+(function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
 loadStatus();
 loadRgList();
 loadCurrentTab();

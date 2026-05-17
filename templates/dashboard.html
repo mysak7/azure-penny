@@ -309,7 +309,7 @@
 var currentPeriod = 'week';
 var loaded = {};
 var allRgs = [];
-var ghostFilter = 'all';
+var ghostFilter = localStorage.getItem('az_penny_ghost') || 'all';
 
 // ── Resource group filter ─────────────────────────────────────────────────────
 function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
@@ -323,6 +323,7 @@ function onRgChange(val) {
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
+  localStorage.setItem('az_penny_ghost', ghostFilter);
   renderRgDropdown();
 }
 function applyGhostFilter(rgs) {
@@ -592,6 +593,7 @@ function loadForecast() {
 }
 
 // Boot
+(function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
 loadStatus();
 loadRgList();
 loadAll();
