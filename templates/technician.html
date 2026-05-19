@@ -74,7 +74,7 @@
     .kpi-card.yellow { border-top: 2px solid #fbbf24; }
     .kpi-card.orange { border-top: 2px solid #f97316; }
     .kpi-card.purple { border-top: 2px solid #a78bfa; }
-    .kpi-card.cyan   { border-top: 2px solid #06b6d4; }
+    .kpi-card.red    { border-top: 2px solid #f87171; }
     .kpi-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
     .kpi-val { font-size: 1.2rem; font-weight: 700; color: #e2e8f0; font-family: monospace; }
     .kpi-sub { font-size: 0.7rem; color: #475569; margin-top: .15rem; }
@@ -99,24 +99,11 @@
     .bar.green  { background: #4ade80; }
     .bar.orange { background: #f97316; }
     .bar.purple { background: #a78bfa; }
-    .bar.cyan   { background: #06b6d4; }
     .scroll-table { overflow-x: auto; }
 
     /* Chart */
     .chart-wrap { overflow-x: auto; border: 1px solid #334155; border-radius: 8px; background: #0f172a; padding: .5rem; margin-top: .75rem; }
     canvas { display: block; }
-
-    /* Two-col */
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-    @media (max-width: 780px) { .two-col { grid-template-columns: 1fr; } }
-
-    /* Insights */
-    .insight { font-size: 0.78rem; padding: .45rem .7rem; border-radius: 6px; margin-bottom: .4rem; line-height: 1.5; }
-    .insight.ok     { background: #052e16; border: 1px solid #166534; color: #86efac; }
-    .insight.info   { background: #0c1a4a; border: 1px solid #1e3a8a; color: #93c5fd; }
-    .insight.warn   { background: #451a03; border: 1px solid #92400e; color: #fcd34d; }
-    .insight.danger { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
-    .insight-icon   { font-size: 0.8rem; margin-right: .3rem; }
 
     /* Loading / error / empty */
     .loading { color: #64748b; font-size: 0.82rem; padding: 1.5rem 0; text-align: center; }
@@ -126,11 +113,36 @@
     /* Section title */
     .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 1.25rem 0 .6rem; }
 
-    /* Delete RG button */
+    /* Delete buttons */
     .btn-row-destroy { background: none; border: 1px solid #7f1d1d; color: #f87171; font-size: 0.68rem; padding: .15rem .45rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .btn-row-destroy:hover { background: #7f1d1d; color: #fff; }
 
-    /* Delete RG modal */
+    /* Anomaly alert cards */
+    .anom-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+    .anom-kpi { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .85rem 1rem; }
+    .anom-kpi.red    { border-top: 2px solid #f87171; }
+    .anom-kpi.yellow { border-top: 2px solid #fbbf24; }
+    .anom-kpi.blue   { border-top: 2px solid #38bdf8; }
+    .anom-kpi.gray   { border-top: 2px solid #64748b; }
+    .anom-kpi.orange { border-top: 2px solid #f97316; }
+    .anom-kpi-label  { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
+    .anom-kpi-val    { font-size: 1.3rem; font-weight: 700; font-family: monospace; }
+    .anom-kpi-val.red    { color: #f87171; }
+    .anom-kpi-val.yellow { color: #fbbf24; }
+    .anom-kpi-val.blue   { color: #38bdf8; }
+    .anom-kpi-val.gray   { color: #94a3b8; }
+    .anom-kpi-val.orange { color: #f97316; }
+
+    .anom-section { margin-top: 1.5rem; }
+    .anom-section-head { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .1em; color: #64748b; border-bottom: 1px solid #334155; padding-bottom: .4rem; margin-bottom: .75rem; display: flex; justify-content: space-between; }
+    .anom-empty { font-size: 0.78rem; color: #334155; font-style: italic; padding: .5rem 0; }
+
+    /* Tag compliance banner */
+    .tag-banner { background: #1a0a00; border: 1px solid #92400e; border-radius: 8px; padding: .85rem 1.1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .tag-banner-cost { font-size: 1.3rem; font-weight: 700; font-family: monospace; color: #fbbf24; }
+    .tag-banner-label { font-size: 0.78rem; color: #d97706; }
+
+    /* Delete modals */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 9998; }
     .modal-overlay.active { display: flex; align-items: center; justify-content: center; }
     .modal { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.75rem; max-width: 560px; width: 95%; box-shadow: 0 12px 48px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 1rem; }
@@ -191,11 +203,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="all-services"    onclick="setTab('all-services')">All Services</button>
       <button class="tab-btn"        data-tab="resource-groups" onclick="setTab('resource-groups')">Resource Groups</button>
-      <button class="tab-btn"        data-tab="compute"         onclick="setTab('compute')">Compute</button>
-      <button class="tab-btn"        data-tab="storage"         onclick="setTab('storage')">Storage</button>
-      <button class="tab-btn"        data-tab="database"        onclick="setTab('database')">Database</button>
-      <button class="tab-btn"        data-tab="monitoring"      onclick="setTab('monitoring')">Monitoring</button>
-      <button class="tab-btn"        data-tab="insights"        onclick="setTab('insights')">Insights</button>
+      <button class="tab-btn"        data-tab="anomalies"       onclick="setTab('anomalies')">Anomalies</button>
     </div>
     <div class="period-pills" id="period-pills-row">
       <button class="pill"        data-period="day"   onclick="setPeriod('day')">Day</button>
@@ -239,76 +247,15 @@
     </div>
   </div>
 
-  <!-- ── COMPUTE ───────────────────────────────────────────────────────────── -->
-  <div id="section-compute" class="cards" style="display:none">
+  <!-- ── ANOMALIES ─────────────────────────────────────────────────────────── -->
+  <div id="section-anomalies" class="cards" style="display:none">
     <div class="card">
       <div class="card-header">
-        <h2>Compute Services <span class="az-badge">VMs &bull; App Service &bull; AKS</span></h2>
-        <div style="display:flex;gap:.5rem;align-items:center">
-          <span id="cp-badge" class="card-badge">7 days</span>
-          <button class="btn-row-destroy" style="font-size:0.75rem;padding:.25rem .7rem" onclick="openBulkRgDeleteModal()">&#x1F5D1;&#xFE0F; Delete All RGs</button>
-        </div>
+        <h2>Anomalies &amp; Alerts <span class="az-badge">billing CSV</span></h2>
+        <span class="card-badge">current week vs. prior week</span>
       </div>
-      <div id="cp-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
-      <div id="cp-table"></div>
-      <div id="cp-error" class="error"></div>
-    </div>
-  </div>
-
-  <!-- ── STORAGE ───────────────────────────────────────────────────────────── -->
-  <div id="section-storage" class="cards" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <h2>Storage Services <span class="az-badge">Space &bull; Transfer &bull; Disks</span></h2>
-        <span id="stor-badge" class="card-badge">7 days</span>
-      </div>
-      <div id="stor-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
-      <div id="stor-table"></div>
-      <div id="stor-error" class="error"></div>
-    </div>
-  </div>
-
-  <!-- ── DATABASE ──────────────────────────────────────────────────────────── -->
-  <div id="section-database" class="cards" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <h2>Database Services <span class="az-badge">SQL &bull; Cosmos &bull; Redis</span></h2>
-        <span id="db-badge" class="card-badge">7 days</span>
-      </div>
-      <div id="db-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
-      <div id="db-table"></div>
-      <div id="db-error" class="error"></div>
-    </div>
-  </div>
-
-  <!-- ── MONITORING ──────────────────────────────────────────────────────── -->
-  <div id="section-monitoring" class="cards" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <h2>Monitoring Services <span class="az-badge">Grafana &bull; Log Analytics &bull; Monitor</span></h2>
-        <span id="mon-badge" class="card-badge">7 days</span>
-      </div>
-      <div id="mon-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
-      <div id="mon-table"></div>
-      <div id="mon-error" class="error"></div>
-    </div>
-  </div>
-
-  <!-- ── INSIGHTS ──────────────────────────────────────────────────────────── -->
-  <div id="section-insights" class="cards" style="display:none">
-    <div class="card">
-      <div class="card-header">
-        <h2>Cost Insights <span class="az-badge">Azure</span></h2>
-        <span id="ins-badge" class="card-badge">7 days</span>
-      </div>
-      <div id="insights-body"><div class="loading">Loading&hellip;</div></div>
-      <div id="insights-error" class="error"></div>
-    </div>
-    <div class="card">
-      <div class="card-header">
-        <h2>Category Breakdown <span class="az-badge" id="breakdown-badge">7 days</span></h2>
-      </div>
-      <div id="breakdown-body"><div class="loading">Loading&hellip;</div></div>
+      <div id="anom-body"><div class="loading">Loading&hellip;</div></div>
+      <div id="anom-error" class="error"></div>
     </div>
   </div>
 
@@ -340,7 +287,7 @@
     <div id="rdm-log" class="destroy-log" style="display:none"></div>
     <div class="modal-actions">
       <button class="btn-modal-cancel" id="rdm-cancel-btn" onclick="closeRgDeleteModal()">Cancel</button>
-      <button class="btn-confirm-destroy" id="rdm-destroy-btn" onclick="confirmRgDelete()">&#x1F5D1;&#xFE0F; Delete All</button>
+      <button class="btn-confirm-destroy" id="rdm-destroy-btn" onclick="confirmRgDelete()">&#x1F5D1;&#xFE0F; Delete</button>
     </div>
   </div>
 </div>
@@ -349,6 +296,10 @@
 var currentTab    = 'all-services';
 var currentPeriod = 'week';
 var loaded = {};
+
+// Anomalies cache — reused by All Services + RG tabs for inline deltas
+var _anomaliesCache = null;
+var _anomaliesCacheRg = null;
 
 // ── Resource group filter ─────────────────────────────────────────────────────
 var allRgs = [];
@@ -360,6 +311,7 @@ function onRgChange(val) {
   else localStorage.removeItem('az_penny_rg');
   var sel = document.getElementById('rg-select');
   if (sel) sel.classList.toggle('filtered', !!val);
+  _anomaliesCache = null;
   loaded = {}; loadCurrentTab(); loadGrandTotal();
 }
 function onGhostFilterChange(val) {
@@ -399,14 +351,32 @@ function loadRgList() {
 function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ── Anomalies fetch (cached per RG) ──────────────────────────────────────────
+function getAnomalies() {
+  var rg = getCurrentRg();
+  if (_anomaliesCache && _anomaliesCacheRg === rg) {
+    return Promise.resolve(_anomaliesCache);
+  }
+  var url = '/api/anomalies' + (rg ? '?rg=' + encodeURIComponent(rg) : '');
+  return fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.error) { _anomaliesCache = data; _anomaliesCacheRg = rg; }
+      return data;
+    })
+    .catch(function() { return null; });
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 function setTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(function(b) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
-  ['all-services','resource-groups','compute','storage','database','monitoring','insights'].forEach(function(t) {
+  ['all-services','resource-groups','anomalies'].forEach(function(t) {
     document.getElementById('section-' + t).style.display = t === tab ? '' : 'none';
   });
+  // Period pills hidden on anomalies (it always uses week vs prior week)
+  document.getElementById('period-pills-row').style.visibility = tab === 'anomalies' ? 'hidden' : '';
   currentTab = tab;
   loadCurrentTab();
 }
@@ -432,12 +402,22 @@ function loadCurrentTab() {
   switch (currentTab) {
     case 'all-services':    loadAllServices();    break;
     case 'resource-groups': loadResourceGroups(); break;
-    case 'compute':         loadComputeMachines(); break;
-    case 'storage':         loadStorage(); break;
-    case 'database':        loadCategoryDetail('database',   '/api/database?period=',   'db',  'purple'); break;
-    case 'monitoring':      loadCategoryDetail('monitoring', '/api/monitoring?period=', 'mon', 'cyan');   break;
-    case 'insights':        loadInsights(); loadBreakdown(); break;
+    case 'anomalies':       loadAnomaliesTab();   break;
   }
+}
+
+// ── Delta badge helper ────────────────────────────────────────────────────────
+function deltaBadge(d) {
+  if (!d) return '<span style="color:#334155;font-size:0.7rem">—</span>';
+  if (d.is_new)    return '<span style="background:#0c1a4a;border:1px solid #1e3a8a;color:#93c5fd;font-size:0.68rem;padding:.1rem .4rem;border-radius:3px;white-space:nowrap">new</span>';
+  if (d.vanished)  return '<span style="background:#1c1917;border:1px solid #57534e;color:#a8a29e;font-size:0.68rem;padding:.1rem .4rem;border-radius:3px;white-space:nowrap">gone</span>';
+  var pct = d.delta_pct;
+  if (pct === null || pct === undefined) return '<span style="color:#334155;font-size:0.7rem">—</span>';
+  var color = pct > 50 ? '#f87171' : pct > 10 ? '#fbbf24' : pct < -10 ? '#4ade80' : '#94a3b8';
+  var arrow = pct > 0 ? '&#x2191;' : '&#x2193;';
+  var sign  = pct > 0 ? '+' : '';
+  return '<span style="color:' + color + ';font-size:0.72rem;font-family:monospace;white-space:nowrap">' +
+    arrow + ' ' + sign + pct.toFixed(0) + '%</span>';
 }
 
 // ── ALL SERVICES ──────────────────────────────────────────────────────────────
@@ -447,40 +427,52 @@ function loadAllServices() {
   document.getElementById('svc-table').innerHTML = '';
   document.getElementById('svc-error').textContent = '';
 
-  fetch('/api/services?period=' + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-      var svcs  = data.services || [];
-      var total = data.total_usd || 0;
+  Promise.all([
+    fetch('/api/services?period=' + currentPeriod + rgParam()).then(function(r) { return r.json(); }),
+    getAnomalies()
+  ]).then(function(results) {
+    var data    = results[0];
+    var anomaly = results[1];
+    if (data.error) throw new Error(data.error);
 
-      document.getElementById('svc-kpi').innerHTML =
-        stat('Total', fmtCost(total), 'blue') +
-        stat('Services', svcs.length, '') +
-        stat('Period', periodLabel(), 'dim') +
-        stat('Avg/Day', fmtCost(total / Math.max(periodDays(), 1)), '');
+    var svcs  = data.services || [];
+    var total = data.total_usd || 0;
+    var deltas = (anomaly && anomaly.service_deltas) ? anomaly.service_deltas : {};
 
-      if (svcs.length) {
-        var max  = svcs[0].cost_usd || 1;
-        var rows = svcs.map(function(s) {
-          var pct   = Math.round(s.cost_usd / max * 100);
-          var share = ((s.cost_usd / total) * 100).toFixed(1);
-          return '<tr>' +
-            '<td>' + s.service + '</td>' +
-            '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
-            '<span>' + fmtCost(s.cost_usd) + '</span></div></td>' +
-            '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
-        }).join('');
-        document.getElementById('svc-table').innerHTML =
-          '<table><tr><th>Service (MeterCategory)</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
-      } else {
-        document.getElementById('svc-table').innerHTML = '<p class="empty">No spend data for this period.</p>';
-      }
-    })
-    .catch(function(err) {
-      document.getElementById('svc-kpi').innerHTML = '';
-      document.getElementById('svc-error').textContent = 'Error: ' + err.message;
-    });
+    document.getElementById('svc-kpi').innerHTML =
+      stat('Total', fmtCost(total), 'blue') +
+      stat('Services', svcs.length, '') +
+      stat('Period', periodLabel(), 'dim') +
+      stat('Avg/Day', fmtCost(total / Math.max(periodDays(), 1)), '');
+
+    if (svcs.length) {
+      var max  = svcs[0].cost_usd || 1;
+      var rows = svcs.map(function(s) {
+        var pct   = Math.round(s.cost_usd / max * 100);
+        var share = ((s.cost_usd / total) * 100).toFixed(1);
+        var d     = deltas[s.service] || null;
+        return '<tr>' +
+          '<td>' + escHtml(s.service) + '</td>' +
+          '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+          '<span style="font-family:monospace">' + fmtCost(s.cost_usd) + '</span></div></td>' +
+          '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
+          '<td style="text-align:right;padding-right:1rem">' + deltaBadge(d) + '</td></tr>';
+      }).join('');
+      document.getElementById('svc-table').innerHTML =
+        '<table><tr><th>Service (MeterCategory)</th><th>Cost</th><th style="text-align:right">Share</th>' +
+        '<th style="text-align:right">&Delta; vs prev wk</th></tr>' + rows + '</table>';
+    } else {
+      document.getElementById('svc-table').innerHTML = '<p class="empty">No spend data for this period.</p>';
+    }
+    document.getElementById('svc-kpi').innerHTML =
+      stat('Total', fmtCost(total), 'blue') +
+      stat('Services', svcs.length, '') +
+      stat('Period', periodLabel(), 'dim') +
+      stat('Avg/Day', fmtCost(total / Math.max(periodDays(), 1)), '');
+  }).catch(function(err) {
+    document.getElementById('svc-kpi').innerHTML = '';
+    document.getElementById('svc-error').textContent = 'Error: ' + err.message;
+  });
 
   fetch('/api/daily?days=30' + rgParam())
     .then(function(r) { return r.json(); })
@@ -545,301 +537,187 @@ function loadResourceGroups() {
   document.getElementById('rg-table').innerHTML = '';
   document.getElementById('rg-error').textContent = '';
 
-  fetch('/api/resource-groups?period=' + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-      var rgs   = data.resource_groups || [];
-      var total = data.total_usd || 0;
+  Promise.all([
+    fetch('/api/resource-groups?period=' + currentPeriod + rgParam()).then(function(r) { return r.json(); }),
+    getAnomalies()
+  ]).then(function(results) {
+    var data    = results[0];
+    var anomaly = results[1];
+    if (data.error) throw new Error(data.error);
 
-      document.getElementById('rg-kpi').innerHTML =
-        kpiCard('RG Cost', fmtCost(total), 'green') +
-        kpiCard('Resource Groups', rgs.length, 'green') +
-        kpiCard('Top Group', rgs.length ? shortRg(rgs[0].name) : '—', 'orange') +
-        kpiCard('Top Cost', rgs.length ? fmtCost(rgs[0].cost_usd) : '—', 'orange');
+    var rgs    = data.resource_groups || [];
+    var total  = data.total_usd || 0;
+    var deltas = (anomaly && anomaly.rg_deltas) ? anomaly.rg_deltas : {};
 
-      if (!rgs.length) {
-        document.getElementById('rg-table').innerHTML = '<p class="empty">No resource group data for this period.</p>';
-        return;
-      }
+    document.getElementById('rg-kpi').innerHTML =
+      kpiCard('RG Cost', fmtCost(total), 'green') +
+      kpiCard('Resource Groups', rgs.length, 'green') +
+      kpiCard('Top Group', rgs.length ? shortRg(rgs[0].name) : '—', 'orange') +
+      kpiCard('Top Cost', rgs.length ? fmtCost(rgs[0].cost_usd) : '—', 'orange');
 
-      _loadedRgs = rgs.filter(function(r) { return r.name; });
+    if (!rgs.length) {
+      document.getElementById('rg-table').innerHTML = '<p class="empty">No resource group data for this period.</p>';
+      return;
+    }
 
-      var max  = rgs[0].cost_usd || 1;
-      var rows = rgs.map(function(rg) {
-        var pct   = Math.round(rg.cost_usd / max * 100);
-        var share = ((rg.cost_usd / total) * 100).toFixed(1);
-        var delBtn = rg.name
-          ? '<button class="btn-row-destroy" onclick=\'openRgDeleteModal(' + JSON.stringify(rg.name) + ')\'>&#x1F5D1;&#xFE0F;</button>'
-          : '';
-        return '<tr>' +
-          '<td title="' + (rg.name||'') + '">' + (rg.name || '<em style="color:#475569">untagged</em>') + '</td>' +
-          '<td><div class="bar-cell"><div class="bar green" style="width:' + Math.max(pct, 1) + 'px"></div>' +
-          '<span style="font-family:monospace">' + fmtCost(rg.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
-          '<td style="text-align:center">' + delBtn + '</td></tr>';
-      }).join('');
-      document.getElementById('rg-table').innerHTML =
-        '<table><tr><th>Resource Group</th><th>Cost</th><th style="text-align:right">Share</th><th></th></tr>' + rows + '</table>';
-    })
-    .catch(function(err) {
-      document.getElementById('rg-kpi').innerHTML = '';
-      document.getElementById('rg-error').textContent = 'Error: ' + err.message;
-    });
+    _loadedRgs = rgs.filter(function(r) { return r.name; });
+    var max  = rgs[0].cost_usd || 1;
+    var rows = rgs.map(function(rg) {
+      var pct   = Math.round(rg.cost_usd / max * 100);
+      var share = ((rg.cost_usd / total) * 100).toFixed(1);
+      var d     = deltas[rg.name] || null;
+      var delBtn = rg.name
+        ? '<button class="btn-row-destroy" onclick=\'openRgDeleteModal(' + JSON.stringify(rg.name) + ')\'>&#x1F5D1;&#xFE0F;</button>'
+        : '';
+      return '<tr>' +
+        '<td title="' + escAttr(rg.name||'') + '">' + escHtml(rg.name || '') + '</td>' +
+        '<td><div class="bar-cell"><div class="bar green" style="width:' + Math.max(pct, 1) + 'px"></div>' +
+        '<span style="font-family:monospace">' + fmtCost(rg.cost_usd) + '</span></div></td>' +
+        '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
+        '<td style="text-align:right;padding-right:.85rem">' + deltaBadge(d) + '</td>' +
+        '<td style="text-align:center">' + delBtn + '</td></tr>';
+    }).join('');
+    document.getElementById('rg-table').innerHTML =
+      '<table><tr><th>Resource Group</th><th>Cost</th><th style="text-align:right">Share</th>' +
+      '<th style="text-align:right">&Delta; vs prev wk</th><th></th></tr>' + rows + '</table>';
+  }).catch(function(err) {
+    document.getElementById('rg-kpi').innerHTML = '';
+    document.getElementById('rg-error').textContent = 'Error: ' + err.message;
+  });
 }
 
-// ── COMPUTE MACHINES ──────────────────────────────────────────────────────────
-var _loadedMachines = [];
+// ── ANOMALIES TAB ─────────────────────────────────────────────────────────────
+function loadAnomaliesTab() {
+  document.getElementById('anom-body').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('anom-error').textContent = '';
 
-function loadComputeMachines() {
-  document.getElementById('cp-badge').textContent = periodLabel();
-  document.getElementById('cp-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
-  document.getElementById('cp-table').innerHTML = '';
-  document.getElementById('cp-error').textContent = '';
+  getAnomalies().then(function(data) {
+    if (!data || data.error) {
+      document.getElementById('anom-error').textContent = data ? data.error : 'Failed to load anomalies.';
+      document.getElementById('anom-body').innerHTML = '';
+      return;
+    }
 
-  fetch('/api/compute/machines?period=' + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-      var machines = data.machines || [];
-      _loadedMachines = machines;
-      var total    = data.total_usd || 0;
+    var spikes    = data.spikes || [];
+    var newSvcs   = data.new_services || [];
+    var goneSvcs  = data.vanished_services || [];
+    var rgSpikes  = data.rg_spikes || [];
+    var untagged  = data.untagged_resources || [];
+    var untagCost = data.untagged_cost_usd || 0;
+    var untagCount = data.total_untagged_resources || 0;
 
-      if (data.data_as_of) {
-        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
-        document.getElementById('cp-badge').textContent = badge;
-      }
+    var html = '';
 
-      document.getElementById('cp-kpi').innerHTML =
-        kpiCard('Total', fmtCost(total), 'blue') +
-        kpiCard('Machines', machines.length, '') +
-        kpiCard('Top Machine', machines.length ? shortName(machines[0].name) : '—', 'blue') +
-        kpiCard('Top Cost', machines.length ? fmtCost(machines[0].cost_usd) : '—', 'blue');
+    // ── KPI summary strip ──────────────────────────────────────────────────
+    html += '<div class="anom-summary">' +
+      anomKpi('Service Spikes', spikes.length, spikes.length > 0 ? 'red' : 'gray') +
+      anomKpi('RG Spikes', rgSpikes.length, rgSpikes.length > 0 ? 'yellow' : 'gray') +
+      anomKpi('New Services', newSvcs.length, newSvcs.length > 0 ? 'blue' : 'gray') +
+      anomKpi('Vanished', goneSvcs.length, goneSvcs.length > 0 ? 'gray' : 'gray') +
+      anomKpi('Untagged Cost', fmtCost(untagCost), untagCost > 10 ? 'orange' : 'gray', untagCount + ' resources') +
+    '</div>';
 
-      if (!machines.length) {
-        document.getElementById('cp-table').innerHTML = '<p class="empty">No spend in this period.</p>';
-        return;
-      }
+    // ── Untagged banner (if significant) ──────────────────────────────────
+    if (untagCost > 0) {
+      html += '<div class="tag-banner">' +
+        '<div><div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em;color:#92400e;margin-bottom:.15rem">Untagged Cost (all time)</div>' +
+        '<div class="tag-banner-cost">' + fmtCost(untagCost) + '</div></div>' +
+        '<div class="tag-banner-label">across ' + untagCount + ' resource IDs &mdash; cannot be attributed to a project/owner</div>' +
+      '</div>';
+    }
 
-      var max  = machines[0].cost_usd || 1;
-      var rows = machines.map(function(m) {
-        var pct   = Math.round(m.cost_usd / max * 100);
-        var share = ((m.cost_usd / total) * 100).toFixed(1);
-        var delBtn = '<button class="btn-row-destroy" onclick=\'openRgDeleteModal(' + JSON.stringify(m.name) + ')\'>&#x1F5D1;&#xFE0F;</button>';
-        return '<tr>' +
-          '<td>' + m.name + '</td>' +
-          '<td><div class="bar-cell"><div class="bar blue" style="width:' + Math.max(pct, 1) + 'px"></div>' +
-          '<span style="font-family:monospace">' + fmtCost(m.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td>' +
-          '<td style="text-align:center">' + delBtn + '</td></tr>';
-      }).join('');
-      document.getElementById('cp-table').innerHTML =
-        '<table><tr><th>Machine</th><th>Cost</th><th style="text-align:right">Share</th><th></th></tr>' + rows + '</table>';
-    })
-    .catch(function(err) {
-      document.getElementById('cp-kpi').innerHTML = '';
-      document.getElementById('cp-error').textContent = 'Error: ' + err.message;
-    });
-}
-
-// ── STORAGE ───────────────────────────────────────────────────────────────────
-function loadStorage() {
-  document.getElementById('stor-badge').textContent = periodLabel();
-  document.getElementById('stor-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
-  document.getElementById('stor-table').innerHTML = '';
-  document.getElementById('stor-error').textContent = '';
-
-  fetch('/api/storage/breakdown?period=' + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-
-      var svcs     = data.by_service || [];
-      var total    = data.total_usd || 0;
-      var spaceUsd = data.space_usd || 0;
-      var xferUsd  = data.transfer_usd || 0;
-
-      if (data.data_as_of) {
-        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
-        document.getElementById('stor-badge').textContent = badge;
-      }
-
-      document.getElementById('stor-kpi').innerHTML =
-        kpiCard('Total Storage', fmtCost(total), 'green') +
-        kpiCard('Space / Capacity', fmtCost(spaceUsd), 'blue', 'data stored, disks, backups') +
-        kpiCard('Transfer / Bandwidth', fmtCost(xferUsd), 'orange', 'egress, replication, retrieval') +
-        kpiCard('Services', svcs.length, '');
-
-      if (!svcs.length) {
-        document.getElementById('stor-table').innerHTML = '<p class="empty">No storage spend for this period.</p>';
-        return;
-      }
-
-      var max  = svcs[0].cost_usd || 1;
-      var rows = svcs.map(function(s) {
-        var pct   = Math.round(s.cost_usd / max * 100);
-        var share = ((s.cost_usd / total) * 100).toFixed(1);
-        var isXfer = /bandwidth|transfer|egress|replication|retrieval/i.test(s.service);
-        var color  = isXfer ? 'orange' : 'green';
-        var tag    = isXfer
-          ? '<span style="font-size:0.65rem;background:#451a03;color:#fcd34d;padding:.1rem .35rem;border-radius:3px;margin-left:.4rem">transfer</span>'
-          : '<span style="font-size:0.65rem;background:#052e16;color:#86efac;padding:.1rem .35rem;border-radius:3px;margin-left:.4rem">space</span>';
-        return '<tr>' +
-          '<td>' + escHtml(s.service) + tag + '</td>' +
-          '<td><div class="bar-cell"><div class="bar ' + color + '" style="width:' + Math.max(pct, 1) + 'px"></div>' +
-          '<span style="font-family:monospace">' + fmtCost(s.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
-      }).join('');
-      document.getElementById('stor-table').innerHTML =
-        '<table><tr><th>Service (MeterCategory)</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
-    })
-    .catch(function(err) {
-      document.getElementById('stor-kpi').innerHTML = '';
-      document.getElementById('stor-error').textContent = 'Error: ' + err.message;
-    });
-}
-
-// ── CATEGORY DETAIL (Compute / Database) ─────────────────────────────────────
-function loadCategoryDetail(name, urlBase, prefix, color) {
-  document.getElementById(prefix + '-badge').textContent = periodLabel();
-  document.getElementById(prefix + '-kpi').innerHTML = '<div class="loading">Loading&hellip;</div>';
-  document.getElementById(prefix + '-table').innerHTML = '';
-  document.getElementById(prefix + '-error').textContent = '';
-
-  fetch(urlBase + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-      var svcs  = data.services || [];
-      var total = data.total_usd || 0;
-
-      if (data.data_as_of) {
-        var badge = data.fallback ? 'Latest: ' + data.data_as_of : periodLabel() + ' \xb7 as of ' + data.data_as_of;
-        document.getElementById(prefix + '-badge').textContent = badge;
-      }
-
-      document.getElementById(prefix + '-kpi').innerHTML =
-        kpiCard('Total', fmtCost(total), color) +
-        kpiCard('Services', svcs.length, '') +
-        kpiCard('Top Service', svcs.length ? shortName(svcs[0].service) : '—', color) +
-        kpiCard('Top Cost', svcs.length ? fmtCost(svcs[0].cost_usd) : '—', color);
-
-      if (!svcs.length) {
-        document.getElementById(prefix + '-table').innerHTML = '<p class="empty">No spend in this period.</p>';
-        return;
-      }
-
-      var max = svcs[0].cost_usd || 1;
-      var rows = svcs.map(function(s) {
-        var pct   = Math.round(s.cost_usd / max * 100);
-        var share = ((s.cost_usd / total) * 100).toFixed(1);
-        return '<tr>' +
-          '<td>' + s.service + '</td>' +
-          '<td><div class="bar-cell"><div class="bar ' + color + '" style="width:' + Math.max(pct, 1) + 'px"></div>' +
-          '<span style="font-family:monospace">' + fmtCost(s.cost_usd) + '</span></div></td>' +
-          '<td style="color:#64748b;text-align:right">' + share + '%</td></tr>';
-      }).join('');
-      document.getElementById(prefix + '-table').innerHTML =
-        '<table><tr><th>Service</th><th>Cost</th><th style="text-align:right">Share</th></tr>' + rows + '</table>';
-    })
-    .catch(function(err) {
-      document.getElementById(prefix + '-kpi').innerHTML = '';
-      document.getElementById(prefix + '-error').textContent = 'Error: ' + err.message;
-    });
-}
-
-// ── INSIGHTS ──────────────────────────────────────────────────────────────────
-function loadInsights() {
-  document.getElementById('ins-badge').textContent = periodLabel();
-  document.getElementById('insights-body').innerHTML = '<div class="loading">Loading&hellip;</div>';
-  document.getElementById('insights-error').textContent = '';
-
-  fetch('/api/services?period=' + currentPeriod + rgParam())
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error);
-      var svcs  = data.services || [];
-      var total = data.total_usd || 0;
-      var html  = '';
-
-      if (!svcs.length) {
-        html = '<div class="insight info"><span class="insight-icon">&#x2139;</span>No cost data available for this period.</div>';
-      } else {
-        // Top spender
-        var top = svcs[0];
-        var topShare = (top.cost_usd / total * 100).toFixed(1);
-        var level = topShare > 50 ? 'warn' : 'info';
-        html += '<div class="insight ' + level + '"><span class="insight-icon">' + (level==='warn'?'&#x26A0;':'&#x2139;') + '</span>' +
-          '<strong>' + top.service + '</strong> is your top spender at <strong>' + fmtCost(top.cost_usd) + '</strong> (' + topShare + '% of total).</div>';
-
-        // Services with >20% share
-        svcs.forEach(function(s) {
-          var sh = s.cost_usd / total * 100;
-          if (sh > 20 && s !== top) {
-            html += '<div class="insight info"><span class="insight-icon">&#x2139;</span>' +
-              '<strong>' + s.service + '</strong> accounts for ' + sh.toFixed(1) + '% of total cost (' + fmtCost(s.cost_usd) + ').</div>';
-          }
-        });
-
-        // Very low cost services (noise)
-        var lowCount = svcs.filter(function(s) { return s.cost_usd < 0.01; }).length;
-        if (lowCount > 0) {
-          html += '<div class="insight ok"><span class="insight-icon">&#x2713;</span>' +
-            lowCount + ' service' + (lowCount>1?'s':'') + ' with cost &lt; €0.01 (negligible spend).</div>';
-        }
-
-        // Total summary
-        html += '<div class="insight info"><span class="insight-icon">&#x2139;</span>' +
-          'Total ' + periodLabel() + ' spend: <strong>' + fmtCost(total) + '</strong> across ' + svcs.length + ' services.</div>';
-      }
-
-      document.getElementById('insights-body').innerHTML = html;
-    })
-    .catch(function(err) {
-      document.getElementById('insights-body').innerHTML = '';
-      document.getElementById('insights-error').textContent = 'Error: ' + err.message;
-    });
-}
-
-function loadBreakdown() {
-  document.getElementById('breakdown-badge').textContent = periodLabel();
-  document.getElementById('breakdown-body').innerHTML = '<div class="loading">Loading&hellip;</div>';
-
-  var cats = [
-    { name: 'Compute',  url: '/api/compute?period=',  color: 'blue'   },
-    { name: 'Storage',  url: '/api/storage?period=',  color: 'green'  },
-    { name: 'Network',  url: '/api/network?period=',  color: 'orange' },
-    { name: 'Database', url: '/api/database?period=', color: 'purple' },
-  ];
-  var results = {};
-  var remaining = cats.length;
-
-  cats.forEach(function(cat) {
-    fetch(cat.url + currentPeriod + rgParam())
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        results[cat.name] = { total: data.total_usd || 0, color: cat.color, count: (data.services||[]).length };
-        remaining--;
-        if (remaining === 0) renderBreakdown(results);
-      })
-      .catch(function() {
-        results[cat.name] = { total: 0, color: cat.color, count: 0 };
-        remaining--;
-        if (remaining === 0) renderBreakdown(results);
+    // ── Service spikes ─────────────────────────────────────────────────────
+    html += '<div class="anom-section">';
+    html += '<div class="anom-section-head"><span>&#x1F525; Service cost spikes (&gt;50% week&nbsp;vs.&nbsp;prior&nbsp;week)</span><span>' + spikes.length + ' alert' + (spikes.length !== 1 ? 's' : '') + '</span></div>';
+    if (!spikes.length) {
+      html += '<div class="anom-empty">No service cost spikes detected.</div>';
+    } else {
+      html += '<div class="scroll-table"><table><tr><th>Service</th><th>This week</th><th>Prior week</th><th>&Delta;</th></tr>';
+      spikes.forEach(function(s) {
+        html += '<tr><td>' + escHtml(s.C_SERVICE) + '</td>' +
+          '<td style="font-family:monospace;color:#e2e8f0">' + fmtCost(s.current_week_usd) + '</td>' +
+          '<td style="font-family:monospace;color:#64748b">' + fmtCost(s.prior_week_usd) + '</td>' +
+          '<td>' + deltaBadge(s) + '</td></tr>';
       });
+      html += '</table></div>';
+    }
+    html += '</div>';
+
+    // ── RG spikes ──────────────────────────────────────────────────────────
+    html += '<div class="anom-section">';
+    html += '<div class="anom-section-head"><span>&#x1F4C8; Resource group cost spikes (&gt;50%)</span><span>' + rgSpikes.length + ' alert' + (rgSpikes.length !== 1 ? 's' : '') + '</span></div>';
+    if (!rgSpikes.length) {
+      html += '<div class="anom-empty">No resource group cost spikes detected.</div>';
+    } else {
+      html += '<div class="scroll-table"><table><tr><th>Resource Group</th><th>This week</th><th>Prior week</th><th>&Delta;</th></tr>';
+      rgSpikes.forEach(function(r) {
+        html += '<tr><td>' + escHtml(r.C_NAME) + '</td>' +
+          '<td style="font-family:monospace;color:#e2e8f0">' + fmtCost(r.current_week_usd) + '</td>' +
+          '<td style="font-family:monospace;color:#64748b">' + fmtCost(r.prior_week_usd) + '</td>' +
+          '<td>' + deltaBadge(r) + '</td></tr>';
+      });
+      html += '</table></div>';
+    }
+    html += '</div>';
+
+    // ── New / vanished services ────────────────────────────────────────────
+    html += '<div class="anom-section" style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">';
+    html += '<div>';
+    html += '<div class="anom-section-head"><span>&#x2728; New this week (not seen prior week)</span></div>';
+    if (!newSvcs.length) {
+      html += '<div class="anom-empty">None.</div>';
+    } else {
+      html += '<table><tr><th>Service</th><th>Cost</th></tr>';
+      newSvcs.forEach(function(s) {
+        html += '<tr><td>' + escHtml(s.C_SERVICE) + '</td>' +
+          '<td style="font-family:monospace;color:#93c5fd">' + fmtCost(s.current_week_usd) + '</td></tr>';
+      });
+      html += '</table>';
+    }
+    html += '</div>';
+
+    html += '<div>';
+    html += '<div class="anom-section-head"><span>&#x1F47B; Vanished this week (had spend, now $0)</span></div>';
+    if (!goneSvcs.length) {
+      html += '<div class="anom-empty">None.</div>';
+    } else {
+      html += '<table><tr><th>Service</th><th>Prior week cost</th></tr>';
+      goneSvcs.forEach(function(s) {
+        html += '<tr><td>' + escHtml(s.C_SERVICE) + '</td>' +
+          '<td style="font-family:monospace;color:#a8a29e">' + fmtCost(s.prior_week_usd) + '</td></tr>';
+      });
+      html += '</table>';
+    }
+    html += '</div></div>';
+
+    // ── Untagged resources table ───────────────────────────────────────────
+    if (untagged.length) {
+      html += '<div class="anom-section">';
+      html += '<div class="anom-section-head"><span>&#x1F3F7;&#xFE0F; Untagged resources (top ' + untagged.length + ' by cost)</span></div>';
+      html += '<div class="scroll-table"><table><tr><th>Resource ID</th><th>Total Cost</th></tr>';
+      untagged.forEach(function(u) {
+        var rid = u.resource_id;
+        var short = rid.length > 80 ? '…' + rid.slice(-60) : rid;
+        html += '<tr><td style="font-family:monospace;font-size:0.7rem;color:#64748b" title="' + escAttr(rid) + '">' +
+          escHtml(short) + '</td>' +
+          '<td style="font-family:monospace;color:#fbbf24">' + fmtCost(u.cost_usd) + '</td></tr>';
+      });
+      html += '</table></div></div>';
+    }
+
+    document.getElementById('anom-body').innerHTML = html;
+  }).catch(function(err) {
+    document.getElementById('anom-error').textContent = 'Error: ' + err.message;
+    document.getElementById('anom-body').innerHTML = '';
   });
 }
 
-function renderBreakdown(results) {
-  var grand = Object.values(results).reduce(function(s, r) { return s + r.total; }, 0) || 1;
-  var html = '<div class="kpi-grid">';
-  Object.keys(results).forEach(function(name) {
-    var r = results[name];
-    var share = (r.total / grand * 100).toFixed(1);
-    html += kpiCard(name, fmtCost(r.total) + ' (' + share + '%)', r.color, r.count + ' svc');
-  });
-  html += '</div>';
-  document.getElementById('breakdown-body').innerHTML = html;
+function anomKpi(label, val, cls, sub) {
+  return '<div class="anom-kpi ' + (cls||'') + '">' +
+    '<div class="anom-kpi-label">' + label + '</div>' +
+    '<div class="anom-kpi-val ' + (cls||'') + '">' + val + '</div>' +
+    (sub ? '<div style="font-size:0.68rem;color:#475569;margin-top:.15rem">' + sub + '</div>' : '') +
+    '</div>';
 }
 
 // ── Status bar ────────────────────────────────────────────────────────────────
@@ -848,7 +726,7 @@ function loadStatus() {
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { document.getElementById('st-error').textContent = 'Error: ' + d.error; return; }
-      var range = (d.date_range && d.date_range.length === 2) ? d.date_range[0] + ' \u2013 ' + d.date_range[1] : '&mdash;';
+      var range = (d.date_range && d.date_range.length === 2) ? d.date_range[0] + ' – ' + d.date_range[1] : '&mdash;';
       document.getElementById('st-range').innerHTML = 'Date range: <strong>' + range + '</strong>';
       document.getElementById('st-rows').innerHTML  = 'Rows: <strong>' + fmtNum(d.row_count || 0) + '</strong>';
       var age = d.cache_age_s != null ? Math.round(d.cache_age_s / 60) + ' min' : '&mdash;';
@@ -861,6 +739,7 @@ function loadStatus() {
 function reloadData() {
   document.getElementById('st-range').innerHTML = 'Date range: <strong>reloading&hellip;</strong>';
   document.getElementById('st-error').textContent = '';
+  _anomaliesCache = null;
   fetch('/api/reload', { method: 'POST' })
     .then(function(r) { return r.json(); })
     .then(function(d) {
@@ -883,14 +762,9 @@ function kpiCard(label, val, cls, sub) {
     (sub ? '<div class="kpi-sub">' + sub + '</div>' : '') + '</div>';
 }
 
-function shortName(s) {
-  if (!s) return '';
-  return s.length > 22 ? s.slice(0, 20) + '\u2026' : s;
-}
-
 function shortRg(s) {
   if (!s) return '(none)';
-  return s.length > 20 ? s.slice(0, 18) + '\u2026' : s;
+  return s.length > 20 ? s.slice(0, 18) + '…' : s;
 }
 
 function periodDays() {
@@ -914,7 +788,7 @@ function fmtNum(n) {
   return String(n);
 }
 
-// ── Grand total (status bar — always in sync with manager) ───────────────────
+// ── Grand total ───────────────────────────────────────────────────────────────
 function loadGrandTotal() {
   var bar = document.getElementById('st-total-val');
   if (bar) bar.textContent = 'loading…';
@@ -928,21 +802,20 @@ function loadGrandTotal() {
 
 // ── Bulk Delete All Resource Groups modal ─────────────────────────────────────
 function openBulkRgDeleteModal() {
-  var source = currentTab === 'resource-groups' ? _loadedRgs : _loadedMachines;
-  if (!source.length) {
+  if (!_loadedRgs.length) {
     alert('No resource groups loaded yet. Wait for the tab to finish loading.');
     return;
   }
-  var names = source.map(function(m) { return m.name; });
+  var names = _loadedRgs.map(function(r) { return r.name; });
   document.getElementById('bdm-count').textContent = names.length;
   document.getElementById('bdm-list').innerHTML = names.map(function(n) {
-    return '<div style="padding:.1rem 0;border-bottom:1px solid #1e293b">' + n + '</div>';
+    return '<div style="padding:.1rem 0;border-bottom:1px solid #1e293b">' + escHtml(n) + '</div>';
   }).join('');
   document.getElementById('bdm-log').style.display = 'none';
   document.getElementById('bdm-log').innerHTML = '';
   document.getElementById('bdm-cancel-btn').textContent = 'Cancel';
   document.getElementById('bdm-cancel-btn').disabled = false;
-  document.getElementById('bdm-destroy-btn').textContent = '\uD83D\uDDD1\uFE0F Delete All';
+  document.getElementById('bdm-destroy-btn').textContent = '🗑️ Delete All';
   document.getElementById('bdm-destroy-btn').disabled = false;
   document.getElementById('rg-bulk-delete-modal').classList.add('active');
 }
@@ -952,11 +825,11 @@ function closeBulkRgDeleteModal() {
 }
 
 async function confirmBulkRgDelete() {
-  var names = _loadedMachines.map(function(m) { return m.name; });
+  var names = _loadedRgs.map(function(r) { return r.name; });
   if (!names.length) return;
 
-  var logEl     = document.getElementById('bdm-log');
-  var cancelBtn = document.getElementById('bdm-cancel-btn');
+  var logEl      = document.getElementById('bdm-log');
+  var cancelBtn  = document.getElementById('bdm-cancel-btn');
   var destroyBtn = document.getElementById('bdm-destroy-btn');
 
   logEl.style.display = 'block';
@@ -970,8 +843,7 @@ async function confirmBulkRgDelete() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(names)
     });
-
-    var reader = resp.body.getReader();
+    var reader  = resp.body.getReader();
     var decoder = new TextDecoder();
     while (true) {
       var chunk = await reader.read();
@@ -979,19 +851,16 @@ async function confirmBulkRgDelete() {
       var text = decoder.decode(chunk.value, { stream: true });
       text.split('\n').forEach(function(line) {
         if (!line) return;
-        var cls = line.includes('✅') ? 'ok' : line.includes('❌') || line.includes('FAILED') ? 'err' : '';
+        var cls = line.includes('✅') ? 'ok' : (line.includes('❌') || line.includes('FAILED')) ? 'err' : '';
         logEl.innerHTML += '<span' + (cls ? ' class="' + cls + '"' : '') + '>' +
           line.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '\n</span>';
       });
       logEl.scrollTop = logEl.scrollHeight;
     }
-
     destroyBtn.textContent = '✅ Done';
     cancelBtn.textContent  = 'Close';
     cancelBtn.disabled = false;
-    _loadedMachines = [];
     _loadedRgs = [];
-
   } catch (err) {
     logEl.innerHTML += '<span class="err">❌ ' + err.message.replace(/</g,'&lt;') + '\n</span>';
     cancelBtn.disabled  = false;
@@ -1013,7 +882,7 @@ function openRgDeleteModal(rgName) {
   document.getElementById('rdm-log').innerHTML = '';
   document.getElementById('rdm-cancel-btn').textContent = 'Cancel';
   document.getElementById('rdm-cancel-btn').disabled = false;
-  document.getElementById('rdm-destroy-btn').textContent = '\uD83D\uDDD1\uFE0F Delete All';
+  document.getElementById('rdm-destroy-btn').textContent = '🗑️ Delete';
   document.getElementById('rdm-destroy-btn').disabled = false;
   document.getElementById('rg-delete-modal').classList.add('active');
 }
@@ -1027,8 +896,8 @@ async function confirmRgDelete() {
   if (!_deleteRgName) return;
   var rgName = _deleteRgName;
 
-  var logEl     = document.getElementById('rdm-log');
-  var cancelBtn = document.getElementById('rdm-cancel-btn');
+  var logEl      = document.getElementById('rdm-log');
+  var cancelBtn  = document.getElementById('rdm-cancel-btn');
   var destroyBtn = document.getElementById('rdm-destroy-btn');
 
   logEl.style.display = 'block';
@@ -1040,8 +909,7 @@ async function confirmRgDelete() {
     var resp = await fetch('/api/resource-group?resource_group_name=' + encodeURIComponent(rgName), {
       method: 'DELETE'
     });
-
-    var reader = resp.body.getReader();
+    var reader  = resp.body.getReader();
     var decoder = new TextDecoder();
     while (true) {
       var chunk = await reader.read();
@@ -1055,11 +923,9 @@ async function confirmRgDelete() {
       });
       logEl.scrollTop = logEl.scrollHeight;
     }
-
     destroyBtn.textContent = '✅ Done';
     cancelBtn.textContent  = 'Close';
     cancelBtn.disabled = false;
-
   } catch (err) {
     logEl.innerHTML += '<span class="err">❌ ' + err.message.replace(/</g,'&lt;') + '\n</span>';
     cancelBtn.disabled  = false;

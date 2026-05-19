@@ -794,6 +794,90 @@ async def api_resource_groups_list() -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+# ── Anomalies ────────────────────────────────────────────────────────────────
+
+@app.get("/api/anomalies", tags=["api"])
+async def api_anomalies(rg: str = "") -> JSONResponse:
+    """Week-over-week cost anomalies and untagged resource report from billing CSV."""
+    try:
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
+
+        today = date.today()
+        curr_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+        prev_start = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+
+        has_date = "C_DATE" in df.columns
+        curr_df = df[df["C_DATE"] >= curr_start] if has_date else df
+        prev_df = df[(df["C_DATE"] >= prev_start) & (df["C_DATE"] < curr_start)] if has_date else pd.DataFrame(columns=df.columns)
+
+        def _week_deltas(key_col: str) -> tuple[list[dict], dict[str, dict]]:
+            if key_col not in df.columns or "C_COST" not in df.columns:
+                return [], {}
+            c = curr_df.groupby(key_col)["C_COST"].sum() if not curr_df.empty else pd.Series(dtype=float)
+            p = prev_df.groupby(key_col)["C_COST"].sum() if not prev_df.empty else pd.Series(dtype=float)
+            rows, index = [], {}
+            for k in set(c.index) | set(p.index):
+                cv, pv = float(c.get(k, 0)), float(p.get(k, 0))
+                if cv == 0 and pv == 0:
+                    continue
+                delta_pct = round((cv - pv) / pv * 100, 1) if pv > 0 else None
+                entry = {
+                    key_col: str(k),
+                    "current_week_usd": round(cv, 4),
+                    "prior_week_usd": round(pv, 4),
+                    "delta_pct": delta_pct,
+                    "is_new": pv == 0 and cv > 0,
+                    "vanished": cv == 0 and pv > 0,
+                }
+                rows.append(entry)
+                index[str(k)] = entry
+            return rows, index
+
+        svc_rows, svc_index = _week_deltas("C_SERVICE")
+        rg_rows,  rg_index  = _week_deltas("C_NAME")
+
+        spikes    = sorted([s for s in svc_rows if s["delta_pct"] is not None and s["delta_pct"] > 50],
+                           key=lambda x: x["delta_pct"], reverse=True)
+        new_svcs  = sorted([s for s in svc_rows if s["is_new"] and s["current_week_usd"] > 1],
+                           key=lambda x: x["current_week_usd"], reverse=True)
+        gone_svcs = sorted([s for s in svc_rows if s["vanished"] and s["prior_week_usd"] > 1],
+                           key=lambda x: x["prior_week_usd"], reverse=True)
+        rg_spikes = sorted([r for r in rg_rows if r["delta_pct"] is not None and r["delta_pct"] > 50],
+                           key=lambda x: x["delta_pct"], reverse=True)
+
+        untagged: list[dict] = []
+        untagged_cost = 0.0
+        if "C_TAGS" in df.columns and "C_RESOURCE_ID" in df.columns and "C_COST" in df.columns:
+            mask = (
+                df["C_TAGS"].isna() |
+                df["C_TAGS"].astype(str).str.strip().isin(["", "{}", "nan", "None"])
+            )
+            utdf = df[mask]
+            if not utdf.empty:
+                agg = utdf.groupby("C_RESOURCE_ID")["C_COST"].sum().sort_values(ascending=False)
+                untagged = [
+                    {"resource_id": str(rid), "cost_usd": round(float(c), 4)}
+                    for rid, c in agg.items() if c > 0
+                ][:50]
+                untagged_cost = round(sum(u["cost_usd"] for u in untagged), 4)
+
+        return JSONResponse({
+            "spikes": spikes,
+            "new_services": new_svcs,
+            "vanished_services": gone_svcs,
+            "rg_spikes": rg_spikes,
+            "service_deltas": svc_index,
+            "rg_deltas": rg_index,
+            "untagged_cost_usd": untagged_cost,
+            "untagged_resources": untagged,
+            "total_untagged_resources": len(untagged),
+        })
+    except Exception as exc:
+        log.exception("Anomalies endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── Live resources ────────────────────────────────────────────────────────────
 
 @app.get("/api/live-resources", tags=["api"])
