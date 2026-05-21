@@ -270,6 +270,7 @@ _RTYPE_CATEGORY: dict[str, str] = {
     "microsoft.network/privatednszones":            "network",
     "microsoft.network/trafficmanagerprofiles":     "network",
     "microsoft.network/frontdoors":                 "network",
+    "microsoft.network/natgateways":                "network",
     "microsoft.sql/servers":                        "database",
     "microsoft.sql/managedinstances":               "database",
     "microsoft.documentdb/databaseaccounts":        "database",
