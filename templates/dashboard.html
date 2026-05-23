@@ -209,7 +209,7 @@
   </div>
 
   <!-- Forecast card -->
-  <div class="cat-card" style="margin-bottom:1.25rem;">
+  <div id="forecast-card" class="cat-card" style="margin-bottom:1.25rem;">
     <div class="cat-header">
       <div class="cat-title"><h2>Monthly Forecast</h2></div>
       <span id="fc-badge" class="cat-badge">loading&hellip;</span>
@@ -232,6 +232,18 @@
       </div>
       <div id="fc-rgs" style="margin-top:.85rem;"></div>
       <div id="fc-error" class="error-msg"></div>
+    </div>
+  </div>
+
+  <!-- Monthly breakdown — visible only for Year period -->
+  <div id="year-card" class="cat-card" style="margin-bottom:1.25rem;display:none;">
+    <div class="cat-header">
+      <div class="cat-title"><h2>Breakdown/Forecast</h2></div>
+      <span id="year-badge" class="cat-badge">12 months</span>
+    </div>
+    <div class="cat-body">
+      <div id="year-chart"><div class="loading">Loading&hellip;</div></div>
+      <div id="year-error" class="error-msg"></div>
     </div>
   </div>
 
@@ -363,6 +375,12 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function setPeriod(p) {
   document.querySelectorAll('.pill').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
   currentPeriod=p; loaded={}; loadAll();
+  var isYear = (p === 'year');
+  var yc = document.getElementById('year-card');
+  if (yc) yc.style.display = isYear ? 'block' : 'none';
+  var fc = document.getElementById('forecast-card');
+  if (fc) fc.style.display = isYear ? 'none' : 'block';
+  if (isYear) loadYearChart();
 }
 function periodLabel() {
   return {day:'24 hours', week:'7 days', month:'30 days', year:'365 days'}[currentPeriod]||currentPeriod;
@@ -590,6 +608,82 @@ function loadForecast() {
       document.getElementById('fc-badge').textContent = 'error';
       document.getElementById('fc-error').textContent = 'Forecast error: ' + err.message;
       document.getElementById('fc-chart').innerHTML = '';
+    });
+}
+
+// ── Year monthly chart ────────────────────────────────────────────────────────
+function loadYearChart() {
+  var chart = document.getElementById('year-chart');
+  var error = document.getElementById('year-error');
+  if (!chart) return;
+  chart.innerHTML = '<div class="loading">Loading&hellip;</div>';
+  if (error) error.textContent = '';
+  fetch('/api/year' + (getCurrentRg() ? '?rg=' + encodeURIComponent(getCurrentRg()) : ''))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var months = data.months || [];
+      var proj   = data.projected_months || [];
+      var badge  = document.getElementById('year-badge');
+      if (badge) badge.textContent = months.length + ' months \xb7 avg ' + fmtCost(data.monthly_avg_usd) + '/mo';
+      if (!months.length) { chart.innerHTML = '<p class="empty">No data for the last 12 months.</p>'; return; }
+
+      var all = months.concat(proj);
+      var maxVal = Math.max.apply(null, all.map(function(m) { return m.cost_usd; })) || 0.001;
+      var W = 800, H = 160, pT = 20, pB = 28, pL = 4, pR = 4;
+      var cW = W - pL - pR, cH = H - pT - pB;
+      var n = all.length, gap = 4;
+      var barW = Math.max(8, Math.floor(cW / n) - gap);
+      var svg = '';
+      svg += '<text x="' + pL + '" y="' + (pT - 4) + '" font-size="9" fill="#94a3b8" font-family="monospace">max: ' + fmtCost(maxVal) + '</text>';
+      var curYear = new Date().getFullYear().toString();
+
+      months.forEach(function(m, i) {
+        var x = pL + i * (barW + gap);
+        var h = Math.max(2, (m.cost_usd / maxVal) * cH);
+        var y = pT + cH - h;
+        var fill = m.month.startsWith(curYear) ? '#38bdf8' : '#334155';
+        var opacity = m.month.startsWith(curYear) ? '0.85' : '0.55';
+        svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW + '" height="' + h.toFixed(1) + '" fill="' + fill + '" opacity="' + opacity + '" rx="2"/>';
+        var parts = m.month.split('-');
+        var lbl = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
+        var lx = (x + barW / 2).toFixed(1);
+        svg += '<text x="' + lx + '" y="' + (pT + cH + 11) + '" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">' + escHtml(lbl) + '</text>';
+        svg += '<text x="' + lx + '" y="' + (pT + cH + 21) + '" text-anchor="middle" font-size="7" fill="#475569" font-family="system-ui">' + escHtml(parts[0].slice(2)) + '</text>';
+      });
+
+      if (proj.length) {
+        var divX = (pL + months.length * (barW + gap) - 2).toFixed(1);
+        svg += '<line x1="' + divX + '" y1="' + pT + '" x2="' + divX + '" y2="' + (pT + cH) + '" stroke="#475569" stroke-width="1" stroke-dasharray="3,2"/>';
+        var projH = Math.max(2, (proj[0].cost_usd / maxVal) * cH);
+        var lineY = (pT + cH - projH).toFixed(1);
+        var lx1 = (pL + months.length * (barW + gap)).toFixed(1);
+        var lx2 = (pL + (all.length - 1) * (barW + gap) + barW).toFixed(1);
+        svg += '<line x1="' + lx1 + '" y1="' + lineY + '" x2="' + lx2 + '" y2="' + lineY + '" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>';
+        proj.forEach(function(m, i) {
+          var x = pL + (months.length + i) * (barW + gap);
+          var h = Math.max(2, (m.cost_usd / maxVal) * cH);
+          var y = pT + cH - h;
+          svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW + '" height="' + h.toFixed(1) + '" fill="#f97316" opacity="0.25" rx="2"/>';
+          var parts = m.month.split('-');
+          var lbl = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
+          var lx = (x + barW / 2).toFixed(1);
+          svg += '<text x="' + lx + '" y="' + (pT + cH + 11) + '" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">' + escHtml(lbl) + '</text>';
+          svg += '<text x="' + lx + '" y="' + (pT + cH + 21) + '" text-anchor="middle" font-size="7" fill="#475569" font-family="system-ui">' + escHtml(parts[0].slice(2)) + '</text>';
+        });
+      }
+
+      svg += '<line x1="' + pL + '" y1="' + (pT + cH) + '" x2="' + (W - pR) + '" y2="' + (pT + cH) + '" stroke="#334155" stroke-width="1"/>';
+      var legend = proj.length
+        ? '<div style="display:flex;gap:1rem;font-size:0.68rem;color:#64748b;margin-top:.4rem;">'
+          + '<span><span style="display:inline-block;width:10px;height:8px;border-radius:1px;background:#38bdf8;opacity:0.85;margin-right:.3rem"></span>Actual</span>'
+          + '<span><span style="display:inline-block;width:10px;height:8px;border-radius:1px;background:#f97316;opacity:0.4;margin-right:.3rem"></span>Projected</span>'
+          + '</div>' : '';
+      chart.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:' + H + 'px;display:block;" preserveAspectRatio="none">' + svg + '</svg>' + legend;
+    })
+    .catch(function(err) {
+      if (chart) chart.innerHTML = '';
+      if (error) error.textContent = 'Error: ' + err.message;
     });
 }
 

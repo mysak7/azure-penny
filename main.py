@@ -878,6 +878,65 @@ async def api_anomalies(rg: str = "") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+# ── Year overview ─────────────────────────────────────────────────────────────
+
+@app.get("/api/year", tags=["api"])
+async def api_year(rg: str = "") -> JSONResponse:
+    try:
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
+
+        if df.empty or "C_DATE" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"months": [], "projected_months": [], "ytd_usd": 0, "monthly_avg_usd": 0})
+
+        today = date.today()
+        cutoff = date(today.year - 1, today.month, 1).strftime("%Y-%m-%d")
+        df = df[df["C_DATE"] >= cutoff].copy()
+
+        df["_month"] = df["C_DATE"].str[:7]
+        monthly = df.groupby("_month")["C_COST"].sum().sort_index()
+        months = [{"month": m, "cost_usd": round(float(v), 2)} for m, v in monthly.items()]
+
+        ytd_prefix = today.strftime("%Y")
+        ytd_usd = round(float(df[df["C_DATE"].str.startswith(ytd_prefix)]["C_COST"].sum()), 2)
+        monthly_avg = round(float(monthly.mean()), 2) if len(monthly) > 0 else 0.0
+
+        daily_rate = 0.0
+        try:
+            all_resources = await _get_live_data()
+            live_monthly = sum((r.get("monthly_cost") or 0.0) for r in all_resources if (r.get("monthly_cost") or 0.0) > 0)
+            if live_monthly > 0:
+                daily_rate = live_monthly / 30
+        except Exception:
+            pass
+        if daily_rate == 0 and today.day > 0:
+            month_str = today.strftime("%Y-%m")
+            this_month_df = df[df["C_DATE"].str.startswith(month_str)]
+            if not this_month_df.empty:
+                daily_rate = float(this_month_df["C_COST"].sum()) / today.day
+
+        projected_months: list[dict] = []
+        if daily_rate > 0:
+            m = today.month + 1
+            y = today.year
+            while m <= 12:
+                days_in = calendar.monthrange(y, m)[1]
+                projected_months.append({
+                    "month": f"{y}-{m:02d}",
+                    "cost_usd": round(daily_rate * days_in, 2),
+                })
+                m += 1
+
+        return JSONResponse({
+            "months":           months,
+            "projected_months": projected_months,
+            "ytd_usd":          ytd_usd,
+            "monthly_avg_usd":  monthly_avg,
+        })
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── Live resources ────────────────────────────────────────────────────────────
 
 @app.get("/api/live-resources", tags=["api"])
