@@ -170,6 +170,7 @@
       <button class="pill"        data-period="day"   onclick="setPeriod('day')">Day</button>
       <button class="pill active" data-period="week"  onclick="setPeriod('week')">Week</button>
       <button class="pill"        data-period="month" onclick="setPeriod('month')">Month</button>
+      <button class="pill"        data-period="year"  onclick="setPeriod('year')">Year</button>
     </div>
   </div>
 
@@ -364,7 +365,7 @@ function setPeriod(p) {
   currentPeriod=p; loaded={}; loadAll();
 }
 function periodLabel() {
-  return {day:'24 hours', week:'7 days', month:'30 days'}[currentPeriod]||currentPeriod;
+  return {day:'24 hours', week:'7 days', month:'30 days', year:'365 days'}[currentPeriod]||currentPeriod;
 }
 
 // ── Load all ──────────────────────────────────────────────────────────────────

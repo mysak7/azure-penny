@@ -125,7 +125,7 @@ _TRANSFER_KEYWORDS = frozenset([
 
 
 def _period_days(period: str) -> int:
-    return {"day": 1, "week": 7, "month": 30}.get(period, 7)
+    return {"day": 1, "week": 7, "month": 30, "year": 365}.get(period, 7)
 
 
 def _filter_period(df: pd.DataFrame, days: int) -> pd.DataFrame:
