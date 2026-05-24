@@ -35,8 +35,9 @@
     .pill.active { background: #0c4a6e; border-color: #38bdf8; color: #38bdf8; }
 
     /* Summary KPI row */
-    .summary-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 1.75rem; }
-    @media (max-width: 1100px) { .summary-row { grid-template-columns: repeat(3, 1fr); } }
+    .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.75rem; }
+    .summary-card.total-card { grid-column: span 2; }
+    @media (max-width: 1100px) { .summary-row { grid-template-columns: repeat(3, 1fr); } .summary-card.total-card { grid-column: span 1; } }
     @media (max-width: 600px)  { .summary-row { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 380px)  { .summary-row { grid-template-columns: 1fr; } }
     .summary-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .35rem; position: relative; overflow: hidden; }
@@ -202,7 +203,7 @@
       <div class="summary-sub" id="kpi-database-sub">&nbsp;</div>
     </div>
     <div class="summary-card" style="border-top-color:#06b6d4;">
-      <div class="summary-label" style="color:#06b6d4;">Monitoring</div>
+      <div class="summary-label" style="color:#06b6d4;">Monitoring &amp; Security</div>
       <div class="summary-val" id="kpi-monitoring">&mdash;</div>
       <div class="summary-sub" id="kpi-monitoring-sub">&nbsp;</div>
     </div>
@@ -211,7 +212,7 @@
       <div class="summary-val" id="kpi-other">&mdash;</div>
       <div class="summary-sub" id="kpi-other-sub">&nbsp;</div>
     </div>
-    <div class="summary-card" style="border-top-color:#f1f5f9;">
+    <div class="summary-card total-card" style="border-top-color:#f1f5f9;">
       <div class="summary-label" style="color:#94a3b8;">Total</div>
       <div class="summary-val" id="kpi-total" style="color:#f1f5f9;">&mdash;</div>
       <div class="summary-sub" id="kpi-total-sub">&nbsp;</div>
@@ -310,7 +311,7 @@
 
     <div class="cat-card">
       <div class="cat-header">
-        <div class="cat-title"><h2>Monitoring</h2></div>
+        <div class="cat-title"><h2>Monitoring &amp; Security</h2></div>
         <span id="mon-badge" class="cat-badge">7 days</span>
       </div>
       <div class="cat-body">

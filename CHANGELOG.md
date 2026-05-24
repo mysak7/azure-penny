@@ -11,6 +11,31 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [1.2.0] – 2026-05-24
+
+### Fixed
+- **Category coverage gap** – services missing from `CAT_*` sets appeared in **Total** but not in any
+  category card. Root cause: Azure billing uses `"Azure Container Apps"` (with prefix) but the code
+  matched only `"Container Apps"`. Verified from live billing data (`/api/debug`).
+  - `CAT_COMPUTE`: added `Azure Container Apps`, `Container Registry`, `Azure App Service`,
+    `NAT Gateway` and other `Azure …`-prefixed billing name variants
+  - `CAT_STORAGE`, `CAT_NETWORK`, `CAT_DATABASE`: expanded with both bare and prefixed forms
+  - `CAT_MONITORING`: added `Key Vault` / `Azure Key Vault` (secrets management / security)
+
+### Added
+- **`/api/other` endpoint** – catch-all for spend not covered by any standard category
+- **Other / Uncategorized** KPI card (amber) and category detail card in dashboard
+- **"Other" pill** added to Cost Breakdown category selector
+- `ALL_KNOWN_SERVICES` frozenset (union of all `CAT_*`) used for exclusion logic
+- Breakdown chart `"all"` view now exhaustive – stacked bars sum to 100 % of total spend
+- **"Monitoring & Security"** rename (was "Monitoring") reflecting Key Vault inclusion
+
+### Changed
+- KPI grid changed from `repeat(5, 1fr)` to `repeat(4, 1fr)`; Total card spans 2 columns —
+  eliminates the 3-empty-column second row
+
+---
+
 ## [1.1.0] – 2026-05-24
 
 ### Added

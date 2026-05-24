@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI):
     asyncio.create_task(_get_live_data())
     yield
 
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 app = FastAPI(
     title="azure-penny",
@@ -156,6 +156,7 @@ CAT_MONITORING = {
     "Microsoft Sentinel", "Azure Sentinel",
     "Azure Advisor",
     "Microsoft Defender for Cloud", "Azure Security Center",
+    "Key Vault", "Azure Key Vault",           # secrets management / security
 }
 
 # Union of all explicitly mapped services — used to identify "Other" spend.
