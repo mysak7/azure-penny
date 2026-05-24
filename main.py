@@ -937,6 +937,118 @@ async def api_year(rg: str = "") -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+# ── Breakdown chart ───────────────────────────────────────────────────────────
+
+_ORDERED_CATS = ["Compute", "Storage", "Network", "Database", "Monitoring"]
+_CAT_KEY_MAP: dict[str, set[str]] = {
+    "compute":    CAT_COMPUTE,
+    "storage":    CAT_STORAGE,
+    "network":    CAT_NETWORK,
+    "database":   CAT_DATABASE,
+    "monitoring": CAT_MONITORING,
+}
+
+
+def _bucket_key(date_str: str, granularity: str) -> str:
+    """Convert a YYYY-MM-DD date string to a time-bucket key."""
+    try:
+        d = date.fromisoformat(str(date_str))
+    except (ValueError, TypeError):
+        return str(date_str)
+    if granularity == "weeks":
+        return d.strftime("%G-W%V")   # ISO year-week, e.g. "2025-W21"
+    if granularity == "months":
+        return str(date_str)[:7]      # "2025-05"
+    return str(date_str)              # days: "2025-05-19"
+
+
+def _bucket_label(key: str, granularity: str) -> str:
+    """Short human-readable label for a bucket key."""
+    if granularity == "weeks":
+        parts = key.split("-W")
+        return f"W{parts[1]}" if len(parts) == 2 else key
+    if granularity == "months":
+        try:
+            y, m = key.split("-")
+            return date(int(y), int(m), 1).strftime("%b %y")
+        except Exception:
+            return key
+    # days
+    try:
+        d = date.fromisoformat(key)
+        return f"{d.day}.{d.month}"
+    except Exception:
+        return key
+
+
+@app.get("/api/breakdown", tags=["api"])
+async def api_breakdown(
+    period: str = "week",
+    granularity: str = "days",
+    category: str = "all",
+    rg: str = "",
+) -> JSONResponse:
+    """Time-bucketed stacked cost breakdown for the Forecast chart."""
+    try:
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
+        days = _period_days(period)
+        df = _filter_period(df, days)
+
+        # Forecast text (reuse existing logic, best-effort)
+        fc_text: str | None = None
+        try:
+            fc = await _build_forecast(rg)
+            eom = fc.get("end_of_month_usd", 0)
+            if eom and eom > 0:
+                fc_text = f"~€{eom:.2f}"
+        except Exception:
+            pass
+
+        if df.empty or "C_DATE" not in df.columns or "C_COST" not in df.columns:
+            return JSONResponse({"buckets": [], "stack_keys": [], "forecast_text": fc_text})
+
+        df = df.copy()
+        df["_bucket"] = df["C_DATE"].apply(lambda x: _bucket_key(str(x), granularity))
+
+        result_buckets: dict[str, dict[str, float]] = {}
+        stack_keys: list[str] = []
+
+        if category.lower() == "all":
+            for cat_name, cat_services in _CAT_KEY_MAP.items():
+                cat_df = _filter_services(df, cat_services)
+                if cat_df.empty:
+                    continue
+                grp = cat_df.groupby("_bucket")["C_COST"].sum()
+                for bucket, cost in grp.items():
+                    result_buckets.setdefault(str(bucket), {})[cat_name.capitalize()] = round(float(cost), 4)
+            stack_keys = [c for c in _ORDERED_CATS if any(c in bdata for bdata in result_buckets.values())]
+        else:
+            cat_services = _CAT_KEY_MAP.get(category.lower(), set())
+            cat_df = _filter_services(df, cat_services)
+            if not cat_df.empty and "C_SERVICE" in cat_df.columns:
+                grp2 = cat_df.groupby(["_bucket", "C_SERVICE"])["C_COST"].sum()
+                for (bucket, svc), cost in grp2.items():
+                    result_buckets.setdefault(str(bucket), {})[str(svc)] = round(float(cost), 4)
+            svc_totals: dict[str, float] = {}
+            for bdata in result_buckets.values():
+                for svc, cost in bdata.items():
+                    svc_totals[svc] = svc_totals.get(svc, 0) + cost
+            stack_keys = sorted(svc_totals, key=lambda x: svc_totals[x], reverse=True)[:8]
+
+        buckets = [
+            {"key": bk, "label": _bucket_label(bk, granularity),
+             **{k: result_buckets[bk].get(k, 0) for k in stack_keys}}
+            for bk in sorted(result_buckets)
+        ]
+
+        return JSONResponse({"buckets": buckets, "stack_keys": stack_keys, "forecast_text": fc_text})
+
+    except Exception as exc:
+        log.exception("Breakdown endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── Live resources ────────────────────────────────────────────────────────────
 
 @app.get("/api/live-resources", tags=["api"])

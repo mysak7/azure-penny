@@ -123,6 +123,22 @@
     .fc-rg-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .4rem .5rem; text-align: left; border-bottom: 1px solid #334155; }
     .fc-rg-table td { padding: .4rem .5rem; border-bottom: 1px solid #1e293b; }
     .fc-rg-table tr:last-child td { border-bottom: none; }
+
+    /* Breakdown card controls */
+    .bd-controls { display: flex; flex-direction: column; gap: .45rem; margin-bottom: .65rem; }
+    .bd-control-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .bd-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; white-space: nowrap; width: 72px; flex-shrink: 0; }
+
+    /* Category pills (amber) */
+    .cat-pill { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.75rem; padding: .25rem .8rem; border-radius: 20px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .cat-pill:hover { border-color: #f59e0b; color: #f59e0b; }
+    .cat-pill.active { background: #451a0322; border-color: #f59e0b; color: #f59e0b; }
+
+    /* Granularity pills (green) */
+    .gran-pill { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.75rem; padding: .25rem .8rem; border-radius: 20px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .gran-pill:hover { border-color: #4ade80; color: #4ade80; }
+    .gran-pill.active { background: #052e1622; border-color: #4ade80; color: #4ade80; }
+    .gran-pill.disabled { opacity: .3; cursor: not-allowed; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -235,15 +251,37 @@
     </div>
   </div>
 
-  <!-- Monthly breakdown — visible only for Year period -->
-  <div id="year-card" class="cat-card" style="margin-bottom:1.25rem;display:none;">
+  <!-- Forecast breakdown chart — always visible, all periods -->
+  <div id="breakdown-card" class="cat-card" style="margin-bottom:1.25rem;">
     <div class="cat-header">
-      <div class="cat-title"><h2>Breakdown/Forecast</h2></div>
-      <span id="year-badge" class="cat-badge">12 months</span>
+      <div class="cat-title"><h2>Forecast</h2></div>
+      <span id="bd-forecast-badge" class="cat-badge" style="color:#4ade80;"></span>
     </div>
     <div class="cat-body">
-      <div id="year-chart"><div class="loading">Loading&hellip;</div></div>
-      <div id="year-error" class="error-msg"></div>
+      <div class="bd-controls">
+        <div class="bd-control-row">
+          <span class="bd-label">Category</span>
+          <div style="display:flex;gap:.25rem;flex-wrap:wrap;">
+            <button class="cat-pill active" data-cat="all"        onclick="setCategory('all')">All</button>
+            <button class="cat-pill"        data-cat="compute"    onclick="setCategory('compute')">Compute</button>
+            <button class="cat-pill"        data-cat="storage"    onclick="setCategory('storage')">Storage</button>
+            <button class="cat-pill"        data-cat="network"    onclick="setCategory('network')">Network</button>
+            <button class="cat-pill"        data-cat="database"   onclick="setCategory('database')">Database</button>
+            <button class="cat-pill"        data-cat="monitoring" onclick="setCategory('monitoring')">Monitoring</button>
+          </div>
+        </div>
+        <div class="bd-control-row">
+          <span class="bd-label">Granularity</span>
+          <div style="display:flex;gap:.25rem;">
+            <button class="gran-pill" data-gran="days"   onclick="setGranularity('days')">Days</button>
+            <button class="gran-pill" data-gran="weeks"  onclick="setGranularity('weeks')">Weeks</button>
+            <button class="gran-pill" data-gran="months" onclick="setGranularity('months')">Months</button>
+          </div>
+        </div>
+      </div>
+      <div id="bd-chart"><div class="loading">Loading&hellip;</div></div>
+      <div id="bd-legend" style="margin-top:.5rem;"></div>
+      <div id="bd-error" class="error-msg"></div>
     </div>
   </div>
 
@@ -323,6 +361,12 @@ var currentPeriod = 'week';
 var loaded = {};
 var allRgs = [];
 var ghostFilter = localStorage.getItem('az_penny_ghost') || 'all';
+var currentCategory = 'all';
+var currentGranularity = 'days';
+var granularityByPeriod = { day:'days', week:'days', month:'weeks', year:'months' };
+var GRAN_ALLOWED = { day:['days'], week:['days'], month:['days','weeks'], year:['days','weeks','months'] };
+var CAT_COLORS = { Compute:'#38bdf8', Storage:'#4ade80', Network:'#f97316', Database:'#a78bfa', Monitoring:'#22d3ee' };
+var SUB_PALETTE = ['#38bdf8','#4ade80','#f97316','#a78bfa','#22d3ee','#f59e0b','#f87171','#94a3b8'];
 
 // ── Resource group filter ─────────────────────────────────────────────────────
 function getCurrentRg() { return localStorage.getItem('az_penny_rg') || ''; }
@@ -332,7 +376,7 @@ function onRgChange(val) {
   else localStorage.removeItem('az_penny_rg');
   var sel = document.getElementById('rg-select');
   if (sel) sel.classList.toggle('filtered', !!val);
-  loaded = {}; loadAll(); loadForecast();
+  loaded = {}; loadAll(); loadForecast(); loadBreakdown();
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
@@ -375,12 +419,10 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function setPeriod(p) {
   document.querySelectorAll('.pill').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
   currentPeriod=p; loaded={}; loadAll();
-  var isYear = (p === 'year');
-  var yc = document.getElementById('year-card');
-  if (yc) yc.style.display = isYear ? 'block' : 'none';
   var fc = document.getElementById('forecast-card');
-  if (fc) fc.style.display = isYear ? 'none' : 'block';
-  if (isYear) loadYearChart();
+  if (fc) fc.style.display = (p === 'year') ? 'none' : 'block';
+  updateGranularityPills();
+  loadBreakdown();
 }
 function periodLabel() {
   return {day:'24 hours', week:'7 days', month:'30 days', year:'365 days'}[currentPeriod]||currentPeriod;
@@ -505,7 +547,7 @@ function reloadData() {
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(d.error){ document.getElementById('st-error').textContent='Reload error: '+d.error; return; }
-      loaded={}; loadStatus(); loadAll();
+      loaded={}; loadStatus(); loadAll(); loadBreakdown();
     })
     .catch(function(err){ document.getElementById('st-error').textContent='Reload error: '+err.message; });
 }
@@ -611,75 +653,75 @@ function loadForecast() {
     });
 }
 
-// ── Year monthly chart ────────────────────────────────────────────────────────
-function loadYearChart() {
-  var chart = document.getElementById('year-chart');
-  var error = document.getElementById('year-error');
+
+// ── Breakdown chart ───────────────────────────────────────────────────────────
+function initGranularityPrefs() {
+  ['day','week','month','year'].forEach(function(p) {
+    var saved = localStorage.getItem('az_penny_gran_' + p);
+    if (saved) granularityByPeriod[p] = saved;
+  });
+  currentGranularity = granularityByPeriod[currentPeriod] || 'days';
+}
+
+function updateGranularityPills() {
+  var allowed = GRAN_ALLOWED[currentPeriod] || ['days'];
+  var saved = granularityByPeriod[currentPeriod];
+  currentGranularity = (saved && allowed.indexOf(saved) !== -1) ? saved : allowed[allowed.length - 1];
+  document.querySelectorAll('.gran-pill').forEach(function(b) {
+    var ok = allowed.indexOf(b.dataset.gran) !== -1;
+    b.classList.toggle('disabled', !ok);
+    b.classList.toggle('active', b.dataset.gran === currentGranularity);
+    b.disabled = !ok;
+  });
+}
+
+function setCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.cat-pill').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.cat === cat);
+  });
+  loadBreakdown();
+}
+
+function setGranularity(gran) {
+  var allowed = GRAN_ALLOWED[currentPeriod] || ['days'];
+  if (allowed.indexOf(gran) === -1) return;
+  currentGranularity = gran;
+  granularityByPeriod[currentPeriod] = gran;
+  localStorage.setItem('az_penny_gran_' + currentPeriod, gran);
+  document.querySelectorAll('.gran-pill').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.gran === gran);
+  });
+  loadBreakdown();
+}
+
+function loadBreakdown() {
+  var chart  = document.getElementById('bd-chart');
+  var legend = document.getElementById('bd-legend');
+  var error  = document.getElementById('bd-error');
+  var badge  = document.getElementById('bd-forecast-badge');
   if (!chart) return;
   chart.innerHTML = '<div class="loading">Loading&hellip;</div>';
-  if (error) error.textContent = '';
-  fetch('/api/year' + (getCurrentRg() ? '?rg=' + encodeURIComponent(getCurrentRg()) : ''))
+  if (legend) legend.innerHTML = '';
+  if (error)  error.textContent = '';
+  if (badge)  badge.textContent = '';
+
+  fetch('/api/breakdown?period=' + currentPeriod +
+        '&granularity=' + currentGranularity +
+        '&category='    + currentCategory +
+        rgParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) throw new Error(data.error);
-      var months = data.months || [];
-      var proj   = data.projected_months || [];
-      var badge  = document.getElementById('year-badge');
-      if (badge) badge.textContent = months.length + ' months \xb7 avg ' + fmtCost(data.monthly_avg_usd) + '/mo';
-      if (!months.length) { chart.innerHTML = '<p class="empty">No data for the last 12 months.</p>'; return; }
-
-      var all = months.concat(proj);
-      var maxVal = Math.max.apply(null, all.map(function(m) { return m.cost_usd; })) || 0.001;
-      var W = 800, H = 160, pT = 20, pB = 28, pL = 4, pR = 4;
-      var cW = W - pL - pR, cH = H - pT - pB;
-      var n = all.length, gap = 4;
-      var barW = Math.max(8, Math.floor(cW / n) - gap);
-      var svg = '';
-      svg += '<text x="' + pL + '" y="' + (pT - 4) + '" font-size="9" fill="#94a3b8" font-family="monospace">max: ' + fmtCost(maxVal) + '</text>';
-      var curYear = new Date().getFullYear().toString();
-
-      months.forEach(function(m, i) {
-        var x = pL + i * (barW + gap);
-        var h = Math.max(2, (m.cost_usd / maxVal) * cH);
-        var y = pT + cH - h;
-        var fill = m.month.startsWith(curYear) ? '#38bdf8' : '#334155';
-        var opacity = m.month.startsWith(curYear) ? '0.85' : '0.55';
-        svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW + '" height="' + h.toFixed(1) + '" fill="' + fill + '" opacity="' + opacity + '" rx="2"/>';
-        var parts = m.month.split('-');
-        var lbl = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
-        var lx = (x + barW / 2).toFixed(1);
-        svg += '<text x="' + lx + '" y="' + (pT + cH + 11) + '" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">' + escHtml(lbl) + '</text>';
-        svg += '<text x="' + lx + '" y="' + (pT + cH + 21) + '" text-anchor="middle" font-size="7" fill="#475569" font-family="system-ui">' + escHtml(parts[0].slice(2)) + '</text>';
-      });
-
-      if (proj.length) {
-        var divX = (pL + months.length * (barW + gap) - 2).toFixed(1);
-        svg += '<line x1="' + divX + '" y1="' + pT + '" x2="' + divX + '" y2="' + (pT + cH) + '" stroke="#475569" stroke-width="1" stroke-dasharray="3,2"/>';
-        var projH = Math.max(2, (proj[0].cost_usd / maxVal) * cH);
-        var lineY = (pT + cH - projH).toFixed(1);
-        var lx1 = (pL + months.length * (barW + gap)).toFixed(1);
-        var lx2 = (pL + (all.length - 1) * (barW + gap) + barW).toFixed(1);
-        svg += '<line x1="' + lx1 + '" y1="' + lineY + '" x2="' + lx2 + '" y2="' + lineY + '" stroke="#f97316" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>';
-        proj.forEach(function(m, i) {
-          var x = pL + (months.length + i) * (barW + gap);
-          var h = Math.max(2, (m.cost_usd / maxVal) * cH);
-          var y = pT + cH - h;
-          svg += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW + '" height="' + h.toFixed(1) + '" fill="#f97316" opacity="0.25" rx="2"/>';
-          var parts = m.month.split('-');
-          var lbl = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
-          var lx = (x + barW / 2).toFixed(1);
-          svg += '<text x="' + lx + '" y="' + (pT + cH + 11) + '" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">' + escHtml(lbl) + '</text>';
-          svg += '<text x="' + lx + '" y="' + (pT + cH + 21) + '" text-anchor="middle" font-size="7" fill="#475569" font-family="system-ui">' + escHtml(parts[0].slice(2)) + '</text>';
-        });
+      if (badge && data.forecast_text) badge.textContent = 'EOM: ' + data.forecast_text;
+      var buckets   = data.buckets    || [];
+      var stackKeys = data.stack_keys || [];
+      if (!buckets.length) {
+        chart.innerHTML = '<p class="empty">No data for this period.</p>';
+        return;
       }
-
-      svg += '<line x1="' + pL + '" y1="' + (pT + cH) + '" x2="' + (W - pR) + '" y2="' + (pT + cH) + '" stroke="#334155" stroke-width="1"/>';
-      var legend = proj.length
-        ? '<div style="display:flex;gap:1rem;font-size:0.68rem;color:#64748b;margin-top:.4rem;">'
-          + '<span><span style="display:inline-block;width:10px;height:8px;border-radius:1px;background:#38bdf8;opacity:0.85;margin-right:.3rem"></span>Actual</span>'
-          + '<span><span style="display:inline-block;width:10px;height:8px;border-radius:1px;background:#f97316;opacity:0.4;margin-right:.3rem"></span>Projected</span>'
-          + '</div>' : '';
-      chart.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:' + H + 'px;display:block;" preserveAspectRatio="none">' + svg + '</svg>' + legend;
+      chart.innerHTML = buildBreakdownSvg(buckets, stackKeys);
+      if (legend) legend.innerHTML = buildBreakdownLegend(stackKeys);
     })
     .catch(function(err) {
       if (chart) chart.innerHTML = '';
@@ -687,12 +729,58 @@ function loadYearChart() {
     });
 }
 
+function buildBreakdownSvg(buckets, stackKeys) {
+  if (!buckets.length) return '<p class="empty">No data.</p>';
+  var maxVal = 0.001;
+  buckets.forEach(function(b) {
+    var t = stackKeys.reduce(function(s, k) { return s + (b[k] || 0); }, 0);
+    if (t > maxVal) maxVal = t;
+  });
+  var W=800, H=180, pT=20, pB=32, pL=4, pR=4;
+  var cW=W-pL-pR, cH=H-pT-pB, n=buckets.length;
+  var gap = Math.min(3, Math.max(1, Math.floor(cW/Math.max(n,1)*0.08)));
+  var barW = Math.max(2, Math.floor(cW/Math.max(n,1)) - gap);
+  var svg = '<text x="'+pL+'" y="'+(pT-4)+'" font-size="9" fill="#94a3b8" font-family="monospace">'+fmtCost(maxVal)+'</text>';
+  buckets.forEach(function(b, i) {
+    var x = pL + i*(barW+gap);
+    var yB = pT + cH;
+    stackKeys.forEach(function(k, ki) {
+      var cost = b[k] || 0;
+      if (cost <= 0) return;
+      var h = Math.max(1, (cost/maxVal)*cH);
+      yB -= h;
+      var color = CAT_COLORS[k] || SUB_PALETTE[ki % SUB_PALETTE.length];
+      svg += '<rect x="'+x.toFixed(1)+'" y="'+yB.toFixed(1)+'" width="'+barW+'" height="'+h.toFixed(1)+'" fill="'+color+'" opacity="0.85" rx="1"/>';
+    });
+    if (barW >= 5) {
+      var lx = (x + barW/2).toFixed(1);
+      svg += '<text x="'+lx+'" y="'+(pT+cH+12)+'" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">'+escHtml(b.label||b.key||'')+'</text>';
+    }
+  });
+  svg += '<line x1="'+pL+'" y1="'+(pT+cH)+'" x2="'+(W-pR)+'" y2="'+(pT+cH)+'" stroke="#334155" stroke-width="1"/>';
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;display:block;" preserveAspectRatio="none">'+svg+'</svg>';
+}
+
+function buildBreakdownLegend(stackKeys) {
+  if (!stackKeys.length) return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:.65rem;font-size:0.68rem;color:#64748b;">' +
+    stackKeys.map(function(k, i) {
+      var color = CAT_COLORS[k] || SUB_PALETTE[i % SUB_PALETTE.length];
+      return '<span><span style="display:inline-block;width:10px;height:8px;border-radius:1px;background:'+color+';opacity:0.85;margin-right:.25rem;"></span>'+escHtml(k)+'</span>';
+    }).join('') + '</div>';
+}
+
 // Boot
-(function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
+(function() {
+  var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter;
+  initGranularityPrefs();
+  updateGranularityPills();
+})();
 loadStatus();
 loadRgList();
 loadAll();
 loadForecast();
+loadBreakdown();
 </script>
 </body>
 </html>
