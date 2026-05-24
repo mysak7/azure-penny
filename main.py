@@ -187,136 +187,6 @@ async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Forecast
-# ---------------------------------------------------------------------------
-
-async def _build_forecast(rg: str = "") -> dict:
-    today = date.today()
-    days_in_month = calendar.monthrange(today.year, today.month)[1]
-    month_str = today.strftime("%Y-%m")
-
-    full_df = await get_cached_dataframe()
-    df = _filter_rg(full_df, rg)
-    actual_points: list[dict] = []
-    spent_so_far = 0.0
-    per_rg_actual: dict[str, float] = {}
-
-    if not df.empty and "C_DATE" in df.columns and "C_COST" in df.columns:
-        this_month = df[df["C_DATE"].str.startswith(month_str)]
-        if not this_month.empty:
-            daily = this_month.groupby("C_DATE")["C_COST"].sum().sort_index()
-            actual_points = [{"date": d, "cost_usd": round(float(v), 4)} for d, v in daily.items()]
-            spent_so_far = round(float(daily.sum()), 4)
-            if "C_NAME" in this_month.columns:
-                rg_agg = this_month.groupby("C_NAME")["C_COST"].sum()
-                per_rg_actual = {
-                    str(k): float(v) for k, v in rg_agg.items()
-                    if v > 0 and str(k).strip()
-                }
-
-    # billing_days = how many days of billing data we actually have (lags by 1-3 days).
-    # days_elapsed = calendar position in the month (always today.day).
-    billing_days = len(actual_points) if actual_points else today.day
-    days_elapsed = today.day
-    days_remaining = days_in_month - days_elapsed
-
-    # Both global and per-RG forecasts use live ARM pricing when available —
-    # billing history can include shared/pass-through costs that inflate per-RG baselines.
-    data_source = "linear"
-    live_daily_rate = 0.0
-    per_rg_live_monthly: dict[str, float] = {}
-    try:
-        all_resources = await _get_live_data()
-        filtered_resources = all_resources if not rg else [
-            r for r in all_resources if (r.get("resource_group") or "").lower() == rg.lower()
-        ]
-        live_monthly = sum(
-            (r.get("monthly_cost") or 0.0) for r in filtered_resources if (r.get("monthly_cost") or 0.0) > 0
-        )
-        live_daily_rate = live_monthly / 30
-        if live_daily_rate > 0:
-            data_source = "live"
-            for r in filtered_resources:
-                rg_name = (r.get("resource_group") or "").strip()
-                monthly = r.get("monthly_cost") or 0.0
-                if rg_name and monthly > 0:
-                    per_rg_live_monthly[rg_name] = per_rg_live_monthly.get(rg_name, 0.0) + monthly
-    except Exception:
-        pass
-
-    if data_source == "live":
-        daily_fwd = live_daily_rate
-    elif rg and live_daily_rate == 0:
-        # Specific RG selected, no live ARM resources found — nothing is running,
-        # so don't project future spend beyond what's already been billed.
-        daily_fwd = 0.0
-    else:
-        # Spread known spend over full elapsed calendar days to avoid inflated rates
-        # when billing lags (e.g. only 2 billing data points 11 days into the month).
-        daily_fwd = (spent_so_far / days_elapsed) if days_elapsed > 0 else 0.0
-
-    last_date = (
-        date.fromisoformat(actual_points[-1]["date"]) if actual_points
-        else today.replace(day=1) - timedelta(days=1)
-    )
-    # Fill billing-lag gap (days after last billed date up to yesterday) with $0 actual points
-    # so the chart spans the full past period. Today is excluded — it has no billing data yet
-    # and belongs in the projected section instead of appearing as a misleading zero blue bar.
-    if actual_points:
-        gap_day = last_date + timedelta(days=1)
-        while gap_day < today and gap_day.month == today.month:
-            actual_points.append({"date": gap_day.strftime("%Y-%m-%d"), "cost_usd": 0.0})
-            gap_day += timedelta(days=1)
-
-    # Project from today onwards — today has no billing data yet so it gets an orange bar.
-    # Always generate even when daily_fwd == 0 so the chart spans the full month.
-    projected_points: list[dict] = []
-    d = today
-    while d.month == today.month:
-        projected_points.append({"date": d.strftime("%Y-%m-%d"), "cost_usd": round(daily_fwd, 4)})
-        d += timedelta(days=1)
-
-    # end_of_month projection covers billing lag + future (full window from last billed day).
-    full_remaining_days = (date(today.year, today.month, days_in_month) - last_date).days
-    end_of_month = round(spent_so_far + daily_fwd * full_remaining_days, 2)
-
-    # Per-RG projections also use full_remaining_days so the totals stay consistent.
-    combined: dict[str, float] = {}
-    if data_source == "live" and per_rg_live_monthly:
-        for rg_name, live_monthly_rg in per_rg_live_monthly.items():
-            actual_so_far = per_rg_actual.get(rg_name, 0.0)
-            combined[rg_name] = actual_so_far + (live_monthly_rg / 30) * full_remaining_days
-    elif days_elapsed > 0:
-        daily_per_rg = {name: v / days_elapsed for name, v in per_rg_actual.items()}
-        for name, actual_so_far in per_rg_actual.items():
-            combined[name] = actual_so_far + daily_per_rg[name] * full_remaining_days
-
-    top_rgs = sorted(
-        [
-            {"name": rg, "projected_usd": round(cost, 2)}
-            for rg, cost in combined.items()
-            if cost > 0 and rg.strip()
-        ],
-        key=lambda x: x["projected_usd"],
-        reverse=True,
-    )[:3]
-
-    return {
-        "actual_points": actual_points,
-        "projected_points": projected_points,
-        "end_of_month_usd": end_of_month,
-        "spent_so_far_usd": spent_so_far,
-        "live_daily_rate_usd": round(live_daily_rate, 4),
-        "calibration_factor": None,
-        "data_source": data_source,
-        "top_rgs": top_rgs,
-        "days_remaining": days_remaining,
-        "days_elapsed": days_elapsed,
-        "month": today.strftime("%B %Y"),
-    }
-
-
-# ---------------------------------------------------------------------------
 # Page routes
 # ---------------------------------------------------------------------------
 
@@ -991,25 +861,15 @@ async def api_breakdown(
     category: str = "all",
     rg: str = "",
 ) -> JSONResponse:
-    """Time-bucketed stacked cost breakdown for the Forecast chart."""
+    """Time-bucketed stacked cost breakdown."""
     try:
         full_df = await get_cached_dataframe()
         df = _filter_rg(full_df, rg)
         days = _period_days(period)
         df = _filter_period(df, days)
 
-        # Forecast text (reuse existing logic, best-effort)
-        fc_text: str | None = None
-        try:
-            fc = await _build_forecast(rg)
-            eom = fc.get("end_of_month_usd", 0)
-            if eom and eom > 0:
-                fc_text = f"~€{eom:.2f}"
-        except Exception:
-            pass
-
         if df.empty or "C_DATE" not in df.columns or "C_COST" not in df.columns:
-            return JSONResponse({"buckets": [], "stack_keys": [], "forecast_text": fc_text})
+            return JSONResponse({"buckets": [], "stack_keys": []})
 
         df = df.copy()
         df["_bucket"] = df["C_DATE"].apply(lambda x: _bucket_key(str(x), granularity))
@@ -1049,7 +909,7 @@ async def api_breakdown(
             for bk in sorted(result_buckets)
         ]
 
-        return JSONResponse({"buckets": buckets, "stack_keys": stack_keys, "forecast_text": fc_text})
+        return JSONResponse({"buckets": buckets, "stack_keys": stack_keys})
 
     except Exception as exc:
         log.exception("Breakdown endpoint failed")
@@ -1316,15 +1176,6 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
         return JSONResponse({"error": str(exc), "vm_size": vm_size, "region": region}, status_code=500)
 
 
-@app.get("/api/forecast", tags=["api"])
-async def api_forecast(rg: str = "") -> JSONResponse:
-    try:
-        return JSONResponse(await _build_forecast(rg))
-    except Exception as exc:
-        log.exception("Forecast endpoint failed")
-        return JSONResponse({"error": str(exc)}, status_code=500)
-
-
 @app.get("/api/diagnostics", tags=["api"])
 async def api_diagnostics() -> JSONResponse:
     now = time.monotonic()
@@ -1348,16 +1199,6 @@ async def api_diagnostics() -> JSONResponse:
     result["live_cache_age_seconds"] = round(now - live_ts) if live_ts else None
     inv = _live_cache.get("inv")
     result["live_resource_count"] = len(inv) if inv else None
-
-    # Forecast calibration state (uses cached data — fast if warm)
-    try:
-        fc = await _build_forecast("")
-        result["calibration_factor"] = fc["calibration_factor"]
-        result["forecast_data_source"] = fc["data_source"]
-        result["live_daily_rate_usd"] = fc["live_daily_rate_usd"]
-    except Exception as exc:
-        result["calibration_factor"] = None
-        result["forecast_error"] = str(exc)
 
     # Cost source tag breakdown from live enriched resources
     try:
