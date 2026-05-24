@@ -53,10 +53,12 @@ async def lifespan(_: FastAPI):
     asyncio.create_task(_get_live_data())
     yield
 
+APP_VERSION = "1.1.0"
+
 app = FastAPI(
     title="azure-penny",
     description="Azure Cost Management dashboard — reads Cost exports from Blob Storage.",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
@@ -320,33 +322,33 @@ async def _build_forecast(rg: str = "") -> dict:
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse("dashboard.html", {"request": request, "version": APP_VERSION})
 
 
 @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse("dashboard.html", {"request": request, "version": APP_VERSION})
 
 
 @app.get("/manager", response_class=HTMLResponse, include_in_schema=False)
 async def manager(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse("dashboard.html", {"request": request, "version": APP_VERSION})
 
 
 @app.get("/technician", response_class=HTMLResponse, include_in_schema=False)
 async def technician(request: Request):
-    return templates.TemplateResponse("technician.html", {"request": request})
+    return templates.TemplateResponse("technician.html", {"request": request, "version": APP_VERSION})
 
 
 @app.get("/live", response_class=HTMLResponse, include_in_schema=False)
 async def live_view(request: Request):
     is_admin = "penny-admin" in _get_user_roles(request)
-    return templates.TemplateResponse("live.html", {"request": request, "is_admin": is_admin})
+    return templates.TemplateResponse("live.html", {"request": request, "is_admin": is_admin, "version": APP_VERSION})
 
 
 @app.get("/guide", response_class=HTMLResponse, include_in_schema=False)
 async def guide_view(request: Request):
-    return templates.TemplateResponse("guide.html", {"request": request})
+    return templates.TemplateResponse("guide.html", {"request": request, "version": APP_VERSION})
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -385,6 +387,7 @@ async def api_status() -> JSONResponse:
             dates.sort()
             periods = [dates[0], dates[-1]]
     return JSONResponse({
+        "version": APP_VERSION,
         "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
         "container": STORAGE_CONTAINER_NAME,
         "row_count": len(cached_df) if cached_df is not None else None,

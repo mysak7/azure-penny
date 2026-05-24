@@ -1,0 +1,87 @@
+# Changelog
+
+All notable changes to **azure-penny** are documented here.
+
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
+Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+
+---
+
+## [Unreleased]
+
+---
+
+## [1.1.0] – 2026-05-24
+
+### Added
+- **Forecast chart** – stacked bar chart visible on **all period tabs** (Day / Week / Month / Year),
+  replaces the former Year-only breakdown card.
+  - **Category selector** (amber pills): All / Compute / Storage / Network / Database / Monitoring
+  - **Granularity selector** (green pills): Days / Weeks / Months
+    - Auto-restricted per period (e.g. Day only allows Days)
+    - Last selection remembered per period in `localStorage`
+  - `All` mode → stacked by service category per time bucket
+  - Single-category mode → stacked by top-8 sub-services within that category (sorted by total cost)
+  - End-of-month projected cost displayed as text badge in card header
+  - ISO week bucketing (`%G-W%V`), month (`YYYY-MM`) and day (`YYYY-MM-DD`) granularities
+- **`GET /api/breakdown`** endpoint: `period × granularity × category × rg`
+  - Returns `buckets[]` (time-bucketed stacked cost), `stack_keys[]`, `forecast_text`
+- App **version badge** shown in header on all pages (`v{{ version }}` via Jinja2)
+- **`version`** field added to `GET /api/status` response
+
+### Removed
+- Year-only breakdown card (`#year-card`) and `loadYearChart()` JS function —
+  superseded by the new Forecast chart
+
+---
+
+## [1.0.0] – 2026-04-01
+
+### Added
+- **Manager dashboard**
+  - KPI row: Compute / Storage / Network / Database / Monitoring / Total
+  - Period pills: Day / Week / Month / Year
+  - Resource-group filter with ghost-filter options (All RGs / No zero cost / No empty)
+- **Monthly Forecast card**
+  - End-of-month projection with actual vs. projected daily bar chart
+  - Top-3 resource groups breakdown
+  - Uses live ARM pricing when available, linear extrapolation as fallback
+  - Billing-lag gap filled with zero-cost bars; today moved to projected section
+- **Year period** – 12-month cost history bar chart with current-year projection for remaining months
+- **Technician view**
+  - All-services tab (billing CSV analysis)
+  - Anomaly detection: week-over-week cost spikes (>50%), new/vanished services
+  - Untagged resources report
+  - Resource-group cost breakdown
+- **Live view**
+  - Real-time ARM resource inventory with per-resource monthly cost estimates
+  - Cost source tag breakdown (export / spot_rate / price_table / …)
+  - Admin-only resource deletion and resource-group deletion via streaming log
+- **Azure Blob Storage integration**
+  - Auto-discovers latest Parquet exports from Cost Management
+  - In-memory cache with manual reload via `POST /api/reload`
+  - `DefaultAzureCredential` (Managed Identity in ACA, `az login` locally)
+- **Live ARM inventory** – enriched with spot/retail pricing from Azure Retail Prices API
+- **Scale-to-zero** – Azure Container Apps with Managed Identity, ACR, Storage Account (Terraform)
+- **Cloudflare Access** – all URLs protected via Entra ID authentication
+- **API endpoints**: `GET /api/status`, `GET /api/forecast`, `GET /api/resource-groups-list`,
+  `GET /api/resource-groups`, `GET /api/anomalies`, `GET /api/daily`, `GET /api/year`,
+  `GET /api/live-resources`, `GET /api/services`, `GET /api/compute`, `GET /api/storage`,
+  `GET /api/network`, `GET /api/database`, `GET /api/monitoring`,
+  `DELETE /api/resource`, `DELETE /api/resource-group`, `DELETE /api/resource-groups/all`
+
+### Fixed
+- Forecast: today moved from zero actual bar into projected section (billing lag)
+- Ghost filters use ARM membership rather than cost presence
+- Live tab RG list restored to cost API
+- `localStorage` ghost-filter state replaced with plain JS variable
+- Always fetch ARM RG names for `resource-groups-list` endpoint
+- Warm live inventory cache on app startup via `lifespan` task
+- Fixed/sticky header with sticky nav bar
+- Cost shown in Manager RG dropdown
+
+---
+
+[Unreleased]: https://github.com/your-org/azure-penny/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/your-org/azure-penny/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/your-org/azure-penny/releases/tag/v1.0.0
