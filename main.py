@@ -1029,6 +1029,10 @@ async def api_breakdown(
         else:
             cat_services = _CAT_KEY_MAP.get(category.lower(), set())
             cat_df = _filter_services(df, cat_services)
+            # Seed every bucket that exists in the full df so days with zero
+            # category spend still appear in the chart (not silently dropped)
+            for bk in df["_bucket"].astype(str).unique():
+                result_buckets.setdefault(str(bk), {})
             if not cat_df.empty and "C_SERVICE" in cat_df.columns:
                 grp2 = cat_df.groupby(["_bucket", "C_SERVICE"])["C_COST"].sum()
                 for (bucket, svc), cost in grp2.items():
