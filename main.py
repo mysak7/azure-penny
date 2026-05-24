@@ -1025,7 +1025,7 @@ async def api_breakdown(
                 grp = cat_df.groupby("_bucket")["C_COST"].sum()
                 for bucket, cost in grp.items():
                     result_buckets.setdefault(str(bucket), {})[cat_name.capitalize()] = round(float(cost), 4)
-            stack_keys = [c for c in _ORDERED_CATS if any(c in bdata for bdata in result_buckets.values())]
+            stack_keys = list(_ORDERED_CATS)  # always show all categories, zero for missing ones
         else:
             cat_services = _CAT_KEY_MAP.get(category.lower(), set())
             cat_df = _filter_services(df, cat_services)
