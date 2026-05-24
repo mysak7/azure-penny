@@ -45,12 +45,14 @@
     .summary-card.green::before  { background: #4ade80; }
     .summary-card.orange::before { background: #f97316; }
     .summary-card.purple::before { background: #a78bfa; }
+    .summary-card.amber::before  { background: #fbbf24; }
     .summary-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
     .summary-val { font-size: 1.5rem; font-weight: 700; font-family: monospace; }
     .summary-card.blue   .summary-val { color: #38bdf8; }
     .summary-card.green  .summary-val { color: #4ade80; }
     .summary-card.orange .summary-val { color: #f97316; }
     .summary-card.purple .summary-val { color: #a78bfa; }
+    .summary-card.amber  .summary-val { color: #fbbf24; }
     .summary-sub { font-size: 0.72rem; color: #475569; }
 
     /* Category grid */
@@ -75,6 +77,7 @@
     .hbar-fill.orange { background: linear-gradient(90deg, #f97316, #ea580c); }
     .hbar-fill.purple { background: linear-gradient(90deg, #a78bfa, #8b5cf6); }
     .hbar-fill.cyan   { background: linear-gradient(90deg, #22d3ee, #06b6d4); }
+    .hbar-fill.amber  { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
     .hbar-cost { font-size: 0.72rem; color: #e2e8f0; font-family: monospace; width: 68px; text-align: right; flex-shrink: 0; }
 
     /* Nav */
@@ -203,6 +206,11 @@
       <div class="summary-val" id="kpi-monitoring">&mdash;</div>
       <div class="summary-sub" id="kpi-monitoring-sub">&nbsp;</div>
     </div>
+    <div class="summary-card amber">
+      <div class="summary-label">Other</div>
+      <div class="summary-val" id="kpi-other">&mdash;</div>
+      <div class="summary-sub" id="kpi-other-sub">&nbsp;</div>
+    </div>
     <div class="summary-card" style="border-top-color:#f1f5f9;">
       <div class="summary-label" style="color:#94a3b8;">Total</div>
       <div class="summary-val" id="kpi-total" style="color:#f1f5f9;">&mdash;</div>
@@ -227,6 +235,7 @@
             <button class="cat-pill"        data-cat="network"    onclick="setCategory('network')">Network</button>
             <button class="cat-pill"        data-cat="database"   onclick="setCategory('database')">Database</button>
             <button class="cat-pill"        data-cat="monitoring" onclick="setCategory('monitoring')">Monitoring</button>
+            <button class="cat-pill"        data-cat="other"      onclick="setCategory('other')">Other</button>
           </div>
         </div>
         <div class="bd-control-row">
@@ -312,6 +321,19 @@
       </div>
     </div>
 
+    <div class="cat-card" style="border-top:2px solid #fbbf24;">
+      <div class="cat-header">
+        <div class="cat-title"><h2 style="color:#fbbf24;">Other / Uncategorized</h2></div>
+        <span id="ot-badge" class="cat-badge">7 days</span>
+      </div>
+      <div class="cat-body">
+        <div id="ot-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+        <hr class="cat-divider">
+        <div id="ot-table"></div>
+        <div id="ot-error" class="error-msg"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -324,7 +346,7 @@ var currentCategory = 'all';
 var currentGranularity = 'days';
 var granularityByPeriod = { day:'days', week:'days', month:'weeks', year:'months' };
 var GRAN_ALLOWED = { day:['days'], week:['days'], month:['days','weeks'], year:['days','weeks','months'] };
-var CAT_COLORS = { Compute:'#38bdf8', Storage:'#4ade80', Network:'#f97316', Database:'#a78bfa', Monitoring:'#22d3ee' };
+var CAT_COLORS = { Compute:'#38bdf8', Storage:'#4ade80', Network:'#f97316', Database:'#a78bfa', Monitoring:'#22d3ee', Other:'#fbbf24' };
 var SUB_PALETTE = ['#38bdf8','#4ade80','#f97316','#a78bfa','#22d3ee','#f59e0b','#f87171','#94a3b8'];
 
 // ── Resource group filter ─────────────────────────────────────────────────────
@@ -394,6 +416,7 @@ function loadAll() {
   loadCategory('network',    '/api/network?period='    +currentPeriod+rgParam(), 'net', 'orange');
   loadCategory('database',   '/api/database?period='   +currentPeriod+rgParam(), 'db',  'purple');
   loadCategory('monitoring', '/api/monitoring?period=' +currentPeriod+rgParam(), 'mon', 'cyan');
+  loadCategory('other',      '/api/other?period='      +currentPeriod+rgParam(), 'ot',  'amber');
   loadTotal();
 }
 

@@ -91,30 +91,77 @@ def _require_admin(request: Request) -> None:
 
 # ---------------------------------------------------------------------------
 # Azure service categories  (MeterCategory values)
+# Both bare names and "Azure …" prefixed variants are listed so the mapping
+# works regardless of which export format Azure Cost Management produces.
 # ---------------------------------------------------------------------------
 
 CAT_COMPUTE = {
-    "Virtual Machines", "App Service", "Container Apps", "Azure Functions",
-    "Container Instances", "Azure Kubernetes Service", "Batch", "Cloud Services",
+    "Virtual Machines", "Azure Virtual Machines",
+    "App Service", "Azure App Service",
+    "Container Apps", "Azure Container Apps",          # ← ACA billing name
+    "Azure Functions", "Functions",
+    "Container Instances", "Azure Container Instances",
+    "Azure Kubernetes Service", "Kubernetes Service",
+    "Container Registry", "Azure Container Registry",  # ← ACR
+    "Batch", "Azure Batch",
+    "Cloud Services",
+    "Azure Spring Apps", "Spring Apps",
+    "Azure Red Hat OpenShift",
 }
 CAT_STORAGE = {
-    "Storage", "Azure Data Lake Storage", "Backup", "StorSimple",
-    "Azure NetApp Files", "Managed Disks",
+    "Storage", "Azure Blob Storage", "Azure Files",
+    "Azure Data Lake Storage", "Azure Data Lake Storage Gen2",
+    "Backup", "Azure Backup",
+    "StorSimple",
+    "Azure NetApp Files",
+    "Managed Disks", "Azure Managed Disks",
+    "Azure Queue Storage",
+    "Azure Table Storage",
 }
 CAT_NETWORK = {
-    "Virtual Network", "Load Balancer", "Application Gateway", "Azure DNS",
-    "Azure Front Door", "Bandwidth", "VPN Gateway", "Azure Bastion",
-    "Azure Firewall", "Network Watcher", "Traffic Manager",
+    "Virtual Network", "Azure Virtual Network",
+    "Load Balancer", "Azure Load Balancer",
+    "Application Gateway", "Azure Application Gateway",
+    "Azure DNS", "DNS",
+    "Azure Front Door", "Front Door",
+    "Bandwidth",
+    "Content Delivery Network", "Azure CDN",
+    "VPN Gateway", "Azure VPN Gateway",
+    "Azure Bastion",
+    "Azure Firewall",
+    "Network Watcher", "Azure Network Watcher",
+    "Traffic Manager", "Azure Traffic Manager",
+    "ExpressRoute", "Azure ExpressRoute",
+    "NAT Gateway", "Azure NAT Gateway",
+    "Private Link", "Azure Private Link",
+    "Azure DDoS Protection",
+    "Azure Virtual WAN",
 }
 CAT_DATABASE = {
-    "SQL Database", "Azure Cosmos DB", "Azure Cache for Redis",
-    "Azure Database for MySQL", "Azure Database for PostgreSQL",
-    "Azure SQL Managed Instance", "Azure Synapse Analytics",
+    "SQL Database", "Azure SQL Database",
+    "Azure Cosmos DB", "Cosmos DB",
+    "Azure Cache for Redis", "Cache for Redis",
+    "Azure Database for MySQL", "Database for MySQL",
+    "Azure Database for PostgreSQL", "Database for PostgreSQL",
+    "Azure SQL Managed Instance", "SQL Managed Instance",
+    "Azure Synapse Analytics", "Synapse Analytics",
+    "Azure Database for MariaDB",
+    "Azure SQL",
 }
 CAT_MONITORING = {
-    "Azure Grafana Service", "Log Analytics", "Azure Monitor",
-    "Application Insights",
+    "Azure Grafana Service", "Grafana",
+    "Log Analytics", "Azure Log Analytics",
+    "Azure Monitor",
+    "Application Insights", "Azure Application Insights",
+    "Microsoft Sentinel", "Azure Sentinel",
+    "Azure Advisor",
+    "Microsoft Defender for Cloud", "Azure Security Center",
 }
+
+# Union of all explicitly mapped services — used to identify "Other" spend.
+ALL_KNOWN_SERVICES: frozenset[str] = frozenset(
+    CAT_COMPUTE | CAT_STORAGE | CAT_NETWORK | CAT_DATABASE | CAT_MONITORING
+)
 
 # ---------------------------------------------------------------------------
 # Filtering / aggregation helpers
@@ -411,6 +458,49 @@ async def api_database(period: str = "week", rg: str = "") -> JSONResponse:
 async def api_monitoring(period: str = "week", rg: str = "") -> JSONResponse:
     try:
         return JSONResponse(await _category_api(period, CAT_MONITORING, rg))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+async def _other_category_api(period: str, rg: str = "") -> dict:
+    """Costs for services NOT covered by any standard category (catch-all)."""
+    full_df = await get_cached_dataframe()
+    df = _filter_rg(full_df, rg)
+    days = _period_days(period)
+    filtered = _filter_period(df, days)
+
+    fallback = False
+    if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
+        df_rg = _filter_rg(full_df, rg)
+        if not df_rg.empty:
+            last_date = full_df["C_DATE"].dropna().max()
+            filtered = df_rg[df_rg["C_DATE"] == last_date]
+            fallback = True
+
+    if "C_SERVICE" in filtered.columns:
+        lower_known = {s.lower() for s in ALL_KNOWN_SERVICES}
+        filtered = filtered[~filtered["C_SERVICE"].str.lower().isin(lower_known)]
+
+    by_svc = _cost_by(filtered, "C_SERVICE")
+    data_as_of = None
+    if not filtered.empty and "C_DATE" in filtered.columns:
+        data_as_of = filtered["C_DATE"].dropna().max()
+
+    return {
+        "period": period,
+        "source": "Cost Management / Blob Storage",
+        "services": [{"service": k, "cost_usd": v} for k, v in by_svc.items()],
+        "total_usd": round(sum(by_svc.values()), 4),
+        "data_as_of": data_as_of,
+        "fallback": fallback,
+    }
+
+
+@app.get("/api/other", tags=["api"])
+async def api_other(period: str = "week", rg: str = "") -> JSONResponse:
+    """Services that don't fall into any standard category."""
+    try:
+        return JSONResponse(await _other_category_api(period, rg))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -812,13 +902,15 @@ async def api_year(rg: str = "") -> JSONResponse:
 
 # ── Breakdown chart ───────────────────────────────────────────────────────────
 
-_ORDERED_CATS = ["Compute", "Storage", "Network", "Database", "Monitoring"]
-_CAT_KEY_MAP: dict[str, set[str]] = {
+_ORDERED_CATS = ["Compute", "Storage", "Network", "Database", "Monitoring", "Other"]
+# None sentinel = "everything NOT in any of the known CAT_* sets"
+_CAT_KEY_MAP: dict[str, set[str] | None] = {
     "compute":    CAT_COMPUTE,
     "storage":    CAT_STORAGE,
     "network":    CAT_NETWORK,
     "database":   CAT_DATABASE,
     "monitoring": CAT_MONITORING,
+    "other":      None,
 }
 
 
@@ -877,9 +969,19 @@ async def api_breakdown(
         result_buckets: dict[str, dict[str, float]] = {}
         stack_keys: list[str] = []
 
+        lower_known = {s.lower() for s in ALL_KNOWN_SERVICES}
+
+        def _get_cat_df(services: set[str] | None) -> pd.DataFrame:
+            """Return rows for a category; None = 'Other' (not in any known set)."""
+            if services is None:
+                if "C_SERVICE" not in df.columns:
+                    return df.iloc[0:0]
+                return df[~df["C_SERVICE"].str.lower().isin(lower_known)]
+            return _filter_services(df, services)
+
         if category.lower() == "all":
             for cat_name, cat_services in _CAT_KEY_MAP.items():
-                cat_df = _filter_services(df, cat_services)
+                cat_df = _get_cat_df(cat_services)
                 if cat_df.empty:
                     continue
                 grp = cat_df.groupby("_bucket")["C_COST"].sum()
@@ -888,7 +990,7 @@ async def api_breakdown(
             stack_keys = list(_ORDERED_CATS)  # always show all categories, zero for missing ones
         else:
             cat_services = _CAT_KEY_MAP.get(category.lower(), set())
-            cat_df = _filter_services(df, cat_services)
+            cat_df = _get_cat_df(cat_services)
             # Seed every bucket that exists in the full df so days with zero
             # category spend still appear in the chart (not silently dropped)
             for bk in df["_bucket"].astype(str).unique():
