@@ -210,7 +210,7 @@
     </div>
   </div>
 
-  <!-- Cost breakdown chart — always visible, all periods -->
+  <!-- Cost breakdown chart — hidden for day period (single bucket = meaningless) -->
   <div id="breakdown-card" class="cat-card" style="margin-bottom:1.25rem;">
     <div class="cat-header">
       <div class="cat-title"><h2>Cost Breakdown</h2></div>
@@ -378,8 +378,10 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function setPeriod(p) {
   document.querySelectorAll('.pill').forEach(function(b){ b.classList.toggle('active', b.dataset.period===p); });
   currentPeriod=p; loaded={}; loadAll();
+  var card = document.getElementById('breakdown-card');
+  if (card) card.style.display = (p === 'day') ? 'none' : '';
   updateGranularityPills();
-  loadBreakdown();
+  if (p !== 'day') loadBreakdown();
 }
 function periodLabel() {
   return {day:'24 hours', week:'7 days', month:'30 days', year:'365 days'}[currentPeriod]||currentPeriod;
@@ -644,6 +646,8 @@ function buildBreakdownLegend(stackKeys) {
   var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter;
   initGranularityPrefs();
   updateGranularityPills();
+  var card = document.getElementById('breakdown-card');
+  if (card) card.style.display = (currentPeriod === 'day') ? 'none' : '';
 })();
 loadStatus();
 loadRgList();
