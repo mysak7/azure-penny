@@ -94,6 +94,29 @@ def _extract_project_tag(tags_val: object) -> str:
     except Exception:
         return "Untagged"
 
+
+def _infer_app_from_mc_rg(rg_lower: str) -> str | None:
+    """Infer app name from an AKS-managed resource group name.
+
+    AKS creates a managed RG with the format:
+        mc_{parent-rg}_{cluster-name}_{region}
+    e.g. mc_dev-seip-rg_dev-seip-aks_westeurope → "seip"
+
+    Extracts the middle segment of the cluster name: {env}-{app}-aks → app.
+    Returns None if the pattern does not match.
+    """
+    if not rg_lower.startswith("mc_"):
+        return None
+    parts = rg_lower.split("_")
+    # Expect at least: ["mc", "<parent-rg>", "<cluster-name>", "<region>"]
+    if len(parts) < 4:
+        return None
+    cluster_name = parts[2]  # e.g. "dev-seip-aks"
+    m = re.match(r"[^-]+-(.+)-aks$", cluster_name)
+    if m:
+        return m.group(1)
+    return None
+
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
 
 # ---------------------------------------------------------------------------
@@ -219,6 +242,21 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     else:
         # C_APP came from tag_project column — fill nulls/empty strings
         df["C_APP"] = df["C_APP"].fillna("Untagged").replace("", "Untagged")
+
+    # Fallback: infer app from AKS-managed resource group name (mc_*).
+    # Resources in mc_* RGs don't inherit tags from the AKS cluster, so costs
+    # would otherwise appear as "Untagged".  Extract the app from the cluster
+    # name embedded in the managed RG name.
+    if "C_NAME" in df.columns:
+        untagged_mask = df["C_APP"] == "Untagged"
+        if untagged_mask.any():
+            inferred = df.loc[untagged_mask, "C_NAME"].apply(_infer_app_from_mc_rg)
+            filled = inferred.notna()
+            if filled.any():
+                df.loc[untagged_mask & filled, "C_APP"] = inferred[filled]
+                log.debug(
+                    "Inferred C_APP from AKS managed RG for %d rows", filled.sum()
+                )
 
     return df
 
