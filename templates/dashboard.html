@@ -29,10 +29,22 @@
     /* Top controls */
     .page-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.75rem; flex-wrap: wrap; gap: .75rem; }
     .page-title { font-size: 1rem; font-weight: 600; color: #94a3b8; }
-    .period-pills { display: flex; gap: .25rem; }
+    .period-pills { display: flex; gap: .25rem; align-items: center; }
     .pill { background: #1e293b; border: 1px solid #334155; color: #94a3b8; font-size: 0.78rem; padding: .3rem .9rem; border-radius: 20px; cursor: pointer; font-family: inherit; transition: all .15s; }
     .pill:hover { border-color: #38bdf8; color: #38bdf8; }
     .pill.active { background: #0c4a6e; border-color: #38bdf8; color: #38bdf8; }
+    /* Period info tooltip */
+    .period-info { position: relative; display: inline-flex; align-items: center; margin-left: .35rem; }
+    .period-info-btn { width: 17px; height: 17px; border-radius: 50%; border: 1px solid #334155; background: #1e293b; color: #64748b; font-size: 0.65rem; cursor: default; display: flex; align-items: center; justify-content: center; font-weight: 700; user-select: none; transition: all .15s; }
+    .period-info-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+    .period-info-popup { display: none; position: absolute; right: 0; top: calc(100% + 8px); background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: .65rem .9rem; white-space: nowrap; font-size: 0.72rem; z-index: 200; min-width: 230px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+    .period-info:hover .period-info-popup { display: block; }
+    .period-info-popup table { border-collapse: collapse; width: 100%; }
+    .period-info-popup td { padding: .18rem 0; }
+    .period-info-popup td:first-child { color: #64748b; font-weight: 600; padding-right: .9rem; width: 3.5rem; }
+    .period-info-popup td:last-child { color: #e2e8f0; font-family: monospace; font-size: 0.7rem; }
+    .period-info-popup .pi-sep { border: none; border-top: 1px solid #334155; margin: .45rem 0; }
+    .period-info-popup .pi-footer { color: #475569; font-size: 0.67rem; }
 
     /* Summary KPI row */
     .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.75rem; }
@@ -181,6 +193,19 @@
       <button class="pill active" data-period="week"  onclick="setPeriod('week')">Week</button>
       <button class="pill"        data-period="month" onclick="setPeriod('month')">Month</button>
       <button class="pill"        data-period="year"  onclick="setPeriod('year')">Year</button>
+      <div class="period-info">
+        <span class="period-info-btn">?</span>
+        <div class="period-info-popup" id="period-info-popup">
+          <table id="period-ranges-table">
+            <tr><td>Day</td><td>—</td></tr>
+            <tr><td>Week</td><td>—</td></tr>
+            <tr><td>Month</td><td>—</td></tr>
+            <tr><td>Year</td><td>—</td></tr>
+          </table>
+          <hr class="pi-sep">
+          <div class="pi-footer" id="period-data-range">Data: loading&hellip;</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -572,6 +597,20 @@ function loadStatus() {
       var age=d.cache_age_s!=null?Math.round(d.cache_age_s/60)+' min':'&mdash;';
       document.getElementById('st-age').innerHTML='Cache age: <strong>'+age+'</strong>';
       document.getElementById('st-error').textContent='';
+      // Populate period-info tooltip with computed date ranges
+      if(d.date_range&&d.date_range.length===2){
+        var maxD=new Date(d.date_range[1]);
+        var periodDefs=[['Day',1],['Week',7],['Month',30],['Year',365]];
+        var rows=periodDefs.map(function(pd){
+          var start=new Date(maxD); start.setDate(start.getDate()-(pd[1]-1));
+          var startStr=start.toISOString().slice(0,10);
+          var endStr=maxD.toISOString().slice(0,10);
+          var rangeStr=pd[1]===1?endStr:startStr+' – '+endStr;
+          return '<tr><td>'+pd[0]+'</td><td>'+rangeStr+'</td></tr>';
+        }).join('');
+        document.getElementById('period-ranges-table').innerHTML=rows;
+        document.getElementById('period-data-range').textContent='Data: '+d.date_range[0]+' – '+d.date_range[1];
+      }
     })
     .catch(function(err){ document.getElementById('st-error').textContent='Status error: '+err.message; });
 }
