@@ -456,6 +456,7 @@ function setPeriod(p) {
   if (card) card.style.display = (p === 'day') ? 'none' : '';
   updateGranularityPills();
   if (p !== 'day') loadBreakdown();
+  loadAppList();
 }
 function periodLabel() {
   return {day:'24 hours', week:'7 days', month:'30 days', year:'365 days'}[currentPeriod]||currentPeriod;
