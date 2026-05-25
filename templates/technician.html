@@ -167,17 +167,17 @@
     <h1>azure-penny <span>Technician</span><span style="font-size:0.7rem;color:#334155;font-weight:400;margin-left:.5rem;font-family:monospace;">v{{ version }}</span></h1>
   </div>
   <div class="rg-select-wrap">
-    <select id="ghost-filter" class="ghost-select" onchange="onGhostFilterChange(this.value)" title="Filter resource groups">
+    <span class="rg-select-label">App:</span>
+    <select id="app-select" class="rg-select" onchange="onAppChange(this.value)">
+      <option value="">All</option>
+    </select>
+    <select id="ghost-filter" class="ghost-select" onchange="onGhostFilterChange(this.value)" title="Filter resource groups" style="margin-left:.5rem">
       <option value="all">All RGs</option>
       <option value="nonzero">No zero cost</option>
       <option value="notempty">No empty</option>
     </select>
     <span class="rg-select-label">RG:</span>
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
-      <option value="">All</option>
-    </select>
-    <span class="rg-select-label" style="margin-left:.5rem">App:</span>
-    <select id="app-select" class="rg-select" onchange="onAppChange(this.value)">
       <option value="">All</option>
     </select>
   </div>
@@ -316,7 +316,7 @@ function onRgChange(val) {
   var sel = document.getElementById('rg-select');
   if (sel) sel.classList.toggle('filtered', !!val);
   _anomaliesCache = null;
-  loaded = {}; loadAppList(); loadCurrentTab(); loadGrandTotal();
+  loaded = {}; loadCurrentTab(); loadGrandTotal();
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
@@ -344,7 +344,9 @@ function renderRgDropdown() {
   sel.classList.toggle('filtered', !!current);
 }
 function loadRgList() {
-  fetch('/api/resource-groups-list')
+  var a = getCurrentApp();
+  var url = '/api/resource-groups-list' + (a ? '?app_filter=' + encodeURIComponent(a) : '');
+  fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       allRgs = data.resource_groups || [];
@@ -363,11 +365,14 @@ function onAppChange(val) {
   else localStorage.removeItem('az_penny_app');
   var sel = document.getElementById('app-select');
   if (sel) sel.classList.toggle('filtered', !!val);
+  // Reset RG — previously-selected RG may not belong to the new app
+  localStorage.removeItem('az_penny_rg');
   _anomaliesCache = null;
-  loaded = {}; loadCurrentTab(); loadGrandTotal();
+  loaded = {}; loadRgList(); loadCurrentTab(); loadGrandTotal();
 }
 function loadAppList() {
-  fetch('/api/apps?period=' + currentPeriod + rgParam())
+  // App is primary: list all apps regardless of selected RG
+  fetch('/api/apps?period=' + currentPeriod)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var sel = document.getElementById('app-select');

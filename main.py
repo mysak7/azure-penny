@@ -763,10 +763,28 @@ async def api_resource_groups(period: str = "week", rg: str = "", app: str = "")
 
 
 @app.get("/api/resource-groups-list", tags=["api"])
-async def api_resource_groups_list() -> JSONResponse:
+async def api_resource_groups_list(app_filter: str = "") -> JSONResponse:
+    """List resource groups, optionally pre-filtered to only those that have data for a given app tag."""
     try:
         df = await get_cached_dataframe()
 
+        # When app filter is active: return only RGs present in that app's billing data.
+        # ARM-only RGs are excluded because they carry no app-tag billing rows.
+        if app_filter:
+            filtered = _filter_app(df, app_filter)
+            if not filtered.empty and "C_NAME" in filtered.columns and "C_COST" in filtered.columns:
+                by_rg = filtered.groupby("C_NAME", dropna=False)["C_COST"].sum()
+                rgs = [
+                    {"name": str(k), "total_cost": round(float(v), 2), "in_arm": True}
+                    for k, v in by_rg.items()
+                    if str(k).strip() and v > 0
+                ]
+                rgs.sort(key=lambda r: -(r["total_cost"] or 0))
+            else:
+                rgs = []
+            return JSONResponse({"resource_groups": rgs})
+
+        # No app filter — original behaviour: billing data merged with ARM list.
         arm_rg_names = await _get_arm_rg_names()
 
         if not df.empty and "C_NAME" in df.columns and "C_COST" in df.columns:
