@@ -84,6 +84,105 @@ Terraform state is stored in Azure Blob Storage (`azure-penny-tfstate-rg` / `azu
     └── terraform.yml        # Push to main (terraform/**): plan/apply
 ```
 
+## Prerequisites — data pipeline
+
+> **This is the most common reason the dashboard shows no data.** The Cost Management export must exist in Blob Storage before the app can load anything.
+
+### Step 1 — Create a Cost Management export (manual — Terraform cannot do this for MCA accounts)
+
+> ⚠️ `terraform/cost_export.tf` was removed from state because Azure does not permit billing-scope RBAC assignments via REST API for MSA-owned MCA accounts. The export must be created once manually in the Azure Portal or via CLI.
+
+**Azure Portal:**
+
+1. Open **Azure Portal → Cost Management + Billing → Cost Management → Exports**
+2. Click **+ Add**
+3. Set the following:
+
+   | Field | Value |
+   |---|---|
+   | Export name | any name (e.g. `penny-daily-export`) |
+   | Export type | Daily export of month-to-date costs |
+   | Start date | today |
+   | Format | **Parquet** |
+   | Compression | Snappy (default) |
+   | Storage account | the one Terraform created (see `terraform output storage_account_name`) |
+   | Container | `cost-exports` (or whatever `STORAGE_CONTAINER_NAME` is set to) |
+   | Directory | leave empty or set to `exports` |
+
+4. Click **Create**, then **Run now** to trigger the first immediate export (otherwise it runs the next day).
+
+**Azure CLI alternative:**
+
+```bash
+STORAGE_ACCOUNT=$(terraform -chdir=terraform output -raw storage_account_name)
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+az costmanagement export create \
+  --name "penny-daily-export" \
+  --scope "subscriptions/$SUBSCRIPTION_ID" \
+  --type "ActualCost" \
+  --timeframe "MonthToDate" \
+  --recurrence "Daily" \
+  --recurrence-period from="$(date -u +%Y-%m-%dT00:00:00Z)" to="2099-12-31T00:00:00Z" \
+  --storage-account-id "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$(terraform -chdir=terraform output -raw resource_group_name)/providers/Microsoft.Storage/storageAccounts/$STORAGE_ACCOUNT" \
+  --storage-container "cost-exports" \
+  --storage-directory "" \
+  --format Parquet
+```
+
+### Step 2 — Trigger the first export run
+
+Exports run once daily by default. To get data immediately after creation:
+
+```bash
+az costmanagement export run \
+  --name "penny-daily-export" \
+  --scope "subscriptions/$(az account show --query id -o tsv)"
+```
+
+Files appear in Blob Storage within a few minutes.
+
+### Step 3 — Verify the Managed Identity can read the blobs
+
+The Terraform-managed identity (`id-{env}-{location_short}-penny`) already has `Storage Blob Data Reader` assigned on the Storage Account. Verify:
+
+```bash
+az role assignment list \
+  --assignee "$(terraform -chdir=terraform output -raw managed_identity_client_id)" \
+  --query "[].{role:roleDefinitionName, scope:scope}" \
+  -o table
+```
+
+Expected output includes `Storage Blob Data Reader` and `Contributor`.
+
+### What the app expects in Blob Storage
+
+Azure Cost Management writes exports using this path convention:
+
+```
+{export-name}/{YYYYMMDD-YYYYMMDD}/{guid}/{filename}.parquet
+```
+
+Example:
+```
+penny-daily-export/20250501-20250601/a1b2c3d4-e5f6.../penny-daily-export_20250525.parquet
+```
+
+The app automatically discovers the folder with the **most recent date range** and loads all Parquet (or CSV/CSV.GZ) files from it.
+
+### Troubleshooting — no data
+
+1. Check blobs exist: `az storage blob list --account-name $STORAGE_ACCOUNT --container-name cost-exports --query "[].name" -o tsv`
+2. If empty → export hasn't run yet. Trigger it manually (see Step 2 above).
+3. Check Container App logs: Azure Portal → Container App → Log stream, or:
+   ```bash
+   az containerapp logs show --name <app-name> --resource-group <rg> --follow
+   ```
+   Look for `Cache miss` log line and any errors below it.
+4. Confirm `STORAGE_ACCOUNT_NAME` env var matches the actual storage account name.
+
+---
+
 ## Application
 
 The app discovers the latest export folder in Blob Storage using the path convention written by Azure Cost Management:
