@@ -75,7 +75,10 @@ COLUMN_MAP: dict[str, str] = {
 
 
 def _extract_project_tag(tags_val: object) -> str:
-    """Extract the 'project' tag value from a Cost Management Tags JSON string."""
+    """Extract the 'project' tag value from a Cost Management Tags JSON string.
+
+    Case-insensitive: matches 'project', 'Project', 'PROJECT', etc.
+    """
     if tags_val is None:
         return "Untagged"
     s = str(tags_val).strip()
@@ -83,7 +86,11 @@ def _extract_project_tag(tags_val: object) -> str:
         return "Untagged"
     try:
         tags = _json.loads(s)
-        return str(tags.get("project") or "Untagged")
+        val = next(
+            (v for k, v in tags.items() if k.lower() == "project"),
+            None,
+        )
+        return str(val) if val else "Untagged"
     except Exception:
         return "Untagged"
 
