@@ -569,6 +569,7 @@ def _fetch_resource_inventory() -> list[dict]:
             "private_ip": meta.get("private_ip", ""),
             "provisioned_size_gib": None,
             "parent_storage_account": None,
+            "app": (r.tags or {}).get("project") or "Untagged",
         })
 
     storage_accounts = [r for r in all_res if (r.type or "").lower() == "microsoft.storage/storageaccounts"]
@@ -600,6 +601,7 @@ def _fetch_resource_inventory() -> list[dict]:
                             "parent_storage_account": sa.name or "",
                             "monthly_cost": monthly_est,
                             "cost_source": "files_rate",
+                            "app": (sa.tags or {}).get("project") or "Untagged",
                         })
                         log.info(
                             "File share: %s/%s  quota=%d GiB  est=$%.2f/mo",

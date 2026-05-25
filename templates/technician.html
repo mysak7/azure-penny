@@ -176,6 +176,10 @@
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
       <option value="">All</option>
     </select>
+    <span class="rg-select-label" style="margin-left:.5rem">App:</span>
+    <select id="app-select" class="rg-select" onchange="onAppChange(this.value)">
+      <option value="">All</option>
+    </select>
   </div>
   <div class="hdr-right">
     <div class="nav">
@@ -312,7 +316,7 @@ function onRgChange(val) {
   var sel = document.getElementById('rg-select');
   if (sel) sel.classList.toggle('filtered', !!val);
   _anomaliesCache = null;
-  loaded = {}; loadCurrentTab(); loadGrandTotal();
+  loaded = {}; loadAppList(); loadCurrentTab(); loadGrandTotal();
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
@@ -351,13 +355,41 @@ function loadRgList() {
 function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// ── Anomalies fetch (cached per RG) ──────────────────────────────────────────
+// ── Application (project tag) filter ─────────────────────────────────────────
+function getCurrentApp() { return localStorage.getItem('az_penny_app') || ''; }
+function appParam() { var a = getCurrentApp(); return a ? '&app=' + encodeURIComponent(a) : ''; }
+function onAppChange(val) {
+  if (val) localStorage.setItem('az_penny_app', val);
+  else localStorage.removeItem('az_penny_app');
+  var sel = document.getElementById('app-select');
+  if (sel) sel.classList.toggle('filtered', !!val);
+  _anomaliesCache = null;
+  loaded = {}; loadCurrentTab(); loadGrandTotal();
+}
+function loadAppList() {
+  fetch('/api/apps?period=' + currentPeriod + rgParam())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var sel = document.getElementById('app-select');
+      if (!sel) return;
+      var current = getCurrentApp();
+      var apps = data.apps || [];
+      sel.innerHTML = '<option value="">All</option>' + apps.map(function(a) {
+        return '<option value="' + escAttr(a.name) + '"' + (a.name === current ? ' selected' : '') + '>' +
+               escHtml(a.name) + ' (' + fmtCost(a.cost_usd) + ')</option>';
+      }).join('');
+      sel.classList.toggle('filtered', !!current);
+    })
+    .catch(function() {});
+}
+
+// ── Anomalies fetch (cached per RG+App) ──────────────────────────────────────
 function getAnomalies() {
   var rg = getCurrentRg();
   if (_anomaliesCache && _anomaliesCacheRg === rg) {
     return Promise.resolve(_anomaliesCache);
   }
-  var url = '/api/anomalies' + (rg ? '?rg=' + encodeURIComponent(rg) : '');
+  var url = '/api/anomalies' + (rg ? '?rg=' + encodeURIComponent(rg) : '') + appParam();
   return fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -428,7 +460,7 @@ function loadAllServices() {
   document.getElementById('svc-error').textContent = '';
 
   Promise.all([
-    fetch('/api/services?period=' + currentPeriod + rgParam()).then(function(r) { return r.json(); }),
+    fetch('/api/services?period=' + currentPeriod + rgParam() + appParam()).then(function(r) { return r.json(); }),
     getAnomalies()
   ]).then(function(results) {
     var data    = results[0];
@@ -474,7 +506,7 @@ function loadAllServices() {
     document.getElementById('svc-error').textContent = 'Error: ' + err.message;
   });
 
-  fetch('/api/daily?days=30' + rgParam())
+  fetch('/api/daily?days=30' + rgParam() + appParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) throw new Error(data.error);
@@ -538,7 +570,7 @@ function loadResourceGroups() {
   document.getElementById('rg-error').textContent = '';
 
   Promise.all([
-    fetch('/api/resource-groups?period=' + currentPeriod + rgParam()).then(function(r) { return r.json(); }),
+    fetch('/api/resource-groups?period=' + currentPeriod + rgParam() + appParam()).then(function(r) { return r.json(); }),
     getAnomalies()
   ]).then(function(results) {
     var data    = results[0];
@@ -744,7 +776,7 @@ function reloadData() {
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.error) { document.getElementById('st-error').textContent = 'Reload error: ' + d.error; return; }
-      loaded = {}; loadStatus(); loadCurrentTab(); loadGrandTotal();
+      loaded = {}; loadStatus(); loadRgList(); loadAppList(); loadCurrentTab(); loadGrandTotal();
     })
     .catch(function(err) { document.getElementById('st-error').textContent = 'Reload error: ' + err.message; });
 }
@@ -792,7 +824,7 @@ function fmtNum(n) {
 function loadGrandTotal() {
   var bar = document.getElementById('st-total-val');
   if (bar) bar.textContent = 'loading…';
-  fetch('/api/services?period=' + currentPeriod + rgParam())
+  fetch('/api/services?period=' + currentPeriod + rgParam() + appParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (bar) bar.textContent = fmtCost(data.total_usd || 0) + ' (' + periodLabel() + ')';
@@ -941,6 +973,7 @@ document.getElementById('rg-delete-modal').addEventListener('click', function(e)
 (function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
 loadStatus();
 loadRgList();
+loadAppList();
 loadCurrentTab();
 loadGrandTotal();
 </script>

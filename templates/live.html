@@ -178,6 +178,10 @@
     <select id="rg-select" class="rg-select" onchange="onRgChange(this.value)">
       <option value="">All</option>
     </select>
+    <span class="rg-select-label" style="margin-left:.5rem">App:</span>
+    <select id="app-select" class="rg-select" onchange="onAppChange(this.value)">
+      <option value="">All</option>
+    </select>
   </div>
   <div class="hdr-right">
     <div class="nav">
@@ -371,6 +375,34 @@ function loadRgList() {
     .catch(function() {});
 }
 function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Application (project tag) filter — client-side ───────────────────────────
+function getCurrentApp() { return localStorage.getItem('az_penny_app') || ''; }
+function onAppChange(val) {
+  if (val) localStorage.setItem('az_penny_app', val);
+  else localStorage.removeItem('az_penny_app');
+  var sel = document.getElementById('app-select');
+  if (sel) sel.classList.toggle('filtered', !!val);
+  applyFilters();
+}
+function renderAppDropdown() {
+  var sel = document.getElementById('app-select');
+  if (!sel) return;
+  var current = getCurrentApp();
+  // Collect unique app values from already-loaded resources
+  var appSet = {};
+  allResources.forEach(function(r) {
+    var a = r.app || 'Untagged';
+    appSet[a] = (appSet[a] || 0) + (r.monthly_cost || 0);
+  });
+  var apps = Object.keys(appSet).sort();
+  sel.innerHTML = '<option value="">All</option>' + apps.map(function(a) {
+    return '<option value="' + escAttr(a) + '"' + (a === current ? ' selected' : '') + '>' +
+           escHtml(a) + '</option>';
+  }).join('');
+  sel.classList.toggle('filtered', !!current);
+}
 
 // ── ARM resource type → friendly display name ────────────────────────────────
 var TYPE_NAMES = {
@@ -486,6 +518,7 @@ function applyFilters() {
   var hideFree  = document.getElementById('hide-free').checked;
   var search    = (document.getElementById('search').value || '').toLowerCase();
   var activeRg  = getCurrentRg().toLowerCase();
+  var activeApp = getCurrentApp().toLowerCase();
 
   var filtered = allResources.filter(function(r) {
     if (currentCat !== 'all' && r.category !== currentCat) return false;
@@ -493,6 +526,7 @@ function applyFilters() {
     if (hideFree && (cost === null || cost <= 0)) return false;
     if (cost < minCost) return false;
     if (activeRg && (r.resource_group || '').toLowerCase() !== activeRg) return false;
+    if (activeApp && (r.app || 'untagged').toLowerCase() !== activeApp) return false;
     if (search) {
       var hay = ((r.name || '') + ' ' + (r.resource_group || '')).toLowerCase();
       if (hay.indexOf(search) === -1) return false;
@@ -645,6 +679,7 @@ function loadResources() {
     document.getElementById('st-billed').textContent = fmtCost(exportTotal);
     document.getElementById('st-live').textContent   = fmtCost(liveMatched);
     document.getElementById('st-orphan').textContent = fmtCost(orphaned);
+    renderAppDropdown();
     applyFilters();
   })
   .catch(function(err) {

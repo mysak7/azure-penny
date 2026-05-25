@@ -53,7 +53,7 @@ async def lifespan(_: FastAPI):
     asyncio.create_task(_get_live_data())
     yield
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 app = FastAPI(
     title="azure-penny",
@@ -198,6 +198,12 @@ def _filter_rg(df: pd.DataFrame, rg: str) -> pd.DataFrame:
     return df[df["C_NAME"].str.lower() == rg.lower()]
 
 
+def _filter_app(df: pd.DataFrame, app: str) -> pd.DataFrame:
+    if not app or "C_APP" not in df.columns:
+        return df
+    return df[df["C_APP"].str.lower() == app.lower()]
+
+
 def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
     if col not in df.columns or "C_COST" not in df.columns:
         return {}
@@ -205,9 +211,9 @@ def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
     return grp[grp > 0].sort_values(ascending=False).round(6).to_dict()
 
 
-async def _category_api(period: str, services: set[str], rg: str = "") -> dict:
+async def _category_api(period: str, services: set[str], rg: str = "", app: str = "") -> dict:
     full_df = await get_cached_dataframe()
-    df = _filter_rg(full_df, rg)
+    df = _filter_app(_filter_rg(full_df, rg), app)
     days = _period_days(period)
     filtered = _filter_services(_filter_period(df, days), services)
 
@@ -331,18 +337,18 @@ async def api_reload() -> JSONResponse:
 # ── Category endpoints ────────────────────────────────────────────────────────
 
 @app.get("/api/compute", tags=["api"])
-async def api_compute(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_compute(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_COMPUTE, rg))
+        return JSONResponse(await _category_api(period, CAT_COMPUTE, rg, app))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/compute/machines", tags=["api"])
-async def api_compute_machines(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_compute_machines(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
         days = _period_days(period)
         filtered = _filter_services(_filter_period(df, days), CAT_COMPUTE)
 
@@ -372,18 +378,18 @@ async def api_compute_machines(period: str = "week", rg: str = "") -> JSONRespon
 
 
 @app.get("/api/storage", tags=["api"])
-async def api_storage(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_storage(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_STORAGE, rg))
+        return JSONResponse(await _category_api(period, CAT_STORAGE, rg, app))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/storage/breakdown", tags=["api"])
-async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_storage_breakdown(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
         days = _period_days(period)
 
         all_storage_svcs = CAT_STORAGE | {"Bandwidth"}
@@ -391,7 +397,7 @@ async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONRespo
 
         fallback = False
         if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
-            df_svc = _filter_services(df, all_storage_svcs)
+            df_svc = _filter_services(df, all_storage_svcs)  # df already has app filter applied
             if not df_svc.empty:
                 last_date = full_df["C_DATE"].dropna().max()
                 filtered = df_svc[df_svc["C_DATE"] == last_date]
@@ -440,39 +446,39 @@ async def api_storage_breakdown(period: str = "week", rg: str = "") -> JSONRespo
 
 
 @app.get("/api/network", tags=["api"])
-async def api_network(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_network(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_NETWORK, rg))
+        return JSONResponse(await _category_api(period, CAT_NETWORK, rg, app))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/database", tags=["api"])
-async def api_database(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_database(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_DATABASE, rg))
+        return JSONResponse(await _category_api(period, CAT_DATABASE, rg, app))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/monitoring", tags=["api"])
-async def api_monitoring(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_monitoring(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
-        return JSONResponse(await _category_api(period, CAT_MONITORING, rg))
+        return JSONResponse(await _category_api(period, CAT_MONITORING, rg, app))
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-async def _other_category_api(period: str, rg: str = "") -> dict:
+async def _other_category_api(period: str, rg: str = "", app: str = "") -> dict:
     """Costs for services NOT covered by any standard category (catch-all)."""
     full_df = await get_cached_dataframe()
-    df = _filter_rg(full_df, rg)
+    df = _filter_app(_filter_rg(full_df, rg), app)
     days = _period_days(period)
     filtered = _filter_period(df, days)
 
     fallback = False
     if period == "day" and filtered.empty and "C_DATE" in full_df.columns:
-        df_rg = _filter_rg(full_df, rg)
+        df_rg = _filter_app(_filter_rg(full_df, rg), app)
         if not df_rg.empty:
             last_date = full_df["C_DATE"].dropna().max()
             filtered = df_rg[df_rg["C_DATE"] == last_date]
@@ -498,10 +504,38 @@ async def _other_category_api(period: str, rg: str = "") -> dict:
 
 
 @app.get("/api/other", tags=["api"])
-async def api_other(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_other(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     """Services that don't fall into any standard category."""
     try:
-        return JSONResponse(await _other_category_api(period, rg))
+        return JSONResponse(await _other_category_api(period, rg, app))
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# ── Application (project tag) endpoints ──────────────────────────────────────
+
+@app.get("/api/apps", tags=["api"])
+async def api_apps(period: str = "week", rg: str = "") -> JSONResponse:
+    """List distinct applications (project tags) with their total cost for the given period."""
+    try:
+        full_df = await get_cached_dataframe()
+        df = _filter_rg(full_df, rg)
+        days = _period_days(period)
+        filtered = _filter_period(df, days)
+
+        if filtered.empty or "C_APP" not in filtered.columns or "C_COST" not in filtered.columns:
+            return JSONResponse({"apps": [], "period": period})
+
+        by_app = (
+            filtered.groupby("C_APP", dropna=False)["C_COST"]
+            .sum()
+            .sort_values(ascending=False)
+        )
+        apps = [
+            {"name": str(k), "cost_usd": round(float(v), 4)}
+            for k, v in by_app.items()
+        ]
+        return JSONResponse({"apps": apps, "period": period})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
@@ -622,17 +656,17 @@ async def api_debug() -> JSONResponse:
 # ── Technician / services ─────────────────────────────────────────────────────
 
 @app.get("/api/services", tags=["api"])
-async def api_services(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_services(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
         fallback = False
         if period == "day" and filtered.empty and "C_DATE" in full_df.columns and not df.empty:
             last_date = full_df["C_DATE"].dropna().max()
-            filtered = df[df["C_DATE"] == last_date]
+            filtered = df[df["C_DATE"] == last_date]  # df already has rg+app filter applied
             fallback = True
 
         by_svc = _cost_by(filtered, "C_SERVICE")
@@ -706,10 +740,10 @@ async def api_cost_search(q: str) -> JSONResponse:
 
 
 @app.get("/api/resource-groups", tags=["api"])
-async def api_resource_groups(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_resource_groups(period: str = "week", rg: str = "", app: str = "") -> JSONResponse:
     try:
         df = await get_cached_dataframe()
-        df = _filter_rg(df, rg)
+        df = _filter_app(_filter_rg(df, rg), app)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -761,11 +795,11 @@ async def api_resource_groups_list() -> JSONResponse:
 # ── Anomalies ────────────────────────────────────────────────────────────────
 
 @app.get("/api/anomalies", tags=["api"])
-async def api_anomalies(rg: str = "") -> JSONResponse:
+async def api_anomalies(rg: str = "", app: str = "") -> JSONResponse:
     """Week-over-week cost anomalies and untagged resource report from billing CSV."""
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
 
         today = date.today()
         curr_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -845,10 +879,10 @@ async def api_anomalies(rg: str = "") -> JSONResponse:
 # ── Year overview ─────────────────────────────────────────────────────────────
 
 @app.get("/api/year", tags=["api"])
-async def api_year(rg: str = "") -> JSONResponse:
+async def api_year(rg: str = "", app: str = "") -> JSONResponse:
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
 
         if df.empty or "C_DATE" not in df.columns or "C_COST" not in df.columns:
             return JSONResponse({"months": [], "projected_months": [], "ytd_usd": 0, "monthly_avg_usd": 0})
@@ -953,11 +987,12 @@ async def api_breakdown(
     granularity: str = "days",
     category: str = "all",
     rg: str = "",
+    app: str = "",
 ) -> JSONResponse:
     """Time-bucketed stacked cost breakdown."""
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_app(_filter_rg(full_df, rg), app)
         days = _period_days(period)
         df = _filter_period(df, days)
 
@@ -1321,10 +1356,10 @@ async def api_diagnostics() -> JSONResponse:
 
 
 @app.get("/api/daily", tags=["api"])
-async def api_daily(days: int = 30, rg: str = "") -> JSONResponse:
+async def api_daily(days: int = 30, rg: str = "", app: str = "") -> JSONResponse:
     try:
         df = await get_cached_dataframe()
-        df = _filter_rg(df, rg)
+        df = _filter_app(_filter_rg(df, rg), app)
         if "C_DATE" not in df.columns or "C_COST" not in df.columns:
             return JSONResponse({"days": days, "points": [], "total_usd": 0})
 

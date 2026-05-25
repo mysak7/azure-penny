@@ -11,6 +11,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [1.3.0] – 2026-05-25
+
+### Added
+- **Application filter** (`project` tag) — `App:` dropdown in the header of all three views
+  (Manager, Technician, Live), independent AND-combined with the existing RG filter
+- **`GET /api/apps`** endpoint — lists distinct `project` tag values with their cost for the
+  selected period; used to dynamically populate the App dropdown
+- **`C_APP` column** derived at load time from `Tags` JSON (`project` key) or a dedicated
+  `tag_project` export column; falls back to `"Untagged"` when the tag is absent
+- `app: str = ""` query parameter added to all cost endpoints:
+  `/api/compute`, `/api/storage`, `/api/storage/breakdown`, `/api/network`, `/api/database`,
+  `/api/monitoring`, `/api/other`, `/api/services`, `/api/resource-groups`, `/api/anomalies`,
+  `/api/breakdown`, `/api/daily`, `/api/year`, `/api/compute/machines`
+- Live view: `app` field added to each resource object (`project` tag from ARM); App dropdown
+  filters client-side (resources already loaded in-memory)
+
+### Changed
+- `_filter_app()` helper follows the same pattern as `_filter_rg()` — clean AND semantics
+- `_extract_project_tag()` handles JSON Tags strings, empty/null/`{}`/`nan` values gracefully
+
+---
+
 ## [1.2.0] – 2026-05-24
 
 ### Fixed

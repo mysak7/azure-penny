@@ -4,6 +4,7 @@ Azure Blob Storage access, column mapping, data loading, and in-memory cache.
 
 import asyncio
 import io
+import json as _json
 import re
 import time
 from typing import Any
@@ -62,6 +63,8 @@ COLUMN_MAP: dict[str, str] = {
     "UsageDate":             "C_DATE",
     "Tags":                  "C_TAGS",
     "tag_":                  "C_TAGS",
+    # Separate per-tag columns (some export formats) — map project tag directly to C_APP
+    "tag_project":           "C_APP",
     "ResourceId":            "C_RESOURCE_ID",
     "InstanceId":            "C_RESOURCE_ID",
     "MeterSubCategory":      "C_SUBCATEGORY",
@@ -69,6 +72,20 @@ COLUMN_MAP: dict[str, str] = {
     "Quantity":              "C_QUANTITY",
     "UsageQuantity":         "C_QUANTITY",
 }
+
+
+def _extract_project_tag(tags_val: object) -> str:
+    """Extract the 'project' tag value from a Cost Management Tags JSON string."""
+    if tags_val is None:
+        return "Untagged"
+    s = str(tags_val).strip()
+    if s in ("", "{}", "nan", "None"):
+        return "Untagged"
+    try:
+        tags = _json.loads(s)
+        return str(tags.get("project") or "Untagged")
+    except Exception:
+        return "Untagged"
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
 
@@ -184,6 +201,17 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
 
     if "C_NAME" in df.columns:
         df["C_NAME"] = df["C_NAME"].str.lower()
+
+    # Derive C_APP (application / project tag).
+    # Priority: explicit tag_project column (already renamed above) → JSON parse of C_TAGS.
+    if "C_APP" not in df.columns:
+        if "C_TAGS" in df.columns:
+            df["C_APP"] = df["C_TAGS"].apply(_extract_project_tag)
+        else:
+            df["C_APP"] = "Untagged"
+    else:
+        # C_APP came from tag_project column — fill nulls/empty strings
+        df["C_APP"] = df["C_APP"].fillna("Untagged").replace("", "Untagged")
 
     return df
 
