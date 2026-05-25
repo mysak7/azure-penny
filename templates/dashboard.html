@@ -223,6 +223,20 @@
     </div>
   </div>
 
+  <!-- App breakdown — visible only when "All Apps" selected -->
+  <div id="app-breakdown-card" class="cat-card" style="margin-bottom:1.25rem;">
+    <div class="cat-header">
+      <div class="cat-title"><h2>Cost by Application</h2></div>
+      <span id="ab-badge" class="cat-badge">7 days</span>
+    </div>
+    <div class="cat-body">
+      <div id="ab-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
+      <hr class="cat-divider">
+      <div id="ab-table"></div>
+      <div id="ab-error" class="error-msg"></div>
+    </div>
+  </div>
+
   <!-- Cost breakdown chart — hidden for day period (single bucket = meaningless) -->
   <div id="breakdown-card" class="cat-card" style="margin-bottom:1.25rem;">
     <div class="cat-header">
@@ -456,6 +470,7 @@ function loadAll() {
   loadCategory('monitoring', '/api/monitoring?period=' +currentPeriod+rgParam()+appParam(), 'mon', 'cyan');
   loadCategory('other',      '/api/other?period='      +currentPeriod+rgParam()+appParam(), 'ot',  'amber');
   loadTotal();
+  loadAppBreakdown();
 }
 
 // ── Grand total (same source as technician "All Services" tab) ────────────────
@@ -702,6 +717,63 @@ function buildBreakdownLegend(stackKeys) {
     }).join('') + '</div>';
 }
 
+// ── App breakdown (visible only when "All Apps" selected) ─────────────────────
+var APP_PALETTE = ['#38bdf8','#4ade80','#f97316','#a78bfa','#22d3ee','#f59e0b','#f87171','#94a3b8','#fb923c','#a3e635'];
+
+function loadAppBreakdown() {
+  var card = document.getElementById('app-breakdown-card');
+  if (!card) return;
+  var isAll = !getCurrentApp();
+  card.style.display = isAll ? '' : 'none';
+  if (!isAll) return;
+
+  document.getElementById('ab-badge').textContent = periodLabel();
+  document.getElementById('ab-chart').innerHTML = '<div class="loading">Loading&hellip;</div>';
+  document.getElementById('ab-table').innerHTML = '';
+  document.getElementById('ab-error').textContent = '';
+
+  fetch('/api/apps?period=' + currentPeriod + rgParam())
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      var apps = data.apps || [];
+      if (!apps.length) {
+        document.getElementById('ab-chart').innerHTML = '<p class="empty">No app data in this period.</p>';
+        return;
+      }
+
+      // Bar chart — top 10 apps
+      var top = apps.slice(0, 10);
+      var max = top[0].cost_usd || 1;
+      var chart = top.map(function(a, i) {
+        var pct = Math.round(a.cost_usd / max * 100);
+        var color = APP_PALETTE[i % APP_PALETTE.length];
+        return '<div class="hbar-row">' +
+          '<div class="hbar-label" title="' + escAttr(a.name) + '">' + escHtml(a.name) + '</div>' +
+          '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+          '<div class="hbar-cost">' + fmtCost(a.cost_usd) + '</div>' +
+          '</div>';
+      }).join('');
+      document.getElementById('ab-chart').innerHTML = chart;
+
+      // Full table with share %
+      var total = apps.reduce(function(s, a) { return s + a.cost_usd; }, 0) || 1;
+      var rows = apps.map(function(a, i) {
+        var pct = (a.cost_usd / total * 100).toFixed(1);
+        var color = APP_PALETTE[i % APP_PALETTE.length];
+        return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + color + ';margin-right:.4rem;vertical-align:middle;"></span>' + escHtml(a.name) + '</td>' +
+          '<td style="font-family:monospace">' + fmtCost(a.cost_usd) + '</td>' +
+          '<td class="pct-cell">' + pct + '%</td></tr>';
+      }).join('');
+      document.getElementById('ab-table').innerHTML =
+        '<table class="svc-table"><tr><th>Application</th><th>Cost</th><th>Share</th></tr>' + rows + '</table>';
+    })
+    .catch(function(err) {
+      document.getElementById('ab-chart').innerHTML = '';
+      document.getElementById('ab-error').textContent = 'Error: ' + err.message;
+    });
+}
+
 // Boot
 (function() {
   var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter;
@@ -709,6 +781,8 @@ function buildBreakdownLegend(stackKeys) {
   updateGranularityPills();
   var card = document.getElementById('breakdown-card');
   if (card) card.style.display = (currentPeriod === 'day') ? 'none' : '';
+  var abCard = document.getElementById('app-breakdown-card');
+  if (abCard) abCard.style.display = getCurrentApp() ? 'none' : '';
 })();
 loadStatus();
 loadRgList();
