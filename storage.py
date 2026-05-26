@@ -16,6 +16,7 @@ from azure.storage.blob import BlobServiceClient
 from config import (
     AZURE_CLIENT_ID,
     AZURE_SUBSCRIPTION_ID,
+    COST_TAG_KEY,
     STORAGE_ACCOUNT_NAME,
     STORAGE_CONTAINER_NAME,
     TTL_SECONDS,
@@ -74,25 +75,40 @@ COLUMN_MAP: dict[str, str] = {
 }
 
 
-def _extract_project_tag(tags_val: object) -> str:
-    """Extract the 'project' tag value from a Cost Management Tags JSON string.
+def _extract_project_tag(tags_val: object) -> str | None:
+    """Extract the application tag value from a Cost Management Tags JSON string.
 
-    Case-insensitive: matches 'project', 'Project', 'PROJECT', etc.
+    Uses COST_TAG_KEY (env var, default 'project') for case-insensitive lookup.
+    Returns the tag value string, or None if the tag key is absent / unparseable.
     """
     if tags_val is None:
-        return "Untagged"
+        return None
     s = str(tags_val).strip()
     if s in ("", "{}", "nan", "None"):
-        return "Untagged"
+        return None
     try:
         tags = _json.loads(s)
+        tag_key_lower = COST_TAG_KEY.lower()
         val = next(
-            (v for k, v in tags.items() if k.lower() == "project"),
+            (v for k, v in tags.items() if k.lower() == tag_key_lower),
             None,
         )
-        return str(val) if val else "Untagged"
+        return str(val).strip() if val and str(val).strip() else None
     except Exception:
-        return "Untagged"
+        return None
+
+
+def _extract_all_tag_keys(tags_val: object) -> list[str]:
+    """Return all tag key names from a Tags JSON blob (for diagnostics)."""
+    if tags_val is None:
+        return []
+    s = str(tags_val).strip()
+    if s in ("", "{}", "nan", "None"):
+        return []
+    try:
+        return list(_json.loads(s).keys())
+    except Exception:
+        return []
 
 
 def _infer_app_from_mc_rg(rg_lower: str) -> str | None:
@@ -236,12 +252,13 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     # Priority: explicit tag_project column (already renamed above) → JSON parse of C_TAGS.
     if "C_APP" not in df.columns:
         if "C_TAGS" in df.columns:
+            # _extract_project_tag returns str | None; None → filled as "Untagged" below
             df["C_APP"] = df["C_TAGS"].apply(_extract_project_tag)
         else:
-            df["C_APP"] = "Untagged"
-    else:
-        # C_APP came from tag_project column — fill nulls/empty strings
-        df["C_APP"] = df["C_APP"].fillna("Untagged").replace("", "Untagged")
+            df["C_APP"] = None
+    # Normalise: empty / None → "Untagged"
+    df["C_APP"] = df["C_APP"].fillna("Untagged")
+    df["C_APP"] = df["C_APP"].replace("", "Untagged")
 
     # Fallback: infer app from AKS-managed resource group name (mc_*).
     # Resources in mc_* RGs don't inherit tags from the AKS cluster, so costs

@@ -16,6 +16,11 @@ STORAGE_CONTAINER_NAME: str = os.environ.get("STORAGE_CONTAINER_NAME", "cost-exp
 AZURE_CLIENT_ID: str | None = os.environ.get("AZURE_CLIENT_ID")
 AZURE_SUBSCRIPTION_ID: str = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
 TTL_SECONDS: int = int(os.environ.get("CACHE_TTL_SECONDS", "3600"))
+
+# Tag key used to identify the application/project.
+# Change this to match whatever tag key you use in Azure (case-insensitive match).
+# E.g. "project", "Application", "app", "system", "workload"
+COST_TAG_KEY: str = os.environ.get("COST_TAG_KEY", "project")
 LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))
 PROTECTED_RGS: set[str] = {
     rg.strip().lower() for rg in os.environ.get("PROTECTED_RGS", "").split(",") if rg.strip()

@@ -18,10 +18,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from config import (AZURE_SUBSCRIPTION_ID, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET,
-                    PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME,
+                    COST_TAG_KEY, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME,
                     VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
 from live_resources import _get_live_data, _live_cache, _live_lock, fetch_resource_metrics, list_resource_groups
-from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
+from storage import _cache, _extract_all_tag_keys, _lock, get_blob_service_client, get_cached_dataframe
 
 # ---------------------------------------------------------------------------
 # FastAPI application
@@ -640,6 +640,38 @@ async def api_debug() -> JSONResponse:
 
         total_cost = round(float(df["C_COST"].sum()), 4) if "C_COST" in df.columns else None
 
+        # ── Tag diagnostics ───────────────────────────────────────────────────
+        # Show C_APP distribution and (if C_TAGS present) actual tag keys in
+        # the raw data — helps diagnose mismatched COST_TAG_KEY.
+        app_dist: list = []
+        if "C_APP" in df.columns and "C_COST" in df.columns:
+            by_app = (
+                df.groupby("C_APP", dropna=False)["C_COST"]
+                .sum()
+                .sort_values(ascending=False)
+                .head(20)
+            )
+            app_dist = [
+                {"app": str(k), "cost": round(float(v), 4)}
+                for k, v in by_app.items()
+            ]
+
+        # Collect all unique tag key names from a sample of C_TAGS rows
+        tag_key_freq: dict[str, int] = {}
+        if "C_TAGS" in df.columns:
+            sample = df["C_TAGS"].dropna().head(500)
+            for keys in sample.apply(_extract_all_tag_keys):
+                for k in keys:
+                    tag_key_freq[k] = tag_key_freq.get(k, 0) + 1
+        # Sort by frequency
+        tag_keys_ranked = sorted(tag_key_freq.items(), key=lambda x: -x[1])
+
+        # Sample raw C_TAGS values for 5 "Untagged" rows (to inspect manually)
+        untagged_tags_sample: list = []
+        if "C_TAGS" in df.columns and "C_APP" in df.columns:
+            untagged_rows = df[df["C_APP"] == "Untagged"]["C_TAGS"].dropna().head(5).tolist()
+            untagged_tags_sample = [str(v) for v in untagged_rows]
+
         return JSONResponse({
             "blob_count": len(all_blobs),
             "blob_paths_sample": all_blobs[:20],
@@ -649,6 +681,11 @@ async def api_debug() -> JSONResponse:
             "total_cost": total_cost,
             "top_services": top_services,
             "top_resource_groups": top_rgs,
+            # Tag diagnostics
+            "cost_tag_key_configured": COST_TAG_KEY,
+            "c_app_distribution": app_dist,
+            "tag_keys_in_data": [{"key": k, "count": c} for k, c in tag_keys_ranked[:30]],
+            "untagged_raw_tags_sample": untagged_tags_sample,
         })
     except Exception as exc:
         log.exception("Debug endpoint failed")
