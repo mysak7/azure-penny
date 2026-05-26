@@ -184,6 +184,18 @@ def _infer_app_from_aks_tags(tags_val: object) -> str | None:
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
 
+# Pre-computed set of lowercase column names we actually use (for CSV usecols filter).
+# "tag_" is a prefix pattern, not an exact key — handled separately in _keep_col.
+_KEEP_COLS_LOWER: frozenset[str] = frozenset(
+    k.lower() for k in COLUMN_MAP if k != "tag_"
+)
+
+
+def _keep_col(col: str) -> bool:
+    """Return True if this CSV column should be loaded (case-insensitive match)."""
+    cl = col.lower()
+    return cl in _KEEP_COLS_LOWER or cl.startswith("tag_")
+
 # ---------------------------------------------------------------------------
 # Blob discovery
 # ---------------------------------------------------------------------------
@@ -264,8 +276,8 @@ def _blob_to_dataframe(raw: bytes, blob_name: str) -> pd.DataFrame:
     if blob_name.endswith(".parquet"):
         return pd.read_parquet(buf, engine="pyarrow")
     if blob_name.endswith(".csv.gz"):
-        return pd.read_csv(buf, compression="gzip")
-    return pd.read_csv(buf)
+        return pd.read_csv(buf, compression="gzip", usecols=_keep_col)
+    return pd.read_csv(buf, usecols=_keep_col)
 
 
 def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
