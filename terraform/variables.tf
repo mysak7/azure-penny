@@ -70,3 +70,29 @@ variable "custom_domain" {
   type        = string
   default     = ""
 }
+
+variable "vertex_proxy_url" {
+  description = "Base URL of the OpenAI-compatible LLM proxy used by the AI chat widget (e.g. https://vertex.mysak.fun or http://litellm:4000)."
+  type        = string
+  default     = ""
+}
+
+variable "vertex_proxy_api_key" {
+  description = "API key / Bearer token for the LLM proxy. Stored as a Container App secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "cf_access_client_id" {
+  description = "Cloudflare Access service token Client-ID (required when vertex_proxy_url is behind Cloudflare Access)."
+  type        = string
+  default     = ""
+}
+
+variable "cf_access_client_secret" {
+  description = "Cloudflare Access service token Client-Secret. Stored as a Container App secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

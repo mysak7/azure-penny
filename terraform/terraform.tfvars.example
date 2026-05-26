@@ -27,3 +27,10 @@ owner_email = "you@example.com"
 
 # Set to false for trial or dev subscriptions that don't support Cost Management exports.
 # enable_cost_export = false
+
+# Optional: LLM proxy for the AI chat widget.
+# Leave all three empty to disable the chat widget.
+# vertex_proxy_url        = "https://vertex.example.com"
+# vertex_proxy_api_key    = "sk-..."
+# cf_access_client_id     = "xxxxxxxx.access"      # only if proxy is behind Cloudflare Access
+# cf_access_client_secret = "xxxxxxxxxxxxxxxx"

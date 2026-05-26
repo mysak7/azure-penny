@@ -34,6 +34,22 @@ resource "azurerm_container_app" "this" {
     value = azuread_application_password.penny.value
   }
 
+  dynamic "secret" {
+    for_each = var.vertex_proxy_api_key != "" ? [1] : []
+    content {
+      name  = "vertex-proxy-api-key"
+      value = var.vertex_proxy_api_key
+    }
+  }
+
+  dynamic "secret" {
+    for_each = var.cf_access_client_secret != "" ? [1] : []
+    content {
+      name  = "cf-access-client-secret"
+      value = var.cf_access_client_secret
+    }
+  }
+
   template {
     min_replicas = var.always_on ? 1 : 0
     max_replicas = 1
@@ -75,6 +91,39 @@ resource "azurerm_container_app" "this" {
       env {
         name  = "PROTECTED_RGS"
         value = azurerm_resource_group.this.name
+      }
+
+      # ── AI chat widget (optional — leave empty to disable) ─────────────────
+      dynamic "env" {
+        for_each = var.vertex_proxy_url != "" ? [1] : []
+        content {
+          name  = "VERTEX_PROXY_URL"
+          value = var.vertex_proxy_url
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.vertex_proxy_api_key != "" ? [1] : []
+        content {
+          name        = "VERTEX_PROXY_API_KEY"
+          secret_name = "vertex-proxy-api-key"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.cf_access_client_id != "" ? [1] : []
+        content {
+          name  = "CF_ACCESS_CLIENT_ID"
+          value = var.cf_access_client_id
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.cf_access_client_secret != "" ? [1] : []
+        content {
+          name        = "CF_ACCESS_CLIENT_SECRET"
+          secret_name = "cf-access-client-secret"
+        }
       }
     }
   }
