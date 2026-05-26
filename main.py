@@ -17,7 +17,9 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from config import AZURE_SUBSCRIPTION_ID, PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
+from config import (AZURE_SUBSCRIPTION_ID, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET,
+                    PROTECTED_RGS, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME,
+                    VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
 from live_resources import _get_live_data, _live_cache, _live_lock, fetch_resource_metrics, list_resource_groups
 from storage import _cache, _lock, get_blob_service_client, get_cached_dataframe
 
@@ -1392,4 +1394,47 @@ async def api_daily(days: int = 30, rg: str = "", app: str = "") -> JSONResponse
             "total_usd": round(float(daily.sum()), 4),
         })
     except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# ── AI / LLM (vertex-proxy) ───────────────────────────────────────────────────
+
+@app.post("/api/ai", tags=["api"])
+async def api_ai(request: Request) -> JSONResponse:
+    """Pošle dotaz na vertex-proxy (Gemini přes CF Tunnel + CF Access)."""
+    if not VERTEX_PROXY_URL or not VERTEX_PROXY_API_KEY:
+        raise HTTPException(status_code=503, detail="Vertex proxy not configured (VERTEX_PROXY_URL / VERTEX_PROXY_API_KEY missing)")
+
+    body = await request.json()
+    question = body.get("question", "")
+    model    = body.get("model", "gemini-2.5-flash")
+    if not question:
+        raise HTTPException(status_code=400, detail="'question' field required")
+
+    headers = {
+        "Authorization":  f"Bearer {VERTEX_PROXY_API_KEY}",
+        "Content-Type":   "application/json",
+    }
+    if CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET:
+        headers["CF-Access-Client-Id"]     = CF_ACCESS_CLIENT_ID
+        headers["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET
+
+    payload = {
+        "model":    model,
+        "messages": [{"role": "user", "content": question}],
+    }
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{VERTEX_PROXY_URL}/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+        resp.raise_for_status()
+        answer = resp.json()["choices"][0]["message"]["content"]
+        return JSONResponse({"answer": answer, "model": model})
+    except Exception as exc:
+        log.exception("AI call failed")
         return JSONResponse({"error": str(exc)}, status_code=500)

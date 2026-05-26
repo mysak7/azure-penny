@@ -20,3 +20,9 @@ LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))
 PROTECTED_RGS: set[str] = {
     rg.strip().lower() for rg in os.environ.get("PROTECTED_RGS", "").split(",") if rg.strip()
 }
+
+# ── Vertex proxy (LLM) ────────────────────────────────────────────────────────
+VERTEX_PROXY_URL: str = os.environ.get("VERTEX_PROXY_URL", "")
+VERTEX_PROXY_API_KEY: str = os.environ.get("VERTEX_PROXY_API_KEY", "")
+CF_ACCESS_CLIENT_ID: str = os.environ.get("CF_ACCESS_CLIENT_ID", "")
+CF_ACCESS_CLIENT_SECRET: str = os.environ.get("CF_ACCESS_CLIENT_SECRET", "")
