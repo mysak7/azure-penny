@@ -111,14 +111,36 @@ def _extract_all_tag_keys(tags_val: object) -> list[str]:
         return []
 
 
+def _extract_cluster_app(cluster_name: str) -> str | None:
+    """Extract an app/project name from an AKS cluster name.
+
+    Handles two common naming conventions (case-insensitive):
+      1. {env}-{app}-aks        e.g. dev-seip-aks      → "seip"
+                                     az-llm-aks         → "llm"
+      2. aks-{env}-{region}-{app}  e.g. aks-dev-wus2-llm → "llm"
+
+    Returns None if no pattern matches.
+    """
+    c = cluster_name.lower().strip()
+    # Convention 1: ends with -aks, app is the middle segment(s)
+    m = re.match(r"[^-]+-(.+)-aks$", c)
+    if m:
+        return m.group(1)
+    # Convention 2: starts with aks-, followed by env and region, app is the last segment
+    m = re.match(r"^aks-[^-]+-[^-]+-(.+)$", c)
+    if m:
+        return m.group(1)
+    return None
+
+
 def _infer_app_from_mc_rg(rg_lower: str) -> str | None:
     """Infer app name from an AKS-managed resource group name.
 
     AKS creates a managed RG with the format:
         mc_{parent-rg}_{cluster-name}_{region}
     e.g. mc_dev-seip-rg_dev-seip-aks_westeurope → "seip"
+         mc_rg-dev-wus2-llm_aks-dev-wus2-llm_westus2 → "llm"
 
-    Extracts the middle segment of the cluster name: {env}-{app}-aks → app.
     Returns None if the pattern does not match.
     """
     if not rg_lower.startswith("mc_"):
@@ -127,10 +149,37 @@ def _infer_app_from_mc_rg(rg_lower: str) -> str | None:
     # Expect at least: ["mc", "<parent-rg>", "<cluster-name>", "<region>"]
     if len(parts) < 4:
         return None
-    cluster_name = parts[2]  # e.g. "dev-seip-aks"
-    m = re.match(r"[^-]+-(.+)-aks$", cluster_name)
-    if m:
-        return m.group(1)
+    cluster_name = parts[2]  # e.g. "dev-seip-aks" or "aks-dev-wus2-llm"
+    return _extract_cluster_app(cluster_name)
+
+
+def _infer_app_from_aks_tags(tags_val: object) -> str | None:
+    """Infer app name from AKS-managed system tags on node pool VMs / Karpenter nodes.
+
+    AKS-managed VMs and Karpenter spot nodes carry system tags but NOT a user
+    'project' tag.  This function reads two well-known AKS tags to find the
+    cluster name and then derives the app from it:
+
+      karpenter.azure.com_cluster  — set on every Karpenter-provisioned node
+      aks-managed-cluster-name     — set on AKS managed node pool VMs
+
+    Returns None if neither tag is present or cluster name cannot be parsed.
+    """
+    if tags_val is None:
+        return None
+    s = str(tags_val).strip()
+    if s in ("", "{}", "nan", "None"):
+        return None
+    try:
+        tags = _json.loads(s)
+        cluster = (
+            tags.get("karpenter.azure.com_cluster")
+            or tags.get("aks-managed-cluster-name")
+        )
+        if cluster:
+            return _extract_cluster_app(str(cluster))
+    except Exception:
+        pass
     return None
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
@@ -260,7 +309,7 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     df["C_APP"] = df["C_APP"].fillna("Untagged")
     df["C_APP"] = df["C_APP"].replace("", "Untagged")
 
-    # Fallback: infer app from AKS-managed resource group name (mc_*).
+    # Fallback 1: infer app from AKS-managed resource group name (mc_*).
     # Resources in mc_* RGs don't inherit tags from the AKS cluster, so costs
     # would otherwise appear as "Untagged".  Extract the app from the cluster
     # name embedded in the managed RG name.
@@ -273,6 +322,21 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
                 df.loc[untagged_mask & filled, "C_APP"] = inferred[filled]
                 log.debug(
                     "Inferred C_APP from AKS managed RG for %d rows", filled.sum()
+                )
+
+    # Fallback 2: infer app from AKS system tags on Karpenter / managed node VMs.
+    # These carry tags like karpenter.azure.com_cluster or aks-managed-cluster-name
+    # but NOT a user 'project' tag.  Parse the cluster name to get the app.
+    if "C_TAGS" in df.columns:
+        untagged_mask = df["C_APP"] == "Untagged"
+        if untagged_mask.any():
+            inferred = df.loc[untagged_mask, "C_TAGS"].apply(_infer_app_from_aks_tags)
+            filled = inferred.notna()
+            if filled.any():
+                df.loc[untagged_mask & filled, "C_APP"] = inferred[filled]
+                log.debug(
+                    "Inferred C_APP from AKS system tags (Karpenter/node pool) for %d rows",
+                    filled.sum(),
                 )
 
     # Subscription-scoped charges (bandwidth, AAD, Azure Monitor…) have no ResourceGroup
