@@ -1823,3 +1823,5 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
             await asyncio.sleep(0.022)
 
         yield _sse({"type": "done"})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
