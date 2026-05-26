@@ -65,3 +65,7 @@ Thumbs.db
 consolidate_code.py
 full_codebase_context.txt
 full_codebase_context_tf.txt
+
+# ── Sample export data (local only) ──────────────────────────────────────────
+*.csv.example
+*.parquet.example
