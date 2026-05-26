@@ -1438,3 +1438,388 @@ async def api_ai(request: Request) -> JSONResponse:
     except Exception as exc:
         log.exception("AI call failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# ── AI Chat — agentic loop with tool use + SSE streaming ─────────────────────
+
+_CHAT_MODEL = "gemini-3.5-flash"
+
+_CHAT_SYSTEM_PROMPT = (
+    "You are azure-penny, an AI assistant specialized in analyzing Microsoft Azure cloud costs. "
+    "You have access to tools that provide real-time data from Azure Cost Management exports. "
+    "ALWAYS call the relevant tools to get current data before answering questions about costs or resources. "
+    "Be concise, precise, and actionable. Format currency values in USD with 2 decimal places. "
+    "When you identify cost issues or anomalies, suggest concrete optimizations. "
+    "Never suggest or perform any resource deletion or infrastructure changes. "
+    "Detect the language of the user's question and always respond in the same language "
+    "(Czech question → Czech answer, English question → English answer)."
+)
+
+_CHAT_TOOLS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_cost_summary",
+            "description": (
+                "Get total Azure cost and top services/resource-groups for a time period. "
+                "Use this to answer questions about total spend, biggest cost drivers, or overview."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "year"],
+                        "description": "Time period for cost analysis (default: week)",
+                    },
+                    "rg": {"type": "string", "description": "Filter by resource group name (optional)"},
+                    "app": {"type": "string", "description": "Filter by app/project tag (optional)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_anomalies",
+            "description": (
+                "Get week-over-week cost anomalies: spikes (>50% increase), new services, "
+                "disappeared services, and untagged resources with their costs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rg": {"type": "string", "description": "Filter by resource group (optional)"},
+                    "app": {"type": "string", "description": "Filter by app/project tag (optional)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_resource_groups",
+            "description": "Get Azure costs broken down by resource group for a given time period.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "year"],
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_breakdown",
+            "description": (
+                "Get time-series cost breakdown with daily/weekly/monthly buckets. "
+                "Use for trend analysis, forecasting questions, or category-level drill-down."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {"type": "string", "enum": ["day", "week", "month", "year"]},
+                    "category": {
+                        "type": "string",
+                        "enum": ["all", "compute", "storage", "network", "database", "monitoring", "other"],
+                    },
+                    "granularity": {"type": "string", "enum": ["days", "weeks", "months"]},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_live_resources",
+            "description": (
+                "Get current live Azure resources with their monthly cost estimates. "
+                "Use for questions about running resources, spot price savings, or resource inventory."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_daily_costs",
+            "description": "Get daily cost time series for the past N days. Use for trend or day-by-day analysis.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "Number of past days (default 30)"},
+                    "rg": {"type": "string"},
+                    "app": {"type": "string"},
+                },
+            },
+        },
+    },
+]
+
+_TOOL_LABELS: dict[str, str] = {
+    "get_cost_summary":   "přehled nákladů",
+    "get_anomalies":      "anomálie",
+    "get_resource_groups": "resource groups",
+    "get_breakdown":      "detail kategorií",
+    "get_live_resources": "živé zdroje",
+    "get_daily_costs":    "denní data",
+}
+
+
+async def _execute_chat_tool(name: str, args: dict) -> str:
+    """Execute a read-only chat tool and return a JSON string result."""
+    try:
+        if name == "get_cost_summary":
+            period = args.get("period", "week")
+            rg = args.get("rg", "")
+            app = args.get("app", "")
+            full_df = await get_cached_dataframe()
+            df = _filter_app(_filter_rg(full_df, rg), app)
+            filtered = _filter_period(df, _period_days(period))
+            total = round(float(filtered["C_COST"].sum()), 2) if "C_COST" in filtered.columns else 0
+            top_svcs = _cost_by(filtered, "C_SERVICE")
+            top_rgs  = _cost_by(filtered, "C_NAME")
+            data_as_of = None
+            if not filtered.empty and "C_DATE" in filtered.columns:
+                data_as_of = str(filtered["C_DATE"].dropna().max())
+            return json.dumps({
+                "period": period, "total_usd": total,
+                "top_services":        [{"service": k, "cost_usd": v} for k, v in list(top_svcs.items())[:10]],
+                "top_resource_groups": [{"name": k,    "cost_usd": v} for k, v in list(top_rgs.items())[:10]],
+                "data_as_of": data_as_of,
+                "filters": {"rg": rg, "app": app},
+            })
+
+        if name == "get_anomalies":
+            rg = args.get("rg", "")
+            app = args.get("app", "")
+            full_df = await get_cached_dataframe()
+            df = _filter_app(_filter_rg(full_df, rg), app)
+            today = date.today()
+            curr_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+            prev_start = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+            has_date = "C_DATE" in df.columns
+            curr_df = df[df["C_DATE"] >= curr_start] if has_date else df
+            prev_df = (
+                df[(df["C_DATE"] >= prev_start) & (df["C_DATE"] < curr_start)]
+                if has_date else pd.DataFrame(columns=df.columns)
+            )
+
+            def _deltas(col: str) -> list[dict]:
+                if col not in df.columns or "C_COST" not in df.columns:
+                    return []
+                c = curr_df.groupby(col)["C_COST"].sum() if not curr_df.empty else pd.Series(dtype=float)
+                p = prev_df.groupby(col)["C_COST"].sum() if not prev_df.empty else pd.Series(dtype=float)
+                rows = []
+                for k in set(c.index) | set(p.index):
+                    cv, pv = float(c.get(k, 0)), float(p.get(k, 0))
+                    if cv == 0 and pv == 0:
+                        continue
+                    dp = round((cv - pv) / pv * 100, 1) if pv > 0 else None
+                    rows.append({
+                        col: str(k), "current_week_usd": round(cv, 2),
+                        "prior_week_usd": round(pv, 2), "delta_pct": dp,
+                        "is_new": pv == 0 and cv > 0, "vanished": cv == 0 and pv > 0,
+                    })
+                return rows
+
+            svc_rows = _deltas("C_SERVICE")
+            untagged_cost, untagged_count = 0.0, 0
+            if "C_TAGS" in df.columns and "C_COST" in df.columns:
+                mask = df["C_TAGS"].isna() | df["C_TAGS"].astype(str).str.strip().isin(["", "{}", "nan", "None"])
+                utdf = df[mask]
+                untagged_cost = round(float(utdf["C_COST"].sum()), 2)
+                untagged_count = int(utdf["C_RESOURCE_ID"].nunique()) if "C_RESOURCE_ID" in utdf.columns else len(utdf)
+            return json.dumps({
+                "spikes":           sorted([s for s in svc_rows if (s.get("delta_pct") or 0) > 50],  key=lambda x: x["delta_pct"], reverse=True)[:5],
+                "new_services":     sorted([s for s in svc_rows if s["is_new"] and s["current_week_usd"] > 1], key=lambda x: x["current_week_usd"], reverse=True)[:5],
+                "vanished_services": sorted([s for s in svc_rows if s["vanished"] and s["prior_week_usd"] > 1], key=lambda x: x["prior_week_usd"], reverse=True)[:5],
+                "untagged_cost_usd": untagged_cost, "untagged_resource_count": untagged_count,
+            })
+
+        if name == "get_resource_groups":
+            period = args.get("period", "week")
+            full_df = await get_cached_dataframe()
+            filtered = _filter_period(full_df, _period_days(period))
+            by_rg = _cost_by(filtered, "C_NAME")
+            return json.dumps({
+                "period": period,
+                "resource_groups": [{"name": k, "cost_usd": v} for k, v in list(by_rg.items())[:20]],
+                "total_usd": round(sum(by_rg.values()), 2),
+            })
+
+        if name == "get_breakdown":
+            period      = args.get("period", "week")
+            granularity = args.get("granularity", "days")
+            full_df = await get_cached_dataframe()
+            df = _filter_period(full_df, _period_days(period))
+            if df.empty or "C_DATE" not in df.columns or "C_COST" not in df.columns:
+                return json.dumps({"buckets": [], "period": period})
+            df = df.copy()
+            df["_bucket"] = df["C_DATE"].apply(lambda x: _bucket_key(str(x), granularity))
+            grp = df.groupby("_bucket")["C_COST"].sum().sort_index()
+            return json.dumps({
+                "period": period, "granularity": granularity,
+                "buckets": [{"period": k, "cost_usd": round(float(v), 2)} for k, v in grp.items()][:30],
+                "total_usd": round(float(grp.sum()), 2),
+            })
+
+        if name == "get_live_resources":
+            resources = await _get_live_data()
+            with_cost = sorted(
+                [r for r in resources if (r.get("monthly_cost") or 0) > 0],
+                key=lambda r: r.get("monthly_cost") or 0, reverse=True,
+            )
+            total = sum(r.get("monthly_cost") or 0 for r in with_cost)
+            return json.dumps({
+                "count": len(resources), "with_cost_count": len(with_cost),
+                "total_monthly_usd": round(total, 2),
+                "top_resources": [
+                    {
+                        "name": r.get("name", ""), "type": r.get("type", ""),
+                        "resource_group": r.get("resource_group", ""),
+                        "monthly_cost_usd": round(r.get("monthly_cost") or 0, 2),
+                        "location": r.get("location", ""),
+                    }
+                    for r in with_cost[:20]
+                ],
+            })
+
+        if name == "get_daily_costs":
+            days_n = int(args.get("days", 30))
+            rg  = args.get("rg", "")
+            app = args.get("app", "")
+            df = await get_cached_dataframe()
+            df = _filter_app(_filter_rg(df, rg), app)
+            if "C_DATE" not in df.columns or "C_COST" not in df.columns:
+                return json.dumps({"points": [], "total_usd": 0})
+            cutoff = (date.today() - timedelta(days=days_n)).strftime("%Y-%m-%d")
+            filtered = df[df["C_DATE"] >= cutoff]
+            daily = filtered.groupby("C_DATE")["C_COST"].sum().sort_index()
+            points = [{"date": str(d), "cost_usd": round(float(v), 2)} for d, v in daily.items()]
+            total = round(float(daily.sum()), 2)
+            return json.dumps({
+                "days": days_n, "points": points, "total_usd": total,
+                "avg_daily_usd": round(total / max(len(points), 1), 2),
+            })
+
+        return json.dumps({"error": f"Unknown tool: {name}"})
+
+    except Exception as exc:
+        log.exception("Chat tool '%s' failed", name)
+        return json.dumps({"error": str(exc)})
+
+
+def _chat_headers() -> dict[str, str]:
+    h = {"Authorization": f"Bearer {VERTEX_PROXY_API_KEY}", "Content-Type": "application/json"}
+    if CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET:
+        h["CF-Access-Client-Id"]     = CF_ACCESS_CLIENT_ID
+        h["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET
+    return h
+
+
+@app.post("/api/ai/chat", tags=["api"])
+async def api_ai_chat(request: Request) -> StreamingResponse:
+    """AI chat with agentic tool-use loop; streams tokens via SSE."""
+
+    def _sse(obj: dict) -> str:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    if not VERTEX_PROXY_URL or not VERTEX_PROXY_API_KEY:
+        async def _cfg_err():
+            yield _sse({"type": "error", "text": "Vertex proxy not configured"})
+        return StreamingResponse(_cfg_err(), media_type="text/event-stream")
+
+    body = await request.json()
+    question = (body.get("question") or "").strip()
+    history  = (body.get("history") or [])[-20:]   # last 10 turns (user+assistant pairs)
+
+    if not question:
+        async def _empty():
+            yield _sse({"type": "error", "text": "Empty question"})
+        return StreamingResponse(_empty(), media_type="text/event-stream")
+
+    import httpx as _httpx
+
+    async def event_stream():
+        messages: list[dict] = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}]
+        messages += list(history)
+        messages.append({"role": "user", "content": question})
+
+        final_text = ""
+
+        try:
+            async with _httpx.AsyncClient(timeout=60) as client:
+                for _iteration in range(5):
+                    resp = await client.post(
+                        f"{VERTEX_PROXY_URL}/v1/chat/completions",
+                        headers=_chat_headers(),
+                        json={
+                            "model":       _CHAT_MODEL,
+                            "messages":    messages,
+                            "tools":       _CHAT_TOOLS,
+                            "tool_choice": "auto",
+                        },
+                    )
+                    resp.raise_for_status()
+                    data   = resp.json()
+                    msg    = data["choices"][0]["message"]
+                    tc_list = msg.get("tool_calls") or []
+
+                    if not tc_list:
+                        final_text = msg.get("content") or ""
+                        break
+
+                    # Append assistant message with tool calls
+                    messages.append({
+                        "role": "assistant",
+                        "content": msg.get("content"),
+                        "tool_calls": tc_list,
+                    })
+
+                    # Execute each tool
+                    for tc in tc_list:
+                        tool_name = tc["function"]["name"]
+                        label = _TOOL_LABELS.get(tool_name, tool_name)
+                        yield _sse({"type": "tool", "name": tool_name, "label": label})
+                        await asyncio.sleep(0)   # yield event loop
+
+                        try:
+                            tool_args = json.loads(tc["function"].get("arguments", "{}"))
+                        except json.JSONDecodeError:
+                            tool_args = {}
+
+                        result = await _execute_chat_tool(tool_name, tool_args)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result,
+                        })
+
+                # If loop exhausted without a text answer, make one final no-tools call
+                if not final_text:
+                    resp = await client.post(
+                        f"{VERTEX_PROXY_URL}/v1/chat/completions",
+                        headers=_chat_headers(),
+                        json={"model": _CHAT_MODEL, "messages": messages},
+                    )
+                    resp.raise_for_status()
+                    final_text = resp.json()["choices"][0]["message"].get("content") or ""
+
+        except Exception as exc:
+            log.exception("AI chat agentic loop failed")
+            yield _sse({"type": "error", "text": str(exc)})
+            return
+
+        # Stream the final answer word-by-word (typewriter effect)
+        words = final_text.split(" ")
+        for i, word in enumerate(words):
+            chunk = word + (" " if i < len(words) - 1 else "")
+            yield _sse({"type": "token", "text": chunk})
+            await asyncio.sleep(0.022)
+
+        yield _sse({"type": "done"})
