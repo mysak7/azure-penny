@@ -112,6 +112,10 @@ jobs:
             managed_by  = "terraform"
             environment = "prd"
           }
+          vertex_proxy_url        = "${{ vars.VERTEX_PROXY_URL }}"
+          vertex_proxy_api_key    = "${{ secrets.VERTEX_PROXY_API_KEY }}"
+          cf_access_client_id     = "${{ vars.CF_ACCESS_CLIENT_ID }}"
+          cf_access_client_secret = "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"
           EOF
 
       - name: Write dev.tfvars
