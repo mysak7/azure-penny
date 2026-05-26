@@ -258,6 +258,25 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
                     "Inferred C_APP from AKS managed RG for %d rows", filled.sum()
                 )
 
+    # Subscription-scoped charges (bandwidth, AAD, Azure Monitor…) have no ResourceGroup
+    # and cannot carry a resource-level tag.  Label them explicitly instead of "Untagged"
+    # so it's clear these are legitimately unattributable shared costs, not a tagging gap.
+    if "C_RESOURCE_ID" in df.columns and "C_NAME" in df.columns:
+        untagged_mask = df["C_APP"] == "Untagged"
+        if untagged_mask.any():
+            no_rg = (
+                df["C_RESOURCE_ID"].fillna("").str.strip() == ""
+            ) | (
+                df["C_NAME"].fillna("").str.strip() == ""
+            )
+            subscription_scoped = untagged_mask & no_rg
+            if subscription_scoped.any():
+                df.loc[subscription_scoped, "C_APP"] = "Shared/Unattributed"
+                log.debug(
+                    "Labelled %d subscription-scoped rows as 'Shared/Unattributed'",
+                    subscription_scoped.sum(),
+                )
+
     return df
 
 
@@ -292,6 +311,7 @@ def _load_from_cost_management_api() -> pd.DataFrame:
             "grouping": [
                 {"type": "Dimension", "name": "ResourceId"},
                 {"type": "Dimension", "name": "MeterCategory"},
+                {"type": "TagKey", "name": "project"},
             ],
         },
     }).encode()
@@ -324,6 +344,11 @@ def _load_from_cost_management_api() -> pd.DataFrame:
         return pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))
 
     df = pd.DataFrame(all_rows, columns=col_names)
+
+    # The TagKey grouping returns a column named "project" — rename it so that
+    # _apply_column_map picks it up via the tag_project → C_APP mapping.
+    if "project" in df.columns:
+        df = df.rename(columns={"project": "tag_project"})
 
     # UsageDate comes back as an integer YYYYMMDD
     if "UsageDate" in df.columns:
