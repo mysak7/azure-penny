@@ -17,6 +17,8 @@ A serverless Azure cost management dashboard. Reads Cost Management Parquet/CSV 
 - **Scale to zero** — Container App idles at 0 replicas; you pay nothing when nobody is looking at it
 - **No secrets** — authenticates entirely via User-Assigned Managed Identity; no connection strings, SAS tokens, or service principal secrets anywhere
 - **Easy Auth** — Entra ID login gate on the Container App; `penny-admin` app role controls delete access
+- **Shield** — background cost monitor; sends a Telegram alert when projected monthly spend exceeds a configurable threshold
+- **Telegram chat** — two-way AI cost assistant over Telegram: ask the same questions as on the web, get answers with full conversation context
 
 ## Prerequisites
 
@@ -257,20 +259,33 @@ Three GitHub Actions workflows handle the full lifecycle:
 
 All workflows authenticate to Azure via OIDC (no stored secrets).
 
-**Required GitHub repository variables:**
+**Required GitHub Actions secrets** (`Settings → Secrets and variables → Actions → Secrets`):
+
+| Secret | Description |
+|---|---|
+| `VERTEX_PROXY_API_KEY` | Bearer token for the LiteLLM proxy (AI chat widget) |
+| `CF_ACCESS_CLIENT_SECRET` | Cloudflare Access service token secret (proxy auth) |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot API token — from `@BotFather` |
+| `TELEGRAM_WEBHOOK_SECRET` | Random token validating Telegram webhook calls — generate with `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+
+**Required GitHub Actions variables** (`Settings → Secrets and variables → Actions → Variables`):
 
 | Variable | Description |
 |---|---|
-| `AZURE_CLIENT_ID` | Service principal / federated identity client ID |
+| `AZURE_CLIENT_ID` | Service principal client ID for OIDC login |
 | `AZURE_TENANT_ID` | Azure tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
-| `ACR_LOGIN_SERVER` | ACR login server (e.g. `myacr.azurecr.io`) |
+| `ACR_LOGIN_SERVER` | ACR login server (e.g. `crprdeusmcucta.azurecr.io`) |
 | `ACR_NAME` | ACR resource name |
 | `CONTAINER_APP_NAME` | Container App resource name (prd) |
 | `RESOURCE_GROUP_NAME` | Resource group name (prd) |
-| `DEV_CONTAINER_APP_NAME` | Container App resource name (dev branch) |
-| `DEV_RESOURCE_GROUP_NAME` | Resource group name (dev branch) |
+| `CICD_PRINCIPAL_OBJECT_ID` | Object ID of the OIDC service principal (used for RBAC) |
+| `OWNER_EMAIL` | Email granted Entra ID access via Easy Auth |
+| `CUSTOM_DOMAIN` | Custom hostname bound to the Container App (e.g. `az-penny.mysak.fun`) |
 | `BILLING_PROFILE_ID` | MCA billing profile resource ID (for cost export) |
+| `VERTEX_PROXY_URL` | Base URL of the LiteLLM proxy (e.g. `https://vertex.mysak.fun`) |
+| `CF_ACCESS_CLIENT_ID` | Cloudflare Access service token Client-ID |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for Shield alerts and the bot whitelist |
 
 ## Infrastructure deployment
 
@@ -311,3 +326,53 @@ Key outputs after apply:
 | `acr_login_server` | ACR hostname to use for image tags |
 | `managed_identity_client_id` | Client ID to set as `AZURE_CLIENT_ID` in the Container App |
 | `storage_account_name` | Storage account name to configure Cost Management exports against |
+
+---
+
+## Telegram integration
+
+azure-penny integrates with Telegram for two purposes:
+
+### Shield — cost alerts (one-way)
+
+The Shield background task checks projected monthly spend every 15 minutes and sends a Telegram message when a configurable threshold is exceeded. Configure via the `/shield` page or directly via `POST /api/shield/config`.
+
+### AI chat assistant (two-way)
+
+The same AI cost assistant available on the web is also accessible directly from Telegram. Send any cost question to the bot and get a full answer with conversation context.
+
+**How it works:** The app registers a webhook with Telegram at startup (`POST /telegram/webhook`). Telegram calls this endpoint for every incoming message. The message is processed by the same agentic tool-use loop as the web chat, and the answer is sent back via `sendMessage`.
+
+**Setup (already done for this repo — follow these steps if you fork or redeploy):**
+
+1. **Create a Telegram bot** via `@BotFather` → `/newbot` → copy the token.
+
+2. **Add GitHub Actions secrets and variables** (one-time, per repo):
+
+   ```bash
+   # Generate a webhook secret
+   WEBHOOK_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
+   gh secret set TELEGRAM_BOT_TOKEN      --body "<your-bot-token>"
+   gh secret set TELEGRAM_WEBHOOK_SECRET --body "$WEBHOOK_SECRET"
+   gh variable set TELEGRAM_CHAT_ID      --body "<your-chat-id>"
+   ```
+
+   > Get your `TELEGRAM_CHAT_ID`: message the bot once, then call  
+   > `https://api.telegram.org/bot<TOKEN>/getUpdates` and read `message.chat.id`.
+
+3. **Deploy** — run `terraform apply` (or push to `main` to trigger CI/CD). Terraform injects `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `APP_URL` into the Container App. On startup, the app automatically calls `setWebhook` to register the endpoint with Telegram.
+
+4. **Test** — send `/start` to the bot. Then ask a cost question in plain text.
+
+**Security:** Every webhook call from Telegram is validated against `X-Telegram-Bot-Api-Secret-Token`. Messages from any chat other than `TELEGRAM_CHAT_ID` are silently ignored (whitelist). The bot only reads data — it has no access to delete or modify Azure resources.
+
+**Local development with ngrok:**
+
+```bash
+# Install ngrok, then:
+ngrok http 8000
+# Copy the https URL, e.g. https://abc123.ngrok-free.app
+APP_URL=https://abc123.ngrok-free.app uvicorn main:app --reload
+# The app registers the webhook at startup; send messages to the bot to test.
+```
