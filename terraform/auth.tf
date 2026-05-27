@@ -105,6 +105,7 @@ resource "azapi_resource" "penny_auth" {
       globalValidation = {
         redirectToProvider          = "azureactivedirectory"
         unauthenticatedClientAction = "RedirectToLoginPage"
+        excludedPaths               = ["/telegram/webhook"]
       }
       identityProviders = {
         azureActiveDirectory = {
