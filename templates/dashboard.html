@@ -92,6 +92,7 @@
     .hbar-fill.cyan   { background: linear-gradient(90deg, #22d3ee, #06b6d4); }
     .hbar-fill.amber  { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
     .hbar-cost { font-size: 0.72rem; color: #e2e8f0; font-family: monospace; width: 68px; text-align: right; flex-shrink: 0; }
+    .hbar-pct  { font-size: 0.72rem; color: #64748b; font-family: monospace; width: 40px; text-align: right; flex-shrink: 0; }
 
     /* Nav */
     .nav { display: flex; gap: .5rem; align-items: center; }
@@ -256,8 +257,6 @@
     </div>
     <div class="cat-body">
       <div id="ab-chart" class="hbar-chart"><div class="loading">Loading&hellip;</div></div>
-      <hr class="cat-divider">
-      <div id="ab-table"></div>
       <div id="ab-error" class="error-msg"></div>
     </div>
   </div>
@@ -782,31 +781,22 @@ function loadAppBreakdown() {
         return;
       }
 
-      // Bar chart — top 10 apps
+      // Bar chart — top 10 apps with share %
       var top = apps.slice(0, 10);
       var max = top[0].cost_usd || 1;
+      var total = apps.reduce(function(s, a) { return s + a.cost_usd; }, 0) || 1;
       var chart = top.map(function(a, i) {
-        var pct = Math.round(a.cost_usd / max * 100);
+        var barPct = Math.round(a.cost_usd / max * 100);
+        var sharePct = (a.cost_usd / total * 100).toFixed(1);
         var color = APP_PALETTE[i % APP_PALETTE.length];
         return '<div class="hbar-row">' +
           '<div class="hbar-label" title="' + escAttr(a.name) + '">' + escHtml(a.name) + '</div>' +
-          '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+          '<div class="hbar-track"><div class="hbar-fill" style="width:' + barPct + '%;background:' + color + '"></div></div>' +
           '<div class="hbar-cost">' + fmtCost(a.cost_usd) + '</div>' +
+          '<div class="hbar-pct">' + sharePct + '%</div>' +
           '</div>';
       }).join('');
       document.getElementById('ab-chart').innerHTML = chart;
-
-      // Full table with share %
-      var total = apps.reduce(function(s, a) { return s + a.cost_usd; }, 0) || 1;
-      var rows = apps.map(function(a, i) {
-        var pct = (a.cost_usd / total * 100).toFixed(1);
-        var color = APP_PALETTE[i % APP_PALETTE.length];
-        return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + color + ';margin-right:.4rem;vertical-align:middle;"></span>' + escHtml(a.name) + '</td>' +
-          '<td style="font-family:monospace">' + fmtCost(a.cost_usd) + '</td>' +
-          '<td class="pct-cell">' + pct + '%</td></tr>';
-      }).join('');
-      document.getElementById('ab-table').innerHTML =
-        '<table class="svc-table"><tr><th>Application</th><th>Cost</th><th>Share</th></tr>' + rows + '</table>';
     })
     .catch(function(err) {
       document.getElementById('ab-chart').innerHTML = '';
