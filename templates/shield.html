@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>azure-penny &mdash; Shield</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding-top: 64px; }
+
+    /* Header */
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: .75rem 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; position: fixed; top: 0; left: 0; right: 0; z-index: 1000; }
+    .hdr-left { flex: 1; display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+    .hdr-right { flex: 1; display: flex; justify-content: flex-end; align-items: center; gap: .5rem; }
+    header h1 { font-size: 1.25rem; font-weight: 700; color: #38bdf8; letter-spacing: .02em; white-space: nowrap; }
+    header h1 span { color: #64748b; font-weight: 400; font-size: 0.85rem; margin-left: .5rem; }
+    .nav { display: flex; gap: .5rem; align-items: center; }
+    .nav-link { color: #94a3b8; font-size: 0.8rem; text-decoration: none; padding: .25rem .75rem; border: 1px solid #334155; border-radius: 6px; transition: all .15s; }
+    .nav-link:hover { color: #38bdf8; border-color: #38bdf8; }
+    .nav-link.active { color: #38bdf8; border-color: #38bdf8; background: #0c4a6e22; }
+    .help-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: none; border: 1px solid #334155; color: #64748b; font-size: 0.82rem; font-weight: 700; text-decoration: none; transition: all .15s; flex-shrink: 0; }
+    .help-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    /* Layout */
+    .container { max-width: 900px; margin: 0 auto; padding: 1.75rem 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+
+    /* Cards */
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+    .card-header { padding: .9rem 1.25rem; border-bottom: 1px solid #1e3a5a; display: flex; justify-content: space-between; align-items: center; }
+    .card-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: .09em; color: #94a3b8; font-weight: 700; }
+    .card-body { padding: 1.25rem; }
+
+    /* Status card */
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 600px) { .status-grid { grid-template-columns: 1fr; } }
+
+    .status-hero { display: flex; flex-direction: column; gap: .75rem; }
+    .status-badge { display: inline-flex; align-items: center; gap: .5rem; font-size: 0.85rem; font-weight: 700; padding: .4rem .9rem; border-radius: 20px; width: fit-content; }
+    .status-badge.ok      { background: #052e1622; border: 1px solid #4ade80; color: #4ade80; }
+    .status-badge.breach  { background: #450a0a22; border: 1px solid #f87171; color: #f87171; }
+    .status-badge.cooldown { background: #451a0322; border: 1px solid #fbbf24; color: #fbbf24; }
+    .status-badge.disabled { background: #1e293b; border: 1px solid #334155; color: #64748b; }
+    .status-badge.loading  { background: #1e293b; border: 1px solid #334155; color: #64748b; }
+
+    .stat-row { display: flex; flex-direction: column; gap: .2rem; }
+    .stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
+    .stat-value { font-size: 1.6rem; font-weight: 700; font-family: monospace; color: #e2e8f0; }
+    .stat-sub   { font-size: 0.72rem; color: #475569; }
+
+    /* Progress bar */
+    .progress-wrap { display: flex; flex-direction: column; gap: .5rem; }
+    .progress-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: #64748b; }
+    .progress-track { height: 12px; background: #0f172a; border-radius: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 6px; transition: width .6s ease; }
+    .progress-fill.ok      { background: linear-gradient(90deg, #4ade80, #22c55e); }
+    .progress-fill.warning { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+    .progress-fill.breach  { background: linear-gradient(90deg, #f87171, #ef4444); }
+
+    /* Meta info */
+    .meta-list { display: flex; flex-direction: column; gap: .45rem; }
+    .meta-row  { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.78rem; gap: .5rem; }
+    .meta-key  { color: #64748b; white-space: nowrap; }
+    .meta-val  { color: #94a3b8; font-family: monospace; font-size: 0.75rem; text-align: right; }
+    .meta-val.green  { color: #4ade80; }
+    .meta-val.red    { color: #f87171; }
+    .meta-val.amber  { color: #fbbf24; }
+
+    /* Config card */
+    .config-form { display: flex; flex-direction: column; gap: 1rem; }
+    .form-row { display: flex; flex-direction: column; gap: .4rem; }
+    .form-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .07em; color: #64748b; }
+    .form-hint  { font-size: 0.68rem; color: #475569; }
+    .input-wrap { display: flex; gap: .5rem; align-items: center; }
+    .form-input { background: #0f172a; border: 1px solid #334155; color: #e2e8f0; font-size: 0.9rem; padding: .45rem .75rem; border-radius: 6px; font-family: monospace; width: 180px; transition: border-color .15s; }
+    .form-input:focus { outline: none; border-color: #38bdf8; }
+    .form-input.wide { width: 260px; }
+    .input-unit { font-size: 0.75rem; color: #64748b; }
+
+    .btn { font-size: 0.8rem; padding: .4rem 1rem; border-radius: 6px; border: none; cursor: pointer; font-family: inherit; font-weight: 600; transition: all .15s; }
+    .btn-primary { background: #0c4a6e; border: 1px solid #38bdf8; color: #38bdf8; }
+    .btn-primary:hover { background: #0e6090; }
+    .btn-ghost  { background: none; border: 1px solid #334155; color: #64748b; }
+    .btn-ghost:hover  { border-color: #94a3b8; color: #94a3b8; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .save-msg { font-size: 0.75rem; color: #4ade80; height: 1em; transition: opacity .3s; }
+    .save-msg.hidden { opacity: 0; }
+
+    /* Resources table */
+    .res-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .res-table th { color: #64748b; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .05em; padding: .5rem .75rem; text-align: left; border-bottom: 1px solid #334155; }
+    .res-table td { padding: .5rem .75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+    .res-table tr:last-child td { border-bottom: none; }
+    .res-table tr:hover td { background: rgba(56,189,248,.03); }
+    .res-rank { color: #475569; font-family: monospace; font-size: 0.72rem; }
+    .res-name { color: #e2e8f0; font-family: monospace; font-size: 0.75rem; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .res-rg   { color: #64748b; font-size: 0.7rem; }
+    .res-cost { color: #4ade80; font-family: monospace; font-weight: 600; text-align: right; white-space: nowrap; }
+    .res-bar-cell { width: 100px; }
+    .res-bar  { height: 6px; background: #0f172a; border-radius: 3px; overflow: hidden; }
+    .res-bar-fill { height: 100%; background: linear-gradient(90deg, #4ade80, #22c55e); border-radius: 3px; }
+
+    /* Loading / error */
+    .loading { color: #64748b; font-size: 0.8rem; padding: 1.5rem 0; text-align: center; }
+    .error-msg { color: #f87171; font-size: 0.78rem; padding: .5rem 0; }
+    .divider { border: none; border-top: 1px solid #334155; margin: .75rem 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-left">
+    <h1>azure-penny <span>Shield</span><span style="font-size:0.7rem;color:#334155;font-weight:400;margin-left:.5rem;font-family:monospace;">v{{ version }}</span></h1>
+  </div>
+  <div class="hdr-right">
+    <div class="nav">
+      <a href="/manager"    class="nav-link">Manager</a>
+      <a href="/technician" class="nav-link">Technician</a>
+      <a href="/live"       class="nav-link">Live</a>
+      <a href="/shield"     class="nav-link active">🛡 Shield</a>
+    </div>
+    <a href="/guide" class="help-btn" title="Guide">?</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── STATUS CARD ──────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🛡 Status</span>
+      <span id="last-check" style="font-size:0.7rem;color:#475569;">loading…</span>
+    </div>
+    <div class="card-body">
+      <div class="status-grid">
+
+        <!-- Left: badge + numbers -->
+        <div class="status-hero">
+          <div id="status-badge" class="status-badge loading">⏳ Loading…</div>
+
+          <div class="stat-row">
+            <span class="stat-label">Projected this month</span>
+            <span class="stat-value" id="live-total">—</span>
+            <span class="stat-sub" id="live-sub">from live resources</span>
+          </div>
+
+          <div class="progress-wrap" id="progress-wrap" style="display:none">
+            <div class="progress-labels">
+              <span>$0</span>
+              <span id="progress-threshold-label">threshold</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill ok" id="progress-fill" style="width:0%"></div>
+            </div>
+            <div style="font-size:0.7rem;color:#64748b;" id="progress-pct"></div>
+          </div>
+        </div>
+
+        <!-- Right: meta info -->
+        <div class="meta-list" id="meta-list">
+          <div class="meta-row"><span class="meta-key">Threshold</span><span class="meta-val" id="meta-threshold">—</span></div>
+          <div class="meta-row"><span class="meta-key">Check interval</span><span class="meta-val" id="meta-interval">—</span></div>
+          <div class="meta-row"><span class="meta-key">Alert cooldown</span><span class="meta-val" id="meta-cooldown">—</span></div>
+          <div class="meta-row"><span class="meta-key">Telegram</span><span class="meta-val" id="meta-telegram">—</span></div>
+          <div class="meta-row"><span class="meta-key">Last alert</span><span class="meta-val" id="meta-last-alert">never</span></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CONFIG CARD ──────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">⚙️ Configuration</span>
+      <span class="save-msg hidden" id="save-msg">✓ Saved</span>
+    </div>
+    <div class="card-body">
+      <div class="config-form">
+
+        <div class="form-row">
+          <label class="form-label">Monthly budget threshold</label>
+          <div class="input-wrap">
+            <span class="input-unit">$</span>
+            <input type="number" id="input-threshold" class="form-input" min="0" step="1" placeholder="200">
+            <span class="input-unit">/ month</span>
+          </div>
+          <span class="form-hint">Alert fires when projected monthly spend exceeds this. Set 0 to disable.</span>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label">Telegram Chat ID</label>
+          <div class="input-wrap">
+            <input type="text" id="input-chat-id" class="form-input wide" placeholder="123456789">
+          </div>
+          <span class="form-hint">
+            Get it: message <a href="https://t.me/herbot777_azure_bot" target="_blank" style="color:#38bdf8;">@herbot777_azure_bot</a>,
+            then call <code style="font-size:0.68rem;color:#94a3b8;">getUpdates</code> to find your chat ID.
+          </span>
+        </div>
+
+        <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="saveConfig()">💾 Save</button>
+          <button class="btn btn-ghost" id="test-btn" onclick="testNotification()">🧪 Test notification</button>
+          <span id="test-msg" style="font-size:0.75rem;color:#64748b;"></span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOP 10 RESOURCES ──────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">💰 Top 10 Cost Consumers</span>
+      <span style="font-size:0.7rem;color:#475569;">live resources · ~15 min stale</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div id="resources-wrap">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── Data loading ──────────────────────────────────────────────────────────────
+
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/shield/status');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    renderStatus(d);
+    renderResources(d.top_resources || []);
+    document.getElementById('last-check').textContent = 'Last refreshed: just now';
+  } catch(e) {
+    document.getElementById('status-badge').className = 'status-badge disabled';
+    document.getElementById('status-badge').textContent = '⚠ Error: ' + e.message;
+    document.getElementById('last-check').textContent = '';
+  }
+}
+
+function renderStatus(d) {
+  // Badge
+  const badge = document.getElementById('status-badge');
+  const threshold = d.threshold || 0;
+  const total = d.live_monthly_total || 0;
+
+  if (threshold <= 0) {
+    badge.className = 'status-badge disabled';
+    badge.textContent = '⏸ Disabled — set a threshold below';
+  } else if (d.breach) {
+    badge.className = 'status-badge breach';
+    badge.textContent = '🔴 BREACH — threshold exceeded!';
+  } else {
+    badge.className = 'status-badge ok';
+    badge.textContent = '✅ Under budget';
+  }
+
+  // Live total
+  document.getElementById('live-total').textContent = '$' + total.toFixed(2);
+
+  // Progress bar
+  if (threshold > 0) {
+    const wrap = document.getElementById('progress-wrap');
+    wrap.style.display = '';
+    const pct = Math.min(d.pct_used || 0, 120);
+    const fill = document.getElementById('progress-fill');
+    fill.style.width = Math.min(pct, 100) + '%';
+    fill.className = 'progress-fill ' + (pct >= 100 ? 'breach' : pct >= 80 ? 'warning' : 'ok');
+    document.getElementById('progress-threshold-label').textContent = '$' + threshold.toFixed(0);
+    document.getElementById('progress-pct').textContent = (d.pct_used || 0).toFixed(1) + '% of monthly budget used';
+  }
+
+  // Meta
+  document.getElementById('meta-threshold').textContent = threshold > 0 ? '$' + threshold.toFixed(2) : 'not set';
+  document.getElementById('meta-threshold').className = 'meta-val' + (threshold <= 0 ? ' amber' : '');
+
+  const intervalMin = Math.round((d.check_interval_s || 900) / 60);
+  document.getElementById('meta-interval').textContent = intervalMin + ' min';
+
+  const cooldownH = ((d.cooldown_s || 7200) / 3600).toFixed(0);
+  document.getElementById('meta-cooldown').textContent = cooldownH + ' hours';
+
+  const tgEl = document.getElementById('meta-telegram');
+  tgEl.textContent = d.telegram_configured ? '✓ configured' : d.telegram_chat_id_set ? '✗ token missing' : '✗ chat ID missing';
+  tgEl.className = 'meta-val ' + (d.telegram_configured ? 'green' : 'red');
+
+  const lastAlert = document.getElementById('meta-last-alert');
+  if (d.last_alerted_at && d.last_alerted_at > 0) {
+    const dt = new Date(d.last_alerted_at * 1000);
+    lastAlert.textContent = dt.toLocaleString();
+    lastAlert.className = 'meta-val amber';
+  } else {
+    lastAlert.textContent = 'never';
+    lastAlert.className = 'meta-val green';
+  }
+
+  // Pre-fill config form
+  if (threshold > 0) document.getElementById('input-threshold').value = threshold;
+  if (d.telegram_chat_id_set) {
+    // Don't expose chat_id in status for security; let user fill it
+  }
+}
+
+function renderResources(resources) {
+  const wrap = document.getElementById('resources-wrap');
+  if (!resources || resources.length === 0) {
+    wrap.innerHTML = '<div class="loading">No live resources with cost data.</div>';
+    return;
+  }
+  const maxCost = resources[0].monthly_cost || 1;
+  let rows = resources.map((r, i) => {
+    const pct = Math.round((r.monthly_cost / maxCost) * 100);
+    const name = escHtml(r.name || 'unknown');
+    const rg   = escHtml(r.resource_group || '');
+    const type = escHtml((r.type || '').split('/').pop() || '');
+    return `
+      <tr>
+        <td class="res-rank">${i+1}</td>
+        <td>
+          <div class="res-name" title="${name}">${name}</div>
+          <div class="res-rg">${rg}${type ? ' · ' + type : ''}</div>
+        </td>
+        <td class="res-bar-cell">
+          <div class="res-bar"><div class="res-bar-fill" style="width:${pct}%"></div></div>
+        </td>
+        <td class="res-cost">$${r.monthly_cost.toFixed(2)}<span style="color:#475569;font-size:0.68rem;font-weight:400">/mo</span></td>
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="res-table">
+      <thead><tr>
+        <th>#</th><th>Resource</th><th></th><th style="text-align:right">Monthly cost</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Config save / test ─────────────────────────────────────────────────────────
+
+async function saveConfig() {
+  const threshold = parseFloat(document.getElementById('input-threshold').value) || 0;
+  const chatId    = document.getElementById('input-chat-id').value.trim();
+
+  const body = { monthly_threshold: threshold };
+  if (chatId) body.telegram_chat_id = chatId;
+
+  try {
+    const r = await fetch('/api/shield/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    showMsg('save-msg', '✓ Saved');
+    await loadStatus();
+  } catch(e) {
+    showMsg('save-msg', '✗ ' + e.message, true);
+  }
+}
+
+async function testNotification() {
+  const btn = document.getElementById('test-btn');
+  const msg = document.getElementById('test-msg');
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+  msg.style.color = '#64748b';
+  try {
+    const r = await fetch('/api/shield/test', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = '✓ Message sent! Check Telegram.';
+      msg.style.color = '#4ade80';
+    } else {
+      msg.textContent = '✗ ' + (d.error || 'Failed');
+      msg.style.color = '#f87171';
+    }
+  } catch(e) {
+    msg.textContent = '✗ ' + e.message;
+    msg.style.color = '#f87171';
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { msg.textContent = ''; }, 5000);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function showMsg(id, text, isError) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.style.color = isError ? '#f87171' : '#4ade80';
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadStatus();
+setInterval(loadStatus, 60000); // refresh every minute
+</script>
+</body>
+</html>
