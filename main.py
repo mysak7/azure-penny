@@ -1434,6 +1434,86 @@ async def api_daily(days: int = 30, rg: str = "", app: str = "") -> JSONResponse
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+# ── Monthly Forecast ─────────────────────────────────────────────────────────
+
+@app.get("/api/forecast", tags=["api"])
+async def api_forecast(rg: str = "", app: str = "") -> JSONResponse:
+    """Monthly forecast: actual cumulative daily costs + two projections.
+
+    Returns:
+        actual: [{date, cumulative}] — day-by-day cumulative spend this month
+        today_total: cumulative spend up to and including today
+        avg_end: projected month-end total using historical daily average
+        live_end: projected month-end total using live-resources monthly_cost sum
+        avg_daily_rate / live_daily_rate: daily rates used for each projection
+        today / end_of_month: ISO date strings
+        days_elapsed / days_remaining / days_in_month
+    """
+    try:
+        today = date.today()
+        month_start = today.replace(day=1)
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        end_of_month = today.replace(day=last_day)
+        days_elapsed = (today - month_start).days + 1
+        days_remaining = (end_of_month - today).days
+        days_in_month = last_day
+
+        # ── Export: daily costs this month ───────────────────────────────────
+        full_df = await get_cached_dataframe()
+        df = _filter_app(_filter_rg(full_df, rg), app)
+
+        actual_points: list[dict] = []
+        today_total = 0.0
+
+        if "C_DATE" in df.columns and "C_COST" in df.columns and not df.empty:
+            df = df.copy()
+            df["_date"] = pd.to_datetime(df["C_DATE"]).dt.date
+            month_df = df[(df["_date"] >= month_start) & (df["_date"] <= today)]
+            daily = month_df.groupby("_date")["C_COST"].sum().sort_index()
+            cumulative = 0.0
+            for d, cost in daily.items():
+                cumulative += float(cost)
+                actual_points.append({"date": str(d), "cumulative": round(cumulative, 4)})
+            today_total = cumulative
+
+        avg_daily_rate = today_total / max(days_elapsed, 1)
+        avg_end = round(today_total + avg_daily_rate * days_remaining, 2)
+
+        # ── Live: sum monthly_cost, filter by rg / app ───────────────────────
+        live_resources = await _get_live_data()
+        if rg:
+            live_resources = [
+                r for r in live_resources
+                if (r.get("resource_group") or "").lower() == rg.lower()
+            ]
+        if app:
+            live_resources = [
+                r for r in live_resources
+                if (r.get("app") or "") == app
+            ]
+        live_monthly_total = sum(r.get("monthly_cost") or 0.0 for r in live_resources)
+        live_daily_rate = live_monthly_total / days_in_month
+        live_end = round(today_total + live_daily_rate * days_remaining, 2)
+
+        return JSONResponse({
+            "actual": actual_points,
+            "today": str(today),
+            "end_of_month": str(end_of_month),
+            "today_total": round(today_total, 2),
+            "days_elapsed": days_elapsed,
+            "days_remaining": days_remaining,
+            "days_in_month": days_in_month,
+            "avg_daily_rate": round(avg_daily_rate, 4),
+            "avg_end": avg_end,
+            "live_daily_rate": round(live_daily_rate, 4),
+            "live_end": live_end,
+            "live_monthly_total": round(live_monthly_total, 2),
+        })
+    except Exception as exc:
+        log.exception("Forecast endpoint failed")
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 # ── Snapshot (LLM context chunk) ─────────────────────────────────────────────
 
 async def _build_snapshot(period: str, rg: str, app: str) -> dict:

@@ -297,6 +297,19 @@
     </div>
   </div>
 
+  <!-- Monthly Forecast chart -->
+  <div id="forecast-card" class="cat-card" style="margin-bottom:1.25rem;">
+    <div class="cat-header">
+      <div class="cat-title"><h2>Monthly Forecast</h2></div>
+      <span id="fc-badge" class="cat-badge">This month</span>
+    </div>
+    <div class="cat-body">
+      <div id="fc-chart"><div class="loading">Loading&hellip;</div></div>
+      <div id="fc-legend" style="margin-top:.6rem;"></div>
+      <div id="fc-error" class="error-msg"></div>
+    </div>
+  </div>
+
   <!-- Category grid -->
   <div class="category-grid">
 
@@ -401,7 +414,7 @@ function onRgChange(val) {
   else localStorage.removeItem('az_penny_rg');
   var sel = document.getElementById('rg-select');
   if (sel) sel.classList.toggle('filtered', !!val);
-  loaded = {}; loadAll(); loadBreakdown();
+  loaded = {}; loadAll(); loadBreakdown(); loadForecast();
 }
 function onGhostFilterChange(val) {
   ghostFilter = val || 'all';
@@ -453,7 +466,7 @@ function onAppChange(val) {
   if (sel) sel.classList.toggle('filtered', !!val);
   // Reset RG — previously-selected RG may not belong to the new app
   localStorage.removeItem('az_penny_rg');
-  loaded = {}; loadRgList(); loadAll(); loadBreakdown();
+  loaded = {}; loadRgList(); loadAll(); loadBreakdown(); loadForecast();
 }
 function loadAppList() {
   // App is primary: list all apps regardless of selected RG
@@ -481,6 +494,7 @@ function setPeriod(p) {
   if (card) card.style.display = (p === 'day') ? 'none' : '';
   updateGranularityPills();
   if (p !== 'day') loadBreakdown();
+  loadForecast();
   loadAppList();
 }
 function periodLabel() {
@@ -622,7 +636,7 @@ function reloadData() {
     .then(function(r){ return r.json(); })
     .then(function(d){
       if(d.error){ document.getElementById('st-error').textContent='Reload error: '+d.error; return; }
-      loaded={}; loadStatus(); loadRgList(); loadAppList(); loadAll(); loadBreakdown();
+      loaded={}; loadStatus(); loadRgList(); loadAppList(); loadAll(); loadBreakdown(); loadForecast();
     })
     .catch(function(err){ document.getElementById('st-error').textContent='Reload error: '+err.message; });
 }
@@ -757,6 +771,135 @@ function buildBreakdownLegend(stackKeys) {
     }).join('') + '</div>';
 }
 
+// ── Monthly Forecast chart ────────────────────────────────────────────────────
+function loadForecast() {
+  var chart  = document.getElementById('fc-chart');
+  var legend = document.getElementById('fc-legend');
+  var error  = document.getElementById('fc-error');
+  if (!chart) return;
+  chart.innerHTML = '<div class="loading">Loading&hellip;</div>';
+  if (legend) legend.innerHTML = '';
+  if (error)  error.textContent = '';
+
+  var params = '?_=1' + rgParam() + appParam();
+  fetch('/api/forecast' + params)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      chart.innerHTML = buildForecastSvg(data);
+      if (legend) legend.innerHTML = buildForecastLegend(data);
+    })
+    .catch(function(err) {
+      if (chart) chart.innerHTML = '';
+      if (error) error.textContent = 'Error: ' + err.message;
+    });
+}
+
+function buildForecastSvg(d) {
+  var actual   = d.actual    || [];
+  var today    = d.today;
+  var eom      = d.end_of_month;
+  var todayTot = d.today_total || 0;
+  var avgEnd   = d.avg_end   || 0;
+  var liveEnd  = d.live_end  || 0;
+  var daysInMo = d.days_in_month || 30;
+
+  // Dimensions
+  var W=820, H=200, pT=24, pB=36, pL=54, pR=80;
+  var cW = W - pL - pR, cH = H - pT - pB;
+
+  // X: day-of-month 1..daysInMo
+  function xOf(dateStr) {
+    var day = parseInt(dateStr.split('-')[2], 10);
+    return pL + (day - 1) / (daysInMo - 1) * cW;
+  }
+  function xOfDay(day) {
+    return pL + (day - 1) / (daysInMo - 1) * cW;
+  }
+
+  // Y: 0..maxVal
+  var maxVal = Math.max(avgEnd, liveEnd, todayTot, 0.01) * 1.08;
+  function yOf(val) {
+    return pT + cH - (val / maxVal) * cH;
+  }
+
+  var svg = '';
+
+  // Grid lines (5 horizontal)
+  for (var gi = 0; gi <= 4; gi++) {
+    var gv  = maxVal * gi / 4;
+    var gy  = yOf(gv);
+    var lbl = '$' + (gv >= 1000 ? (gv/1000).toFixed(1)+'k' : gv.toFixed(0));
+    svg += '<line x1="'+pL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+gy.toFixed(1)+'" stroke="#1e293b" stroke-width="1"/>';
+    svg += '<text x="'+(pL-4)+'" y="'+(gy+3.5).toFixed(1)+'" text-anchor="end" font-size="8.5" fill="#475569" font-family="monospace">'+lbl+'</text>';
+  }
+
+  // X-axis baseline
+  svg += '<line x1="'+pL+'" y1="'+(pT+cH)+'" x2="'+(W-pR)+'" y2="'+(pT+cH)+'" stroke="#334155" stroke-width="1"/>';
+
+  // X-axis day labels (every 5 days)
+  for (var day = 1; day <= daysInMo; day += 5) {
+    var lx = xOfDay(day).toFixed(1);
+    svg += '<text x="'+lx+'" y="'+(pT+cH+11)+'" text-anchor="middle" font-size="8" fill="#475569" font-family="system-ui">'+day+'</text>';
+  }
+
+  // ── Actual line (solid sky-blue) ──────────────────────────────────────────
+  if (actual.length > 0) {
+    var pts = actual.map(function(p) {
+      return xOf(p.date).toFixed(1) + ',' + yOf(p.cumulative).toFixed(1);
+    }).join(' ');
+    svg += '<polyline points="'+pts+'" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    // Dot at today
+    var last = actual[actual.length - 1];
+    var lx2 = xOf(last.date), ly2 = yOf(last.cumulative);
+    svg += '<circle cx="'+lx2.toFixed(1)+'" cy="'+ly2.toFixed(1)+'" r="3.5" fill="#38bdf8"/>';
+  }
+
+  // ── Today vertical reference ──────────────────────────────────────────────
+  var todayX = xOf(today);
+  svg += '<line x1="'+todayX.toFixed(1)+'" y1="'+pT+'" x2="'+todayX.toFixed(1)+'" y2="'+(pT+cH)+'" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>';
+  svg += '<text x="'+todayX.toFixed(1)+'" y="'+(pT-6)+'" text-anchor="middle" font-size="8" fill="#64748b" font-family="system-ui">today</text>';
+
+  // ── Avg projection (dotted cyan) from todayTot → avgEnd ──────────────────
+  var eomX  = xOfDay(daysInMo);
+  var todayY = yOf(todayTot);
+  var avgY   = yOf(avgEnd);
+  var liveY  = yOf(liveEnd);
+
+  svg += '<line x1="'+todayX.toFixed(1)+'" y1="'+todayY.toFixed(1)+'" x2="'+eomX.toFixed(1)+'" y2="'+avgY.toFixed(1)+'"'
+       + ' stroke="#22d3ee" stroke-width="1.8" stroke-dasharray="6,4" opacity="0.9"/>';
+
+  // ── Live projection (dotted orange) from todayTot → liveEnd ──────────────
+  svg += '<line x1="'+todayX.toFixed(1)+'" y1="'+todayY.toFixed(1)+'" x2="'+eomX.toFixed(1)+'" y2="'+liveY.toFixed(1)+'"'
+       + ' stroke="#f97316" stroke-width="1.8" stroke-dasharray="6,4" opacity="0.9"/>';
+
+  // ── End-of-month labels ───────────────────────────────────────────────────
+  var labelX = eomX + 5;
+
+  // avg label
+  var avgLbl = fmtCost(avgEnd);
+  svg += '<circle cx="'+eomX.toFixed(1)+'" cy="'+avgY.toFixed(1)+'" r="3" fill="#22d3ee"/>';
+  svg += '<text x="'+labelX+'" y="'+(avgY+4).toFixed(1)+'" font-size="9" fill="#22d3ee" font-family="monospace" font-weight="600">'+avgLbl+'</text>';
+
+  // live label — offset vertically if too close to avg
+  var liveLbl = fmtCost(liveEnd);
+  var yOff = (Math.abs(avgY - liveY) < 12) ? (liveY > avgY ? 12 : -12) : 0;
+  svg += '<circle cx="'+eomX.toFixed(1)+'" cy="'+liveY.toFixed(1)+'" r="3" fill="#f97316"/>';
+  svg += '<text x="'+labelX+'" y="'+(liveY+4+yOff).toFixed(1)+'" font-size="9" fill="#f97316" font-family="monospace" font-weight="600">'+liveLbl+'</text>';
+
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;display:block;" preserveAspectRatio="none">'+svg+'</svg>';
+}
+
+function buildForecastLegend(d) {
+  var avgRate  = d.avg_daily_rate  || 0;
+  var liveRate = d.live_daily_rate || 0;
+  return '<div style="display:flex;flex-wrap:wrap;gap:1rem;font-size:0.68rem;color:#64748b;">'
+    + '<span><span style="display:inline-block;width:22px;height:2px;background:#38bdf8;vertical-align:middle;margin-right:.35rem;border-radius:1px;"></span>Actual (this month)</span>'
+    + '<span><span style="display:inline-block;width:22px;height:2px;background:#22d3ee;vertical-align:middle;margin-right:.35rem;border-radius:1px;border-top:2px dashed #22d3ee;background:none;"></span>Avg forecast (' + fmtCost(avgRate) + '/day)</span>'
+    + '<span><span style="display:inline-block;width:22px;height:2px;background:#f97316;vertical-align:middle;margin-right:.35rem;border-radius:1px;border-top:2px dashed #f97316;background:none;"></span>Live forecast (' + fmtCost(liveRate) + '/day)</span>'
+    + '</div>';
+}
+
 // ── App breakdown (visible only when "All Apps" selected) ─────────────────────
 var APP_PALETTE = ['#38bdf8','#4ade80','#f97316','#a78bfa','#22d3ee','#f59e0b','#f87171','#94a3b8','#fb923c','#a3e635'];
 
@@ -824,6 +967,7 @@ loadRgList();
 loadAppList();
 loadAll();
 loadBreakdown();
+loadForecast();
 </script>
 {% include '_chat.html' %}
 </body>
