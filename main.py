@@ -55,7 +55,7 @@ async def lifespan(_: FastAPI):
     asyncio.create_task(_get_live_data())
     yield
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 app = FastAPI(
     title="azure-penny",
