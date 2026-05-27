@@ -8,21 +8,31 @@ This document describes the AI chat agent built into **azure-penny** and how it 
 
 Both dashboards expose an identical user-facing chat widget (`🤖` floating button) that lets users ask natural-language questions about cloud costs. Under the hood, each app runs a local **agentic loop**: it calls tools (Python functions backed by the in-process data store) to gather cost data, sends results back to the LLM, and streams the final answer to the browser as Server-Sent Events.
 
+In **azure-penny** the agent logic lives in a dedicated module — **`ai_chat.py`** — which is shared by two callers:
+- `routers/ai.py` — the web `POST /api/ai/chat` SSE endpoint (typewriter streaming to the browser)
+- `telegram_bot.py` — the Telegram webhook handler (full response, then Telegram message)
+
+Both callers invoke the same `_run_ai_chat(question, history) → str` coroutine, so model, tools, and system prompt are always identical regardless of the channel.
+
 ```
 User question
     │
-    ▼
-POST /api/ai/chat (FastAPI, SSE stream)
-    │
-    ▼
-Agentic loop (max 5 iterations):
-  1. LLM decides which tool(s) to call
-  2. App executes tools → JSON result
-  3. Result appended to message history
-  4. LLM formulates final answer
-    │
-    ▼
-SSE stream → typewriter effect in browser
+    ├── Web (POST /api/ai/chat)          Telegram webhook (POST /telegram/webhook)
+    │          │                                    │
+    └──────────┼────────────────────────────────────┘
+               ▼
+         ai_chat.py: _run_ai_chat()
+               │
+               ▼
+         Agentic loop (max 5 iterations):
+           1. LLM decides which tool(s) to call
+           2. App executes tools → JSON result
+           3. Result appended to message history
+           4. LLM formulates final answer
+               │
+    ┌──────────┴────────────────────────────────────┐
+    ▼                                                ▼
+SSE stream → typewriter effect in browser    _md_to_html() → Telegram sendMessage
 ```
 
 The architecture of the two applications is **nearly identical at the agent level**. All meaningful differences come from the underlying cloud platform, not from the agent design itself.
@@ -63,7 +73,7 @@ Neither app calls Google / Vertex AI directly — all LLM traffic goes through t
 
 ## Agent Tools
 
-Both agents expose **6 tools** in the same OpenAI function-calling format. Five are common; one differs to match cloud-provider concepts:
+azure-penny exposes **7 tools** in OpenAI function-calling format. Six are common with aws-penny; one differs per cloud-provider concept; one is azure-penny-only:
 
 | Tool                      | azure-penny         | aws-penny          | Purpose |
 |---------------------------|---------------------|--------------------|---------|
@@ -72,10 +82,13 @@ Both agents expose **6 tools** in the same OpenAI function-calling format. Five 
 | `get_breakdown`           | ✅                  | ✅                 | Time-series buckets (days/weeks/months) |
 | `get_live_resources`      | ✅                  | ✅                 | Real-time inventory with monthly cost estimates |
 | `get_daily_costs`         | ✅                  | ✅                 | Daily cost time series for the past N days |
+| `get_page_snapshot`       | ✅                  | —                  | All-in-one snapshot: totals, categories, top RGs, anomalies in one call |
 | **`get_resource_groups`** | ✅ (Azure-specific) | —                  | Cost by Azure Resource Group and subscription |
 | **`get_accounts`**        | —                   | ✅ (AWS-specific)  | Cost by AWS account ID and project/app tag |
 
-The substitution directly mirrors the cloud provider's organisational model:
+**`get_page_snapshot`** is a convenience super-tool: the LLM calls it when the user asks a broad question ("what's going on with my costs?"). It returns the same data as several other tools combined — total spend, breakdown by category, top services, top resource groups, application-tag breakdown, and week-over-week anomalies — in one round-trip, reducing the number of agentic iterations.
+
+The `get_resource_groups` / `get_accounts` substitution mirrors the cloud provider's organisational model:
 - **Azure** organises spend across _Resource Groups_ and _Subscriptions_.
 - **AWS** organises spend across _accounts_ (billing entities) and uses tags (`user:App`, `user:Project`) for logical grouping.
 

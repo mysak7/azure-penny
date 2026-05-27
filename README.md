@@ -65,7 +65,24 @@ Terraform state is stored in Azure Blob Storage (`azure-penny-tfstate-rg` / `azu
 
 ```
 .
-├── main.py                  # FastAPI application
+├── main.py                  # FastAPI app wiring + lifespan (startup tasks)
+├── ai_chat.py               # Agentic AI loop — tools, LLM calls, shared by web + Telegram
+├── shield.py                # Cost Shield background task + Telegram breach alerts
+├── telegram_bot.py          # Telegram webhook handler (register + handle_update)
+├── storage.py               # Azure Blob Storage data layer (blob discovery, DataFrame cache)
+├── live_resources.py        # Live ARM resource inventory + cost enrichment
+├── cost_filters.py          # DataFrame filtering and aggregation helpers
+├── cost_categories.py       # Service category sets (Compute, Storage, Network, …)
+├── config.py                # Environment config, constants, logging
+├── auth.py                  # Easy Auth header parsing (X-MS-CLIENT-PRINCIPAL)
+├── routers/
+│   ├── ai.py                # POST /api/ai/chat — SSE streaming endpoint
+│   ├── costs.py             # /api/compute, /api/storage, /api/anomalies, etc.
+│   ├── live.py              # GET /api/live-resources
+│   ├── infra.py             # /api/status, /api/reload, resource deletion endpoints
+│   ├── admin.py             # Admin page routes + role-gate dependency
+│   ├── pages.py             # HTML page routes (dashboard, live, technician, shield)
+│   └── shield.py            # GET /api/shield/status, POST /api/shield/config, …
 ├── Dockerfile               # Container build
 ├── requirements.txt         # Python dependencies
 ├── .env.example             # Local dev environment variables
@@ -335,13 +352,15 @@ azure-penny integrates with Telegram for two purposes:
 
 ### Shield — cost alerts (one-way)
 
-The Shield background task checks projected monthly spend every 15 minutes and sends a Telegram message when a configurable threshold is exceeded. Configure via the `/shield` page or directly via `POST /api/shield/config`.
+The Shield background task (`shield.py`) runs inside the app as an `asyncio` loop. Every 15 minutes it sums the projected monthly cost of all live ARM resources and compares it to a configurable threshold. When a breach is detected it sends an HTML Telegram alert with the top 10 cost consumers. Subsequent alerts are suppressed for 2 hours (configurable cooldown) to avoid spam while the breach persists.
+
+Configure the threshold and chat ID via the `/shield` dashboard page or directly with `POST /api/shield/config`. The current breach status is available at `GET /api/shield/status`.
 
 ### AI chat assistant (two-way)
 
 The same AI cost assistant available on the web is also accessible directly from Telegram. Send any cost question to the bot and get a full answer with conversation context.
 
-**How it works:** The app registers a webhook with Telegram at startup (`POST /telegram/webhook`). Telegram calls this endpoint for every incoming message. The message is processed by the same agentic tool-use loop as the web chat, and the answer is sent back via `sendMessage`.
+**How it works:** On startup `telegram_bot.register_webhook()` calls Telegram's `setWebhook` API to point all bot traffic at `POST /telegram/webhook`. Each incoming message is processed by `telegram_bot.handle_update()`, which calls the shared `_run_ai_chat()` coroutine from `ai_chat.py` — the identical agentic loop used by the web SSE endpoint. The answer is converted from LLM markdown to Telegram HTML (`_md_to_html`) and sent back via `sendMessage`.
 
 **Setup (already done for this repo — follow these steps if you fork or redeploy):**
 

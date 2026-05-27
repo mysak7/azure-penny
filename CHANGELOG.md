@@ -11,6 +11,45 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [1.5.0] – 2026-05-27
+
+### Changed
+- **Module refactor** — split the 2347-line `main.py` into focused, independently testable modules:
+  `ai_chat.py`, `shield.py`, `telegram_bot.py`, `storage.py`, `live_resources.py`,
+  `cost_filters.py`, `cost_categories.py`, `config.py`, `auth.py`, and a `routers/` package
+  (`ai`, `costs`, `live`, `infra`, `admin`, `pages`, `shield`).
+  `main.py` is now ~66 lines of wiring + lifespan only.
+- **`ai_chat.py`** — agentic loop (`_run_ai_chat`) extracted into a standalone module;
+  shared by both the web SSE endpoint and the Telegram handler with identical model/tools/prompt.
+
+### Added
+- **`get_page_snapshot` tool** — all-in-one cost snapshot tool (total, categories, top RGs,
+  anomalies) for broad overview questions; reduces agentic iterations for common queries.
+- **Dockerfile** updated to `COPY` all new module files alongside `main.py`.
+
+### Fixed
+- `/telegram/webhook` excluded from ACA Easy Auth `excludedPaths` so Telegram servers can
+  reach the endpoint without an Entra ID session token.
+
+---
+
+## [1.4.0] – 2026-05-26
+
+### Added
+- **Shield** (`shield.py`) — asyncio background task that checks projected monthly spend
+  every 15 minutes against a configurable threshold and sends an HTML Telegram alert on breach.
+  2-hour cooldown between repeated alerts. Config persisted to `shield_config.json`.
+- **Shield API** (`routers/shield.py`) — `GET /api/shield/status`, `POST /api/shield/config`,
+  `POST /api/shield/check`, `POST /api/shield/test-alert`.
+- **Shield dashboard page** — `/shield` HTML page for configuring threshold and viewing status.
+- **Telegram AI chat** (`telegram_bot.py`) — two-way AI cost assistant over Telegram.
+  Webhook registered at startup; per-chat conversation history (capped at 20 messages).
+  LLM markdown converted to Telegram HTML via `_md_to_html`.
+- Telegram env vars (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_CHAT_ID`,
+  `APP_URL`) injected by Terraform into the Container App and by the CD workflow into the build.
+
+---
+
 ## [1.3.0] – 2026-05-25
 
 ### Added
@@ -129,6 +168,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-[Unreleased]: https://github.com/your-org/azure-penny/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/your-org/azure-penny/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/your-org/azure-penny/releases/tag/v1.0.0
+[Unreleased]: https://github.com/mysak7/azure-penny/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/mysak7/azure-penny/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/mysak7/azure-penny/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/mysak7/azure-penny/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/mysak7/azure-penny/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/mysak7/azure-penny/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/mysak7/azure-penny/releases/tag/v1.0.0
