@@ -116,6 +116,9 @@ jobs:
           vertex_proxy_api_key    = "${{ secrets.VERTEX_PROXY_API_KEY }}"
           cf_access_client_id     = "${{ vars.CF_ACCESS_CLIENT_ID }}"
           cf_access_client_secret = "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"
+          telegram_bot_token      = "${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          telegram_chat_id        = "${{ vars.TELEGRAM_CHAT_ID }}"
+          telegram_webhook_secret = "${{ secrets.TELEGRAM_WEBHOOK_SECRET }}"
           EOF
 
       - name: Write dev.tfvars
