@@ -768,7 +768,6 @@ function loadAppBreakdown() {
 
   document.getElementById('ab-badge').textContent = periodLabel();
   document.getElementById('ab-chart').innerHTML = '<div class="loading">Loading&hellip;</div>';
-  document.getElementById('ab-table').innerHTML = '';
   document.getElementById('ab-error').textContent = '';
 
   fetch('/api/apps?period=' + currentPeriod + rgParam())
