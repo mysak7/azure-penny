@@ -17,14 +17,16 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
-from config import (AZURE_SUBSCRIPTION_ID, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET,
+from config import (APP_URL, AZURE_SUBSCRIPTION_ID, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET,
                     COST_TAG_KEY, PROTECTED_RGS, SHIELD_ALERT_COOLDOWN, SHIELD_CHECK_INTERVAL,
                     STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME,
-                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET,
+                    VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
 from shield import (load_shield_config, run_shield_check, save_shield_config,
                     send_telegram_message, shield_check_loop)
 from live_resources import _get_live_data, _live_cache, _live_lock, fetch_resource_metrics, list_resource_groups
 from storage import _cache, _extract_all_tag_keys, _lock, get_blob_service_client, get_cached_dataframe
+import telegram_bot
 
 # ---------------------------------------------------------------------------
 # FastAPI application
@@ -57,6 +59,8 @@ from contextlib import asynccontextmanager
 async def lifespan(_: FastAPI):
     asyncio.create_task(_get_live_data())
     asyncio.create_task(shield_check_loop(_get_live_data))
+    if TELEGRAM_BOT_TOKEN and APP_URL:
+        asyncio.create_task(telegram_bot.register_webhook(APP_URL))
     yield
 
 APP_VERSION = "1.5.0"
@@ -2145,6 +2149,77 @@ def _chat_headers() -> dict[str, str]:
     return h
 
 
+async def _run_ai_chat(question: str, history: list[dict]) -> str:
+    """Run the agentic AI chat loop and return the final text answer (no streaming).
+
+    Shared by the web SSE endpoint and the Telegram webhook handler so both
+    use exactly the same model, tools, and system prompt.
+    """
+    if not VERTEX_PROXY_URL or not VERTEX_PROXY_API_KEY:
+        return "❌ AI chat není nakonfigurován (chybí VERTEX_PROXY_URL / VERTEX_PROXY_API_KEY)."
+
+    import httpx as _httpx
+
+    messages: list[dict] = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}]
+    messages += list(history)
+    messages.append({"role": "user", "content": question})
+
+    final_text = ""
+
+    try:
+        async with _httpx.AsyncClient(timeout=60) as client:
+            for _ in range(5):
+                resp = await client.post(
+                    f"{VERTEX_PROXY_URL}/v1/chat/completions",
+                    headers=_chat_headers(),
+                    json={
+                        "model":       _CHAT_MODEL,
+                        "messages":    messages,
+                        "tools":       _CHAT_TOOLS,
+                        "tool_choice": "auto",
+                    },
+                )
+                resp.raise_for_status()
+                msg     = resp.json()["choices"][0]["message"]
+                tc_list = msg.get("tool_calls") or []
+
+                if not tc_list:
+                    final_text = msg.get("content") or ""
+                    break
+
+                messages.append({
+                    "role":       "assistant",
+                    "content":    msg.get("content"),
+                    "tool_calls": tc_list,
+                })
+                for tc in tc_list:
+                    try:
+                        tool_args = json.loads(tc["function"].get("arguments", "{}"))
+                    except json.JSONDecodeError:
+                        tool_args = {}
+                    result = await _execute_chat_tool(tc["function"]["name"], tool_args)
+                    messages.append({
+                        "role":         "tool",
+                        "tool_call_id": tc["id"],
+                        "content":      result,
+                    })
+
+            # If loop exhausted without a text answer, force one no-tools call
+            if not final_text:
+                resp = await client.post(
+                    f"{VERTEX_PROXY_URL}/v1/chat/completions",
+                    headers=_chat_headers(),
+                    json={"model": _CHAT_MODEL, "messages": messages},
+                )
+                resp.raise_for_status()
+                final_text = resp.json()["choices"][0]["message"].get("content") or ""
+    except Exception as exc:
+        log.exception("_run_ai_chat failed")
+        raise
+
+    return final_text
+
+
 @app.post("/api/ai/chat", tags=["api"])
 async def api_ai_chat(request: Request) -> StreamingResponse:
     """AI chat with agentic tool-use loop; streams tokens via SSE."""
@@ -2248,3 +2323,25 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
         yield _sse({"type": "done"})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ── Telegram webhook ──────────────────────────────────────────────────────────
+
+@app.post("/telegram/webhook", include_in_schema=False)
+async def telegram_webhook(request: Request) -> JSONResponse:
+    """Telegram Bot API webhook — receives updates and dispatches to the AI chat loop."""
+    # Validate the secret token Telegram includes in every webhook call
+    if TELEGRAM_WEBHOOK_SECRET:
+        token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if token != TELEGRAM_WEBHOOK_SECRET:
+            log.warning("Telegram webhook: rejected request with invalid secret token")
+            return JSONResponse({"ok": False}, status_code=403)
+
+    try:
+        update = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+
+    # Fire-and-forget: return 200 immediately so Telegram doesn't retry
+    asyncio.create_task(telegram_bot.handle_update(update, _run_ai_chat))
+    return JSONResponse({"ok": True})

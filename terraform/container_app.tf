@@ -58,6 +58,14 @@ resource "azurerm_container_app" "this" {
     }
   }
 
+  dynamic "secret" {
+    for_each = var.telegram_webhook_secret != "" ? [1] : []
+    content {
+      name  = "telegram-webhook-secret"
+      value = var.telegram_webhook_secret
+    }
+  }
+
   template {
     min_replicas = var.always_on ? 1 : 0
     max_replicas = 1
@@ -149,6 +157,20 @@ resource "azurerm_container_app" "this" {
           name  = "TELEGRAM_CHAT_ID"
           value = var.telegram_chat_id
         }
+      }
+
+      # ── Telegram chat (two-way) ────────────────────────────────────────────
+      dynamic "env" {
+        for_each = var.telegram_webhook_secret != "" ? [1] : []
+        content {
+          name        = "TELEGRAM_WEBHOOK_SECRET"
+          secret_name = "telegram-webhook-secret"
+        }
+      }
+
+      env {
+        name  = "APP_URL"
+        value = var.custom_domain != "" ? "https://${var.custom_domain}" : var.app_url
       }
     }
   }

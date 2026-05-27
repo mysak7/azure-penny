@@ -109,3 +109,16 @@ variable "telegram_chat_id" {
   type        = string
   default     = ""
 }
+
+variable "telegram_webhook_secret" {
+  description = "Secret token sent by Telegram in X-Telegram-Bot-Api-Secret-Token on every webhook call. Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "app_url" {
+  description = "Public HTTPS URL of the Container App used to register the Telegram webhook (e.g. https://az-penny.mysak.fun). Falls back to custom_domain if set."
+  type        = string
+  default     = ""
+}

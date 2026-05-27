@@ -32,9 +32,15 @@ VERTEX_PROXY_API_KEY: str = os.environ.get("VERTEX_PROXY_API_KEY", "")
 CF_ACCESS_CLIENT_ID: str = os.environ.get("CF_ACCESS_CLIENT_ID", "")
 CF_ACCESS_CLIENT_SECRET: str = os.environ.get("CF_ACCESS_CLIENT_SECRET", "")
 
-# ── Shield (cost alert) ───────────────────────────────────────────────────────
+# ── Shield (cost alert) + Telegram chat ──────────────────────────────────────
 TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")
+# Secret token validated on every incoming webhook call (X-Telegram-Bot-Api-Secret-Token).
+# Generate any random string, e.g.: python -c "import secrets; print(secrets.token_hex(32))"
+TELEGRAM_WEBHOOK_SECRET: str = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+# Public HTTPS URL of this app — used at startup to register the Telegram webhook.
+# In production this is set by Terraform from var.custom_domain / var.app_url.
+APP_URL: str = os.environ.get("APP_URL", "")
 # Monthly budget threshold in EUR/USD — alert when projected monthly spend exceeds this.
 # Set to 0 to disable Shield alerts.
 SHIELD_MONTHLY_THRESHOLD: float = float(os.environ.get("SHIELD_MONTHLY_THRESHOLD", "0"))
