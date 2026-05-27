@@ -133,6 +133,13 @@
     #chat-panel { width: calc(100vw - 16px); right: 8px; bottom: 80px; }
     #chat-fab   { bottom: 16px; right: 12px; }
   }
+
+  /* Snapshot clipboard button — shares .help-btn shape, lives in header */
+  #snapshot-btn {
+    cursor: pointer; font-family: inherit; background: none;
+    font-size: 0.9rem; line-height: 1;
+  }
+  #snapshot-btn:disabled { opacity: .5; cursor: wait; }
 </style>
 
 <div id="chat-fab" title="AI Asistent" onclick="chatToggle()">💬</div>
@@ -343,4 +350,40 @@
   }
 
 })();
+
+/* ── Snapshot clipboard ─────────────────────────────────────────────────────
+   Called by the 📋 button in every page header.
+   Each page exposes window.getSnapshotParams() → {period, rg, app}.
+   Falls back to sensible defaults when the function is absent (e.g. Live page).
+─────────────────────────────────────────────────────────────────────────── */
+window.copySnapshot = async function() {
+  const btn = document.getElementById('snapshot-btn');
+  if (!btn) return;
+
+  const params = (typeof window.getSnapshotParams === 'function')
+    ? window.getSnapshotParams()
+    : { period: 'week', rg: '', app: '' };
+
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== ''))
+  ).toString();
+
+  const origLabel = btn.textContent;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/api/snapshot' + (qs ? '?' + qs : ''));
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    await navigator.clipboard.writeText(data.markdown);
+    btn.textContent = '✓';
+    btn.title = 'Zkopírováno!';
+    setTimeout(() => { btn.textContent = origLabel; btn.title = 'Kopírovat přehled stránky pro LLM'; btn.disabled = false; }, 1800);
+  } catch (err) {
+    console.warn('copySnapshot failed:', err);
+    btn.textContent = '✕';
+    setTimeout(() => { btn.textContent = origLabel; btn.disabled = false; }, 1800);
+  }
+};
 </script>

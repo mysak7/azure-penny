@@ -171,6 +171,7 @@
       <a href="/technician" class="nav-link">Technician</a>
       <a href="/live"       class="nav-link">Live</a>
     </div>
+    <button id="snapshot-btn" class="help-btn" onclick="copySnapshot()" title="Kopírovat přehled stránky pro LLM">📋</button>
     <a href="/guide" class="help-btn" title="Guide">?</a>
   </div>
 </header>
@@ -802,6 +803,11 @@ function loadAppBreakdown() {
       document.getElementById('ab-error').textContent = 'Error: ' + err.message;
     });
 }
+
+// ── Snapshot params for clipboard button ─────────────────────────────────────
+window.getSnapshotParams = function() {
+  return { period: currentPeriod || 'week', rg: getCurrentRg() || '', app: getCurrentApp() || '' };
+};
 
 // Boot
 (function() {

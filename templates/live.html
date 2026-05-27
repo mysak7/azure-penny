@@ -189,6 +189,7 @@
       <a href="/technician" class="nav-link">Technician</a>
       <a href="/live"       class="nav-link active">Live</a>
     </div>
+    <button id="snapshot-btn" class="help-btn" onclick="copySnapshot()" title="Kopírovat přehled stránky pro LLM">📋</button>
     <a href="/guide" class="help-btn" title="Guide">?</a>
   </div>
 </header>
@@ -1050,6 +1051,12 @@ var _daModal = document.getElementById('delete-all-modal');
 if (_daModal) _daModal.addEventListener('click', function(e) {
   if (e.target === this) closeDeleteAllModal();
 });
+
+// ── Snapshot params for clipboard button ─────────────────────────────────────
+// Live page has no period selector — use 'month' as a reasonable default.
+window.getSnapshotParams = function() {
+  return { period: 'month', rg: getCurrentRg() || '', app: getCurrentApp() || '' };
+};
 
 // Boot
 (function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
