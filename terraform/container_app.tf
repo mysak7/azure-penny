@@ -50,6 +50,14 @@ resource "azurerm_container_app" "this" {
     }
   }
 
+  dynamic "secret" {
+    for_each = var.telegram_bot_token != "" ? [1] : []
+    content {
+      name  = "telegram-bot-token"
+      value = var.telegram_bot_token
+    }
+  }
+
   template {
     min_replicas = var.always_on ? 1 : 0
     max_replicas = 1
@@ -123,6 +131,23 @@ resource "azurerm_container_app" "this" {
         content {
           name        = "CF_ACCESS_CLIENT_SECRET"
           secret_name = "cf-access-client-secret"
+        }
+      }
+
+      # ── Shield (Telegram cost alerts) ──────────────────────────────────────
+      dynamic "env" {
+        for_each = var.telegram_bot_token != "" ? [1] : []
+        content {
+          name        = "TELEGRAM_BOT_TOKEN"
+          secret_name = "telegram-bot-token"
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.telegram_chat_id != "" ? [1] : []
+        content {
+          name  = "TELEGRAM_CHAT_ID"
+          value = var.telegram_chat_id
         }
       }
     }

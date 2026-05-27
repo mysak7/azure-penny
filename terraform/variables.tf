@@ -96,3 +96,16 @@ variable "cf_access_client_secret" {
   default     = ""
   sensitive   = true
 }
+
+variable "telegram_bot_token" {
+  description = "Telegram Bot API token for Shield cost alerts. Stored as a Container App secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "telegram_chat_id" {
+  description = "Telegram chat ID to send Shield alerts to (numeric, e.g. 1116730879)."
+  type        = string
+  default     = ""
+}

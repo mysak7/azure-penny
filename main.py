@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from config import (AZURE_SUBSCRIPTION_ID, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET,
                     COST_TAG_KEY, PROTECTED_RGS, SHIELD_ALERT_COOLDOWN, SHIELD_CHECK_INTERVAL,
                     STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME,
-                    TELEGRAM_BOT_TOKEN, VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
+                    TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, VERTEX_PROXY_API_KEY, VERTEX_PROXY_URL, log)
 from shield import (load_shield_config, run_shield_check, save_shield_config,
                     send_telegram_message, shield_check_loop)
 from live_resources import _get_live_data, _live_cache, _live_lock, fetch_resource_metrics, list_resource_groups
