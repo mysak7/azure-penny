@@ -86,7 +86,6 @@ async def api_shield_config_save(request: Request) -> JSONResponse:
 async def api_shield_test() -> JSONResponse:
     """Send a test Telegram notification to verify configuration."""
     from config import TELEGRAM_CHAT_ID  # noqa: PLC0415
-    from live_resources import _get_live_data  # noqa: PLC0415
 
     try:
         cfg     = load_shield_config()
@@ -95,14 +94,11 @@ async def api_shield_test() -> JSONResponse:
         if not TELEGRAM_BOT_TOKEN or not chat_id:
             return JSONResponse({"ok": False, "error": "Telegram not configured (missing token or chat_id)"})
 
-        resources          = await _get_live_data()
-        live_monthly_total = sum(r.get("monthly_cost") or 0.0 for r in resources)
-
+        threshold = float(cfg.get("monthly_threshold") or 0)
         msg = (
             "🧪 <b>azure-penny Shield — Test Notification</b>\n\n"
             "✅ Telegram is working!\n"
-            f"💰 Current projected monthly: <b>${live_monthly_total:.2f}</b>\n"
-            f"🎯 Threshold: <b>${float(cfg.get('monthly_threshold') or 0):.2f}</b>\n\n"
+            f"🎯 Threshold: <b>${threshold:.2f}</b>\n\n"
             "→ az-penny.mysak.fun/shield"
         )
         sent = await send_telegram_message(chat_id, msg)

@@ -11,7 +11,8 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
-COPY main.py config.py storage.py live_resources.py shield.py ./
+COPY *.py ./
+COPY routers/ ./routers/
 COPY templates/ ./templates/
 
 EXPOSE 8000
