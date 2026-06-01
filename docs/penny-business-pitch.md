@@ -7,19 +7,23 @@
 
 ## Co Penny dělá nad rámec Azure Cost Management + Azure Advisor
 
-| Schopnost | Azure Cost Management | Azure Advisor | **Penny** |
-|---|---|---|---|
-| Zobrazení nákladů | ✅ | ❌ | ✅ |
-| Anomaly detection (meziměsíční skoky, nové/zaniklé služby) | Alerts (threshold only) | ❌ | ✅ týden-na-týden spiky >50 % |
-| Live ARM inventář s odhadovanou cenou za zdroj | ❌ | ❌ | ✅ retail pricing API |
-| Filtrování podle `project` tagu (aplikace / produkt) | Omezené | ❌ | ✅ App dropdown + AND s RG filtrem |
-| AI chat nad vašimi reálnými daty | ❌ | ❌ | ✅ Claude + agentic loop, SSE stream |
-| Telegram bot — AI asistent v kapse | ❌ | ❌ | ✅ per-chat conversation history |
-| **Shield** — aktivní hlídač rozpočtu | Pouze e-mail/Action Group | Passivní | ✅ push Telegram alert, 15min cyklus |
-| Forecast (projekce end-of-month) | Základní | ❌ | ✅ ARM pricing + lineární extrapolace |
-| Technician view (billing CSV analýza, untagged report) | Export only | ❌ | ✅ interaktivní |
-| Resource deletion přes UI (s live streamem logu) | Portal | ❌ | ✅ admin-only, streaming log |
-| Scale-to-zero + Managed Identity (zero secrets) | N/A | N/A | ✅ ACA + DefaultAzureCredential |
+| Schopnost | Azure Cost Management | Azure Advisor | Power BI | **Penny** |
+|---|---|---|---|---|
+| Zobrazení nákladů | ✅ | ❌ | ✅ | ✅ |
+| Anomaly detection (meziměsíční skoky, nové/zaniklé služby) | Alerts (threshold only) | ❌ | Manuální | ✅ týden-na-týden spiky >50 % |
+| Live ARM inventář s billing historií **spojenou per resource_id** | ❌ | ❌ | Premium + ETL | ✅ automaticky, in-memory |
+| Detekce "ghost costs" — zdroj smazán, billing stále běží | ❌ | ❌ | Manuálně | ✅ ARM ∩ billing join |
+| Detekce stopped-not-deallocated VM (billing trvá!) | ❌ | ❌ | ❌ | ✅ ARM status + billing |
+| Unit price drift — odhalení zdražení za jednotku | ❌ | ❌ | Manuálně | ✅ C_COST / C_QUANTITY per meter |
+| Waste detector — placení za nulu (C_QUANTITY ≈ 0, C_COST > 0) | ❌ | Částečně | Manuálně | ✅ billing řádky |
+| Filtrování podle `project` tagu (aplikace / produkt) | Omezené | ❌ | Manuálně | ✅ App dropdown + AND s RG filtrem |
+| AI chat nad vašimi reálnými daty | ❌ | ❌ | ❌ | ✅ Gemini + agentic loop, SSE stream |
+| Telegram bot — AI asistent v kapse | ❌ | ❌ | ❌ | ✅ per-chat conversation history |
+| **Shield** — aktivní hlídač rozpočtu | Pouze e-mail/Action Group | Passivní | ❌ | ✅ push Telegram alert, 15min cyklus |
+| Forecast (projekce end-of-month) | Základní | ❌ | Manuálně | ✅ skutečné billing sazby + extrapolace |
+| Technician view (billing CSV analýza, untagged report s Kč) | Export only | ❌ | Manuálně | ✅ interaktivní, klikatelný |
+| Resource deletion přes UI (s live streamem logu) | Portal | ❌ | ❌ | ✅ admin-only, streaming log |
+| Scale-to-zero + Managed Identity (zero secrets) | N/A | N/A | N/A | ✅ ACA + DefaultAzureCredential |
 
 ---
 
@@ -62,14 +66,80 @@
 
 ---
 
+## Dvě unikátní technické výhody
+
+### 1. Fúze live ARM dat s billing exportem (in-memory join)
+
+Azure portal a Power BI zobrazují live inventář a billing historii jako **dva oddělené pohledy**. Penny je spojuje automaticky v paměti na `resource_id`:
+
+```
+ARM API (real-time)          Billing export (Parquet, 30 dní)
+  resource_id → stav           resource_id → C_COST, C_QUANTITY, C_DATE
+  vm_size → t4g.small          10 řádků za 10 dní
+  status → Deallocated         celková cena: $12.40
+         ↓                              ↓
+              IN-MEMORY JOIN (resource_id, normalizováno)
+                        ↓
+         "dev-app-host" — Deallocated (!) — $12.40/měsíc aktuálně stále teče
+         cost_source: "export_hours"  ← víme že cena je ze skutečného billingu, ne z ceníku
+```
+
+Tím Penny odhaluje věci, které žádný jednotlivý pohled neumí:
+
+| Situace | Co to znamená | Kde to vidíš v Azure portálu |
+|---|---|---|
+| ARM existuje, billing = $0 | Nový zdroj nebo free tier | Nigde spojeno |
+| ARM neexistuje, billing > $0 | **"Ghost cost"** — smazáno, ale faktura stále chodí | Nigde |
+| ARM status = Stopped (ne Deallocated), billing > $0 | **VM zastavena ale NEodlokována** — billing běží | Je nutno zkontrolovat ručně |
+| `cost_source = "export_hours"` | Hodinová sazba odvozena z reálných billing dat | Ceník neodpovídá skutečnosti |
+| `cost_source = "price_table"` | Nový zdroj — cena z Azure Retail Prices API (fallback) | N/A |
+
+Power BI toto umí, ale vyžaduje **Power BI Premium licence + vlastní ETL pipeline + manuální konfiguraci joinu**. Penny to dělá ze dvou `async` cache objektů automaticky při každém načtení stránky.
+
+---
+
+### 2. Přístup k řádkovým billing datům (C_QUANTITY + C_COST per meter)
+
+Azure Cost Management ukazuje vždy **agregované koruny**. Billing export (Parquet/CSV) obsahuje každý billing řádek zvlášť, včetně sloupce `Quantity` (C_QUANTITY) — tj. kolik jednotek bylo spotřebováno a za jakou cenu.
+
+To otevírá analýzy, které Azure portal ani Power BI bez prémiového nastavení nenabídne:
+
+**Unit price drift — je Azure zdražování?**
+```python
+effective_price = C_COST / C_QUANTITY  # per resource, per week
+```
+Pokud Azure překročíš pricing tier (např. storage transactions) nebo vyprší Reserved Instance, tato hodnota se změní. Portal ti ukáže vyšší celkovou fakturu — ale ne *proč* zdražilo za jednotku. Penny to může detekovat automaticky.
+
+**Waste detector — platíš za nulu**
+Řádky kde `C_QUANTITY ≈ 0` ale `C_COST > 0` jsou zombie resources:
+- Reserved IP nepřipojená k ničemu
+- Disk bez připojené VM
+- Storage account s 0 transakcemi
+
+Azure Advisor část tohoto chytí — ale pouze pro vybraný typ zdrojů a s týdenní latencí. Billing data odhalí *cokoliv* co přichází na fakturu.
+
+**Burn rate per project s projekcí**
+Protože máme `C_APP` tag na řádkové úrovni, lze spočítat burn rate per projekt (ne jen per subscription):
+```
+projekt "seip": posledních 14 dní → $X/den → projekce: $Y tento měsíc
+projekt "penny": posledních 14 dní → $A/den → projekce: $B tento měsíc
+```
+Azure Cost Analysis to počítá jen na úrovni celé subscription nebo Management Group.
+
+**Tag compliance report s přiřazenou cenou**
+"Tyto konkrétní resource IDs nemají `project` tag a stojí $Y/měsíc" — klikatelný seznam s ARM ID, ne jen procento. Umožňuje přiřadit zodpovědnost konkrétnímu týmu.
+
+---
+
 ## Proč to není jen jiný dashboard
 
 Azure Cost Management + Advisor jsou **pasivní** — dávají data a doporučení, ale:
 - nemají **AI** schopný odpovídat na „proč mi vzrostly náklady tento týden?"
 - nepošlou ti **Telegram zprávu** když ti runtime překoná budget
-- neukáží **live ARM inventář** s cenami bez portálu
+- neukáží **live ARM inventář spojený s billing historií** — nikdy neuvidíš „tento VM je stopped-not-deallocated a stojí tě $X/měsíc"
 - neumí **filtrovat po application (project tagu)** napříč všemi pohledy najednou
-- nedetekují **nové nebo zaniklé služby** bez alertu jako anomálii samo o sobě
+- nedetekují **nové nebo zaniklé služby** jako anomálii automaticky
+- nevidí **unit price drift** — pouze celkovou fakturu, ne sazbu za jednotku
 
 Penny tyto mezery překlenuje jako **open-source, self-hostovaný nástroj** s nulovou závislostí na third-party SaaS.
 
