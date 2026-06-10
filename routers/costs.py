@@ -722,6 +722,8 @@ async def api_forecast(rg: str = "", app: str = "") -> JSONResponse:
 
         actual_points: list[dict] = []
         today_total = 0.0
+        data_days_elapsed = days_elapsed
+        daily = None
 
         if "C_DATE" in df.columns and "C_COST" in df.columns and not df.empty:
             df = df.copy()
@@ -734,14 +736,22 @@ async def api_forecast(rg: str = "", app: str = "") -> JSONResponse:
                 actual_points.append({"date": str(d), "cumulative": round(cumulative, 4)})
             today_total = cumulative
 
-        avg_daily_rate = today_total / max(days_elapsed, 1)
+        # Cost Management exports regenerate intra-day — today's data is partial.
+        # Use only complete days (up to yesterday) for avg rate.
+        spent_complete = today_total
+        if daily is not None and not daily.empty:
+            complete_daily = daily[daily.index < today]
+            if not complete_daily.empty:
+                data_days_elapsed = max((complete_daily.index[-1] - complete_daily.index[0]).days + 1, 1)
+                spent_complete    = float(complete_daily.sum())
+        avg_daily_rate = spent_complete / max(data_days_elapsed, 1)
         avg_end        = round(today_total + avg_daily_rate * days_remaining, 2)
 
         live_resources = await _get_live_data()
         if rg:
             live_resources = [r for r in live_resources if (r.get("resource_group") or "").lower() == rg.lower()]
         if app:
-            live_resources = [r for r in live_resources if (r.get("app") or "") == app]
+            live_resources = [r for r in live_resources if (r.get("app") or "").lower() == app.lower()]
         live_monthly_total = sum(r.get("monthly_cost") or 0.0 for r in live_resources)
         live_daily_rate    = live_monthly_total / days_in_month
         live_end           = round(today_total + live_daily_rate * days_remaining, 2)
@@ -752,6 +762,7 @@ async def api_forecast(rg: str = "", app: str = "") -> JSONResponse:
             "end_of_month":    str(end_of_month),
             "today_total":     round(today_total, 2),
             "days_elapsed":    days_elapsed,
+            "data_days_elapsed": data_days_elapsed,
             "days_remaining":  days_remaining,
             "days_in_month":   days_in_month,
             "avg_daily_rate":  round(avg_daily_rate, 4),

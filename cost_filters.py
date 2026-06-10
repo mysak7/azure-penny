@@ -39,7 +39,8 @@ def _filter_period(df: pd.DataFrame, days: int) -> pd.DataFrame:
     if "C_DATE" not in df.columns:
         return df
     cutoff = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    return df[df["C_DATE"] >= cutoff]
+    today_str = date.today().strftime("%Y-%m-%d")
+    return df[(df["C_DATE"] >= cutoff) & (df["C_DATE"] < today_str)]
 
 
 def _filter_services(df: pd.DataFrame, services: set[str]) -> pd.DataFrame:

@@ -72,15 +72,28 @@ CAT_MONITORING: set[str] = {
     "Log Analytics", "Azure Log Analytics",
     "Azure Monitor",
     "Application Insights", "Azure Application Insights",
-    "Microsoft Sentinel", "Azure Sentinel",
     "Azure Advisor",
+}
+
+CAT_SECURITY: set[str] = {
     "Microsoft Defender for Cloud", "Azure Security Center",
     "Key Vault", "Azure Key Vault",
+    "Microsoft Sentinel", "Azure Sentinel",
+    "Web Application Firewall", "Azure Web Application Firewall",
+    "Microsoft Defender for Endpoint",
+    "Microsoft Defender for Identity",
+    "Microsoft Defender for Servers",
+    "Microsoft Defender for Storage",
+    "Microsoft Defender for SQL",
+    "Microsoft Defender for DNS",
+    "Microsoft Defender for Containers",
+    "Microsoft Defender EASM",
+    "Azure Information Protection",
 }
 
 # Union of all explicitly mapped services — used to identify "Other" spend.
 ALL_KNOWN_SERVICES: frozenset[str] = frozenset(
-    CAT_COMPUTE | CAT_STORAGE | CAT_NETWORK | CAT_DATABASE | CAT_MONITORING
+    CAT_COMPUTE | CAT_STORAGE | CAT_NETWORK | CAT_DATABASE | CAT_MONITORING | CAT_SECURITY
 )
 
 # Keywords that identify data-transfer rows within storage billing.
@@ -91,7 +104,7 @@ _TRANSFER_KEYWORDS: frozenset[str] = frozenset([
 
 # Ordered display names and their corresponding category sets.
 # None sentinel → "Other" (services not in any known set).
-_ORDERED_CATS: list[str] = ["Compute", "Storage", "Network", "Database", "Monitoring", "Other"]
+_ORDERED_CATS: list[str] = ["Compute", "Storage", "Network", "Database", "Monitoring", "Security", "Other"]
 
 _CAT_KEY_MAP: dict[str, set[str] | None] = {
     "compute":    CAT_COMPUTE,
@@ -99,5 +112,6 @@ _CAT_KEY_MAP: dict[str, set[str] | None] = {
     "network":    CAT_NETWORK,
     "database":   CAT_DATABASE,
     "monitoring": CAT_MONITORING,
+    "security":   CAT_SECURITY,
     "other":      None,
 }
