@@ -8,7 +8,13 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ai_chat import _CHAT_TOOLS, _TOOL_LABELS, _chat_headers, _execute_chat_tool, _run_ai_chat
+from ai_chat import (
+    _CHAT_TOOLS,
+    _TOOL_LABELS,
+    _chat_headers,
+    _execute_chat_tool,
+    _run_ai_chat,
+)
 from ai_chat import _CHAT_MODEL, _CHAT_SYSTEM_PROMPT
 from config import (
     CF_ACCESS_CLIENT_ID,
@@ -25,6 +31,7 @@ router = APIRouter(tags=["api"])
 
 # ── Simple AI (single-shot, no tool use) ─────────────────────────────────────
 
+
 @router.post("/api/ai")
 async def api_ai(request: Request) -> JSONResponse:
     """Pošle dotaz na vertex-proxy (Gemini přes CF Tunnel + CF Access)."""
@@ -34,27 +41,28 @@ async def api_ai(request: Request) -> JSONResponse:
             detail="Vertex proxy not configured (VERTEX_PROXY_URL / VERTEX_PROXY_API_KEY missing)",
         )
 
-    body     = await request.json()
+    body = await request.json()
     question = body.get("question", "")
-    model    = body.get("model", "gemini-2.5-flash")
+    model = body.get("model", "gemini-2.5-flash")
     if not question:
         raise HTTPException(status_code=400, detail="'question' field required")
 
     headers = {
         "Authorization": f"Bearer {VERTEX_PROXY_API_KEY}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
     }
     if CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET:
-        headers["CF-Access-Client-Id"]     = CF_ACCESS_CLIENT_ID
+        headers["CF-Access-Client-Id"] = CF_ACCESS_CLIENT_ID
         headers["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET
 
     payload = {
-        "model":    model,
+        "model": model,
         "messages": [{"role": "user", "content": question}],
     }
 
     try:
         import httpx  # noqa: PLC0415
+
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{VERTEX_PROXY_URL}/v1/chat/completions",
@@ -71,6 +79,7 @@ async def api_ai(request: Request) -> JSONResponse:
 
 # ── Agentic AI chat with SSE streaming ───────────────────────────────────────
 
+
 @router.post("/api/ai/chat")
 async def api_ai_chat(request: Request) -> StreamingResponse:
     """AI chat with agentic tool-use loop; streams tokens via SSE."""
@@ -79,17 +88,21 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
     if not VERTEX_PROXY_URL or not VERTEX_PROXY_API_KEY:
+
         async def _cfg_err():
             yield _sse({"type": "error", "text": "Vertex proxy not configured"})
+
         return StreamingResponse(_cfg_err(), media_type="text/event-stream")
 
-    body     = await request.json()
+    body = await request.json()
     question = (body.get("question") or "").strip()
-    history  = (body.get("history") or [])[-20:]
+    history = (body.get("history") or [])[-20:]
 
     if not question:
+
         async def _empty():
             yield _sse({"type": "error", "text": "Empty question"})
+
         return StreamingResponse(_empty(), media_type="text/event-stream")
 
     import httpx  # noqa: PLC0415
@@ -108,44 +121,50 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
                         f"{VERTEX_PROXY_URL}/v1/chat/completions",
                         headers=_chat_headers(),
                         json={
-                            "model":       _CHAT_MODEL,
-                            "messages":    messages,
-                            "tools":       _CHAT_TOOLS,
+                            "model": _CHAT_MODEL,
+                            "messages": messages,
+                            "tools": _CHAT_TOOLS,
                             "tool_choice": "auto",
                         },
                     )
                     resp.raise_for_status()
-                    data    = resp.json()
-                    msg     = data["choices"][0]["message"]
+                    data = resp.json()
+                    msg = data["choices"][0]["message"]
                     tc_list = msg.get("tool_calls") or []
 
                     if not tc_list:
                         final_text = msg.get("content") or ""
                         break
 
-                    messages.append({
-                        "role":       "assistant",
-                        "content":    msg.get("content"),
-                        "tool_calls": tc_list,
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": msg.get("content"),
+                            "tool_calls": tc_list,
+                        }
+                    )
 
                     for tc in tc_list:
                         tool_name = tc["function"]["name"]
-                        label     = _TOOL_LABELS.get(tool_name, tool_name)
+                        label = _TOOL_LABELS.get(tool_name, tool_name)
                         yield _sse({"type": "tool", "name": tool_name, "label": label})
                         await asyncio.sleep(0)
 
                         try:
-                            tool_args = json.loads(tc["function"].get("arguments", "{}"))
+                            tool_args = json.loads(
+                                tc["function"].get("arguments", "{}")
+                            )
                         except json.JSONDecodeError:
                             tool_args = {}
 
                         result = await _execute_chat_tool(tool_name, tool_args)
-                        messages.append({
-                            "role":         "tool",
-                            "tool_call_id": tc["id"],
-                            "content":      result,
-                        })
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": result,
+                            }
+                        )
 
                 # Final no-tools call if loop exhausted without a text answer.
                 if not final_text:
@@ -155,7 +174,9 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
                         json={"model": _CHAT_MODEL, "messages": messages},
                     )
                     resp.raise_for_status()
-                    final_text = resp.json()["choices"][0]["message"].get("content") or ""
+                    final_text = (
+                        resp.json()["choices"][0]["message"].get("content") or ""
+                    )
 
         except Exception as exc:
             log.exception("AI chat agentic loop failed")
@@ -175,6 +196,7 @@ async def api_ai_chat(request: Request) -> StreamingResponse:
 
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────
+
 
 @router.post("/telegram/webhook", include_in_schema=False)
 async def telegram_webhook(request: Request) -> JSONResponse:

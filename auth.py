@@ -18,7 +18,9 @@ def _get_user_roles(request: Request) -> list[str]:
         return []  # no Easy Auth (local dev) — caller decides how to handle
     try:
         principal = json.loads(base64.b64decode(header + "=="))
-        return [c["val"] for c in principal.get("claims", []) if c.get("typ") == "roles"]
+        return [
+            c["val"] for c in principal.get("claims", []) if c.get("typ") == "roles"
+        ]
     except Exception:
         return []
 

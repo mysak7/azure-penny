@@ -36,7 +36,9 @@ def get_blob_service_client() -> BlobServiceClient:
     if _blob_client is None:
         if not STORAGE_ACCOUNT_NAME:
             raise RuntimeError("STORAGE_ACCOUNT_NAME environment variable is not set.")
-        credential = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
+        credential = DefaultAzureCredential(
+            managed_identity_client_id=AZURE_CLIENT_ID or None
+        )
         account_url = f"https://{STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
         _blob_client = BlobServiceClient(account_url=account_url, credential=credential)
         log.info("BlobServiceClient initialised for account: %s", STORAGE_ACCOUNT_NAME)
@@ -52,26 +54,26 @@ COLUMN_MAP: dict[str, str] = {
     # Falls back to CostInBillingCurrency for export formats that don't include paygCost.
     "PaygCostInBillingCurrency": "C_COST",
     "CostInBillingCurrency": "C_COST",
-    "Cost":                  "C_COST",
-    "PreTaxCost":            "C_COST",
-    "MeterCategory":         "C_SERVICE",
-    "ServiceName":           "C_SERVICE",
-    "ResourceGroup":         "C_NAME",
-    "ResourceGroupName":     "C_NAME",
-    "SubscriptionName":      "C_ACCOUNT",
-    "SubscriptionId":        "C_ACCOUNT",
-    "Date":                  "C_DATE",
-    "UsageDate":             "C_DATE",
-    "Tags":                  "C_TAGS",
-    "tag_":                  "C_TAGS",
+    "Cost": "C_COST",
+    "PreTaxCost": "C_COST",
+    "MeterCategory": "C_SERVICE",
+    "ServiceName": "C_SERVICE",
+    "ResourceGroup": "C_NAME",
+    "ResourceGroupName": "C_NAME",
+    "SubscriptionName": "C_ACCOUNT",
+    "SubscriptionId": "C_ACCOUNT",
+    "Date": "C_DATE",
+    "UsageDate": "C_DATE",
+    "Tags": "C_TAGS",
+    "tag_": "C_TAGS",
     # Separate per-tag columns (some export formats) — map project tag directly to C_APP
-    "tag_project":           "C_APP",
-    "ResourceId":            "C_RESOURCE_ID",
-    "InstanceId":            "C_RESOURCE_ID",
-    "MeterSubCategory":      "C_SUBCATEGORY",
-    "SubCategory":           "C_SUBCATEGORY",
-    "Quantity":              "C_QUANTITY",
-    "UsageQuantity":         "C_QUANTITY",
+    "tag_project": "C_APP",
+    "ResourceId": "C_RESOURCE_ID",
+    "InstanceId": "C_RESOURCE_ID",
+    "MeterSubCategory": "C_SUBCATEGORY",
+    "SubCategory": "C_SUBCATEGORY",
+    "Quantity": "C_QUANTITY",
+    "UsageQuantity": "C_QUANTITY",
 }
 
 
@@ -172,15 +174,15 @@ def _infer_app_from_aks_tags(tags_val: object) -> str | None:
         return None
     try:
         tags = _json.loads(s)
-        cluster = (
-            tags.get("karpenter.azure.com_cluster")
-            or tags.get("aks-managed-cluster-name")
+        cluster = tags.get("karpenter.azure.com_cluster") or tags.get(
+            "aks-managed-cluster-name"
         )
         if cluster:
             return _extract_cluster_app(str(cluster))
     except Exception:
         pass
     return None
+
 
 REQUIRED_INTERNAL_COLS = {"C_COST", "C_SERVICE", "C_NAME", "C_ACCOUNT", "C_DATE"}
 
@@ -195,6 +197,7 @@ def _keep_col(col: str) -> bool:
     """Return True if this CSV column should be loaded (case-insensitive match)."""
     cl = col.lower()
     return cl in _KEEP_COLS_LOWER or cl.startswith("tag_")
+
 
 # ---------------------------------------------------------------------------
 # Blob discovery
@@ -240,21 +243,29 @@ def _discover_latest_blobs(container_name: str) -> list[str]:
 
     for segment in sorted(date_segments, reverse=True):
         candidates = [
-            bp for bp in all_blob_props
+            bp
+            for bp in all_blob_props
             if segment in bp.name and bp.name.endswith(_EXPORT_EXTS)
         ]
         if not candidates:
-            log.info("Folder '%s' has no export files, trying previous period.", segment)
+            log.info(
+                "Folder '%s' has no export files, trying previous period.", segment
+            )
             continue
 
         if len(candidates) == 1:
-            log.info("Selected 1 file from folder '%s': %s", segment, candidates[0].name)
+            log.info(
+                "Selected 1 file from folder '%s': %s", segment, candidates[0].name
+            )
             return [candidates[0].name]
 
         newest = max(candidates, key=lambda bp: bp.last_modified or 0)
         log.info(
             "Found %d file(s) in folder '%s'; using only the most-recent: %s (last_modified=%s)",
-            len(candidates), segment, newest.name, newest.last_modified,
+            len(candidates),
+            segment,
+            newest.name,
+            newest.last_modified,
         )
         return [newest.name]
 
@@ -264,6 +275,7 @@ def _discover_latest_blobs(container_name: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+
 
 def _read_blob_to_bytes(container_name: str, blob_name: str) -> bytes:
     client = get_blob_service_client()
@@ -304,7 +316,9 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
         df["C_COST"] = pd.to_numeric(df["C_COST"], errors="coerce").fillna(0.0)
 
     if "C_DATE" in df.columns:
-        df["C_DATE"] = pd.to_datetime(df["C_DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+        df["C_DATE"] = pd.to_datetime(df["C_DATE"], errors="coerce").dt.strftime(
+            "%Y-%m-%d"
+        )
 
     if "C_NAME" in df.columns:
         df["C_NAME"] = df["C_NAME"].str.lower()
@@ -357,9 +371,7 @@ def _apply_column_map(df: pd.DataFrame) -> pd.DataFrame:
     if "C_RESOURCE_ID" in df.columns and "C_NAME" in df.columns:
         untagged_mask = df["C_APP"] == "Untagged"
         if untagged_mask.any():
-            no_rg = (
-                df["C_RESOURCE_ID"].fillna("").str.strip() == ""
-            ) | (
+            no_rg = (df["C_RESOURCE_ID"].fillna("").str.strip() == "") | (
                 df["C_NAME"].fillna("").str.strip() == ""
             )
             subscription_scoped = untagged_mask & no_rg
@@ -386,7 +398,9 @@ def _load_from_cost_management_api() -> pd.DataFrame:
     from datetime import date, timedelta
 
     if not AZURE_SUBSCRIPTION_ID:
-        raise ValueError("AZURE_SUBSCRIPTION_ID is not set; cannot query Cost Management API.")
+        raise ValueError(
+            "AZURE_SUBSCRIPTION_ID is not set; cannot query Cost Management API."
+        )
 
     cred = DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID or None)
     token = cred.get_token("https://management.azure.com/.default").token
@@ -394,20 +408,25 @@ def _load_from_cost_management_api() -> pd.DataFrame:
 
     start = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
     end = date.today().strftime("%Y-%m-%d")
-    body = json.dumps({
-        "type": "Usage",
-        "timeframe": "Custom",
-        "timePeriod": {"from": f"{start}T00:00:00+00:00", "to": f"{end}T23:59:59+00:00"},
-        "dataset": {
-            "granularity": "Daily",
-            "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
-            "grouping": [
-                {"type": "Dimension", "name": "ResourceId"},
-                {"type": "Dimension", "name": "MeterCategory"},
-                {"type": "TagKey", "name": "project"},
-            ],
-        },
-    }).encode()
+    body = json.dumps(
+        {
+            "type": "Usage",
+            "timeframe": "Custom",
+            "timePeriod": {
+                "from": f"{start}T00:00:00+00:00",
+                "to": f"{end}T23:59:59+00:00",
+            },
+            "dataset": {
+                "granularity": "Daily",
+                "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
+                "grouping": [
+                    {"type": "Dimension", "name": "ResourceId"},
+                    {"type": "Dimension", "name": "MeterCategory"},
+                    {"type": "TagKey", "name": "project"},
+                ],
+            },
+        }
+    ).encode()
 
     base_url = (
         f"https://management.azure.com/subscriptions/{AZURE_SUBSCRIPTION_ID}"
@@ -424,7 +443,9 @@ def _load_from_cost_management_api() -> pd.DataFrame:
             with urllib.request.urlopen(req) as resp:
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Cost Management API error {exc.code}: {exc.read().decode()}") from exc
+            raise RuntimeError(
+                f"Cost Management API error {exc.code}: {exc.read().decode()}"
+            ) from exc
 
         props = data.get("properties", {})
         if not col_names:
@@ -445,7 +466,9 @@ def _load_from_cost_management_api() -> pd.DataFrame:
 
     # UsageDate comes back as an integer YYYYMMDD
     if "UsageDate" in df.columns:
-        df["UsageDate"] = pd.to_datetime(df["UsageDate"].astype(str), format="%Y%m%d").dt.strftime("%Y-%m-%d")
+        df["UsageDate"] = pd.to_datetime(
+            df["UsageDate"].astype(str), format="%Y%m%d"
+        ).dt.strftime("%Y-%m-%d")
 
     # Derive ResourceGroup from ResourceId so C_NAME is available for dashboards.
     # The ARM resource ID format is: /subscriptions/{sub}/resourceGroups/{rg}/...
@@ -472,7 +495,9 @@ def _load_dataframe() -> pd.DataFrame:
             if "C_ACCOUNT" not in df.columns:
                 df["C_ACCOUNT"] = AZURE_SUBSCRIPTION_ID
             return df
-        raise ValueError(f"No cost export files found in container '{STORAGE_CONTAINER_NAME}'.")
+        raise ValueError(
+            f"No cost export files found in container '{STORAGE_CONTAINER_NAME}'."
+        )
 
     frames: list[pd.DataFrame] = []
     for name in blob_names:
@@ -510,7 +535,9 @@ async def get_cached_dataframe() -> pd.DataFrame:
         if "df" not in _cache or (now - loaded_at) > TTL_SECONDS:
             log.info("Cache miss — loading data from Azure Blob Storage …")
             try:
-                df = await asyncio.get_event_loop().run_in_executor(None, _load_dataframe)
+                df = await asyncio.get_event_loop().run_in_executor(
+                    None, _load_dataframe
+                )
             except ValueError as exc:
                 log.warning("%s — returning empty DataFrame.", exc)
                 df = pd.DataFrame(columns=list(REQUIRED_INTERNAL_COLS))

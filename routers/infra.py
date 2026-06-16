@@ -20,29 +20,39 @@ router = APIRouter(tags=["infrastructure"])
 # API version lookup helper
 # ---------------------------------------------------------------------------
 
+
 def _get_api_version(client, namespace: str, rtype: str) -> str:
     FALLBACKS: dict[str, str] = {
-        "microsoft.compute":              "2024-03-01",
-        "microsoft.storage":              "2023-05-01",
-        "microsoft.network":              "2024-01-01",
-        "microsoft.sql":                  "2024-01-01",
-        "microsoft.documentdb":           "2023-11-15",
-        "microsoft.app":                  "2024-03-01",
-        "microsoft.containerregistry":    "2023-07-01",
-        "microsoft.operationalinsights":  "2022-10-01",
-        "microsoft.insights":             "2022-06-15",
-        "microsoft.keyvault":             "2023-07-01",
-        "microsoft.web":                  "2023-12-01",
-        "microsoft.cache":                "2023-08-01",
-        "microsoft.dbforpostgresql":      "2024-03-01-preview",
-        "microsoft.dbformysql":           "2023-12-30",
+        "microsoft.compute": "2024-03-01",
+        "microsoft.storage": "2023-05-01",
+        "microsoft.network": "2024-01-01",
+        "microsoft.sql": "2024-01-01",
+        "microsoft.documentdb": "2023-11-15",
+        "microsoft.app": "2024-03-01",
+        "microsoft.containerregistry": "2023-07-01",
+        "microsoft.operationalinsights": "2022-10-01",
+        "microsoft.insights": "2022-06-15",
+        "microsoft.keyvault": "2023-07-01",
+        "microsoft.web": "2023-12-01",
+        "microsoft.cache": "2023-08-01",
+        "microsoft.dbforpostgresql": "2024-03-01-preview",
+        "microsoft.dbformysql": "2023-12-30",
     }
     try:
         provider = client.providers.get(namespace)
         for rt in provider.resource_types or []:
             if rt.resource_type and rt.resource_type.lower() == rtype.lower():
-                stable = [v for v in (rt.api_versions or []) if "preview" not in v.lower()]
-                return stable[0] if stable else (rt.api_versions or [FALLBACKS.get(namespace.lower(), "2024-01-01")])[0]
+                stable = [
+                    v for v in (rt.api_versions or []) if "preview" not in v.lower()
+                ]
+                return (
+                    stable[0]
+                    if stable
+                    else (
+                        rt.api_versions
+                        or [FALLBACKS.get(namespace.lower(), "2024-01-01")]
+                    )[0]
+                )
     except Exception:
         pass
     return FALLBACKS.get(namespace.lower(), "2024-01-01")
@@ -52,6 +62,7 @@ def _get_api_version(client, namespace: str, rtype: str) -> str:
 # Delete single resource
 # ---------------------------------------------------------------------------
 
+
 @router.delete("/api/resource")
 async def api_delete_resource(
     resource_id: str,
@@ -59,13 +70,17 @@ async def api_delete_resource(
 ) -> StreamingResponse:
     """Delete a live Azure resource by its full ARM resource ID."""
     if not resource_id.lower().startswith("/subscriptions/"):
-        raise HTTPException(status_code=400, detail="resource_id must be a full ARM resource ID")
+        raise HTTPException(
+            status_code=400, detail="resource_id must be a full ARM resource ID"
+        )
 
     _parts = [p.lower() for p in resource_id.strip("/").split("/")]
     try:
         _rg = _parts[_parts.index("resourcegroups") + 1]
         if _rg in PROTECTED_RGS:
-            raise HTTPException(status_code=403, detail=f"Resource group '{_rg}' is protected.")
+            raise HTTPException(
+                status_code=403, detail=f"Resource group '{_rg}' is protected."
+            )
     except (ValueError, IndexError):
         pass
 
@@ -79,9 +94,9 @@ async def api_delete_resource(
 
             parts = resource_id.strip("/").split("/")
             try:
-                prov_idx  = [p.lower() for p in parts].index("providers")
+                prov_idx = [p.lower() for p in parts].index("providers")
                 namespace = parts[prov_idx + 1]
-                rtype     = parts[prov_idx + 2]
+                rtype = parts[prov_idx + 2]
             except (ValueError, IndexError):
                 yield "❌ ERROR: Cannot parse provider namespace from resource ID\n"
                 return
@@ -96,7 +111,8 @@ async def api_delete_resource(
             yield "[INFO] Sending delete request to Azure Resource Manager...\n"
 
             poller = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: client.resources.begin_delete_by_id(resource_id, api_version)
+                None,
+                lambda: client.resources.begin_delete_by_id(resource_id, api_version),
             )
             yield "[INFO] Delete operation accepted. Waiting for completion...\n"
 
@@ -121,6 +137,7 @@ async def api_delete_resource(
 # Delete single resource group
 # ---------------------------------------------------------------------------
 
+
 @router.delete("/api/resource-group")
 async def api_delete_resource_group(
     resource_group_name: str,
@@ -132,7 +149,9 @@ async def api_delete_resource_group(
 
     rg = resource_group_name.strip()
     if rg.lower() in PROTECTED_RGS:
-        raise HTTPException(status_code=403, detail=f"Resource group '{rg}' is protected.")
+        raise HTTPException(
+            status_code=403, detail=f"Resource group '{rg}' is protected."
+        )
 
     log.warning("⚠️  DELETE resource group initiated: %s", rg)
 
@@ -172,6 +191,7 @@ async def api_delete_resource_group(
 # Bulk delete resource groups
 # ---------------------------------------------------------------------------
 
+
 @router.delete("/api/resource-groups/all")
 async def api_delete_all_resource_groups(
     resource_groups: list[str] = Body(...),
@@ -183,17 +203,20 @@ async def api_delete_all_resource_groups(
 
     blocked = [r for r in resource_groups if r.strip().lower() in PROTECTED_RGS]
     if blocked:
-        raise HTTPException(status_code=403, detail=f"Protected resource groups cannot be deleted: {blocked}")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Protected resource groups cannot be deleted: {blocked}",
+        )
 
     log.warning("⚠️  BULK DELETE resource groups initiated: %s", resource_groups)
 
     from live_resources import _get_resource_mgmt_client  # noqa: PLC0415
 
     async def log_streamer():
-        client    = _get_resource_mgmt_client()
-        total     = len(resource_groups)
+        client = _get_resource_mgmt_client()
+        total = len(resource_groups)
         succeeded = 0
-        failed    = 0
+        failed = 0
 
         for i, rg in enumerate(resource_groups, 1):
             rg = rg.strip()

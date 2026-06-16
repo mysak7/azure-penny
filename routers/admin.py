@@ -9,7 +9,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from config import COST_TAG_KEY, STORAGE_ACCOUNT_NAME, STORAGE_CONTAINER_NAME, log
-from storage import _cache, _extract_all_tag_keys, _lock, get_blob_service_client, get_cached_dataframe
+from storage import (
+    _cache,
+    _extract_all_tag_keys,
+    _lock,
+    get_blob_service_client,
+    get_cached_dataframe,
+)
 
 router = APIRouter(tags=["api"])
 
@@ -19,28 +25,35 @@ _APP_VERSION = "1.5.0"
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
-    return JSONResponse({
-        "status": "ok",
-        "service": "azure-penny",
-        "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
-        "container": STORAGE_CONTAINER_NAME,
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "azure-penny",
+            "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
+            "container": STORAGE_CONTAINER_NAME,
+        }
+    )
 
 
 @router.get("/api/me", tags=["api"])
 async def api_me(request: Request) -> JSONResponse:
     from auth import _get_user_roles  # noqa: PLC0415
+
     roles = _get_user_roles(request)
-    return JSONResponse({
-        "name":     request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", ""),
-        "roles":    roles,
-        "is_admin": "penny-admin" in roles,
-    })
+    return JSONResponse(
+        {
+            "name": request.headers.get("X-MS-CLIENT-PRINCIPAL-NAME", ""),
+            "roles": roles,
+            "is_admin": "penny-admin" in roles,
+        }
+    )
 
 
 # ── Status / reload ───────────────────────────────────────────────────────────
+
 
 @router.get("/api/status", tags=["api"])
 async def api_status() -> JSONResponse:
@@ -53,15 +66,17 @@ async def api_status() -> JSONResponse:
         if dates:
             dates.sort()
             periods = [dates[0], dates[-1]]
-    return JSONResponse({
-        "version":         _APP_VERSION,
-        "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
-        "container":       STORAGE_CONTAINER_NAME,
-        "row_count":       len(cached_df) if cached_df is not None else None,
-        "date_range":      periods,
-        "cache_age_s":     cache_age_s,
-        "no_data":         cached_df is not None and cached_df.empty,
-    })
+    return JSONResponse(
+        {
+            "version": _APP_VERSION,
+            "storage_account": STORAGE_ACCOUNT_NAME or "not configured",
+            "container": STORAGE_CONTAINER_NAME,
+            "row_count": len(cached_df) if cached_df is not None else None,
+            "date_range": periods,
+            "cache_age_s": cache_age_s,
+            "no_data": cached_df is not None and cached_df.empty,
+        }
+    )
 
 
 @router.post("/api/reload", tags=["api"])
@@ -78,6 +93,7 @@ async def api_reload() -> JSONResponse:
 
 
 # ── Debug / diagnostics ───────────────────────────────────────────────────────
+
 
 @router.get("/api/debug", tags=["api"])
 async def api_debug() -> JSONResponse:
@@ -102,7 +118,9 @@ async def api_debug() -> JSONResponse:
         if "C_NAME" in df.columns:
             top_rgs = df["C_NAME"].value_counts().head(10).index.tolist()
 
-        total_cost = round(float(df["C_COST"].sum()), 4) if "C_COST" in df.columns else None
+        total_cost = (
+            round(float(df["C_COST"].sum()), 4) if "C_COST" in df.columns else None
+        )
 
         app_dist: list = []
         if "C_APP" in df.columns and "C_COST" in df.columns:
@@ -113,8 +131,7 @@ async def api_debug() -> JSONResponse:
                 .head(20)
             )
             app_dist = [
-                {"app": str(k), "cost": round(float(v), 4)}
-                for k, v in by_app.items()
+                {"app": str(k), "cost": round(float(v), 4)} for k, v in by_app.items()
             ]
 
         tag_key_freq: dict[str, int] = {}
@@ -127,23 +144,29 @@ async def api_debug() -> JSONResponse:
 
         untagged_tags_sample: list = []
         if "C_TAGS" in df.columns and "C_APP" in df.columns:
-            untagged_rows = df[df["C_APP"] == "Untagged"]["C_TAGS"].dropna().head(5).tolist()
+            untagged_rows = (
+                df[df["C_APP"] == "Untagged"]["C_TAGS"].dropna().head(5).tolist()
+            )
             untagged_tags_sample = [str(v) for v in untagged_rows]
 
-        return JSONResponse({
-            "blob_count":           len(all_blobs),
-            "blob_paths_sample":    all_blobs[:20],
-            "row_count":            len(df),
-            "columns":              list(df.columns),
-            "date_range":           date_range,
-            "total_cost":           total_cost,
-            "top_services":         top_services,
-            "top_resource_groups":  top_rgs,
-            "cost_tag_key_configured":  COST_TAG_KEY,
-            "c_app_distribution":       app_dist,
-            "tag_keys_in_data":         [{"key": k, "count": c} for k, c in tag_keys_ranked[:30]],
-            "untagged_raw_tags_sample": untagged_tags_sample,
-        })
+        return JSONResponse(
+            {
+                "blob_count": len(all_blobs),
+                "blob_paths_sample": all_blobs[:20],
+                "row_count": len(df),
+                "columns": list(df.columns),
+                "date_range": date_range,
+                "total_cost": total_cost,
+                "top_services": top_services,
+                "top_resource_groups": top_rgs,
+                "cost_tag_key_configured": COST_TAG_KEY,
+                "c_app_distribution": app_dist,
+                "tag_keys_in_data": [
+                    {"key": k, "count": c} for k, c in tag_keys_ranked[:30]
+                ],
+                "untagged_raw_tags_sample": untagged_tags_sample,
+            }
+        )
     except Exception as exc:
         log.exception("Debug endpoint failed")
         return JSONResponse({"error": str(exc)}, status_code=500)
@@ -162,8 +185,8 @@ async def api_diagnostics() -> JSONResponse:
     if df is not None and not df.empty:
         result["export_row_count"] = len(df)
         if "C_DATE" in df.columns:
-            result["export_date_min"]    = str(df["C_DATE"].min())
-            result["export_date_max"]    = str(df["C_DATE"].max())
+            result["export_date_min"] = str(df["C_DATE"].min())
+            result["export_date_max"] = str(df["C_DATE"].max())
             result["export_unique_days"] = int(df["C_DATE"].nunique())
     else:
         result["export_row_count"] = 0
@@ -199,13 +222,24 @@ async def api_spot_price_debug(vm_size: str, region: str) -> JSONResponse:
             None, _fetch_spot_price, vm_size, region
         )
         if price is None:
-            return JSONResponse({"vm_size": vm_size, "region": region, "price": None, "status": "not_found"})
-        return JSONResponse({
-            "vm_size":     vm_size,
-            "region":      region,
-            "hourly_usd":  round(price, 4),
-            "monthly_usd": round(price * 24 * 30, 2),
-            "status":      "found",
-        })
+            return JSONResponse(
+                {
+                    "vm_size": vm_size,
+                    "region": region,
+                    "price": None,
+                    "status": "not_found",
+                }
+            )
+        return JSONResponse(
+            {
+                "vm_size": vm_size,
+                "region": region,
+                "hourly_usd": round(price, 4),
+                "monthly_usd": round(price * 24 * 30, 2),
+                "status": "found",
+            }
+        )
     except Exception as exc:
-        return JSONResponse({"error": str(exc), "vm_size": vm_size, "region": region}, status_code=500)
+        return JSONResponse(
+            {"error": str(exc), "vm_size": vm_size, "region": region}, status_code=500
+        )

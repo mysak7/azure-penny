@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from config import APP_URL, TELEGRAM_BOT_TOKEN, log
+from config import APP_URL, TELEGRAM_BOT_TOKEN
 from live_resources import _get_live_data
 from shield import shield_check_loop
 import telegram_bot
@@ -24,8 +24,8 @@ from routers import shield as shield_router
 APP_VERSION = "1.5.0"
 
 # Propagate version to page router (used in template context).
-pages._APP_VERSION  = APP_VERSION
-admin._APP_VERSION  = APP_VERSION
+pages._APP_VERSION = APP_VERSION
+admin._APP_VERSION = APP_VERSION
 
 # ---------------------------------------------------------------------------
 # Lifespan

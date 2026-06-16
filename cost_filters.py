@@ -4,20 +4,13 @@ cost_filters.py — Filtering, aggregation, and snapshot helpers for azure-penny
 All pure data-manipulation functions that work on the cached Pandas DataFrame.
 """
 
-import calendar
 from datetime import date, timedelta
 
 import pandas as pd
 
 from cost_categories import (
     ALL_KNOWN_SERVICES,
-    CAT_COMPUTE,
-    CAT_DATABASE,
-    CAT_MONITORING,
-    CAT_NETWORK,
-    CAT_STORAGE,
     _CAT_KEY_MAP,
-    _TRANSFER_KEYWORDS,
 )
 from storage import get_cached_dataframe
 
@@ -187,7 +180,6 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
     the two always return the same information.
     """
     # Import here to avoid circular dependency at module load time.
-    from live_resources import _get_live_data  # noqa: PLC0415
 
     full_df = await get_cached_dataframe()
     df = _filter_app(_filter_rg(full_df, rg), app)
@@ -196,7 +188,11 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
 
     today = date.today()
 
-    total = round(float(filtered["C_COST"].sum()), 2) if "C_COST" in filtered.columns else 0.0
+    total = (
+        round(float(filtered["C_COST"].sum()), 2)
+        if "C_COST" in filtered.columns
+        else 0.0
+    )
 
     data_as_of = None
     date_range_start = None
@@ -218,26 +214,47 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
             )
         else:
             cat_df = _filter_services(filtered, cat_services)
-        cat_total = round(float(cat_df["C_COST"].sum()), 2) if ("C_COST" in cat_df.columns and not cat_df.empty) else 0.0
-        svc_count = int(cat_df["C_SERVICE"].nunique()) if ("C_SERVICE" in cat_df.columns and not cat_df.empty) else 0
+        cat_total = (
+            round(float(cat_df["C_COST"].sum()), 2)
+            if ("C_COST" in cat_df.columns and not cat_df.empty)
+            else 0.0
+        )
+        svc_count = (
+            int(cat_df["C_SERVICE"].nunique())
+            if ("C_SERVICE" in cat_df.columns and not cat_df.empty)
+            else 0
+        )
         if cat_total > 0:
-            categories.append({
-                "category": cat_name.capitalize(),
-                "total_usd": cat_total,
-                "service_count": svc_count,
-            })
+            categories.append(
+                {
+                    "category": cat_name.capitalize(),
+                    "total_usd": cat_total,
+                    "service_count": svc_count,
+                }
+            )
     categories.sort(key=lambda x: x["total_usd"], reverse=True)
 
     # ── Top services / RGs / apps ─────────────────────────────────────────────
-    top_services = [{"service": k, "cost_usd": v} for k, v in list(_cost_by(filtered, "C_SERVICE").items())[:10]]
-    top_rgs      = [{"name": k, "cost_usd": v} for k, v in list(_cost_by(filtered, "C_NAME").items())[:10]]
+    top_services = [
+        {"service": k, "cost_usd": v}
+        for k, v in list(_cost_by(filtered, "C_SERVICE").items())[:10]
+    ]
+    top_rgs = [
+        {"name": k, "cost_usd": v}
+        for k, v in list(_cost_by(filtered, "C_NAME").items())[:10]
+    ]
 
     top_apps: list[dict] = []
     if "C_APP" in filtered.columns and "C_COST" in filtered.columns:
-        by_app = filtered.groupby("C_APP", dropna=False)["C_COST"].sum().sort_values(ascending=False)
+        by_app = (
+            filtered.groupby("C_APP", dropna=False)["C_COST"]
+            .sum()
+            .sort_values(ascending=False)
+        )
         top_apps = [
             {"app": str(k), "cost_usd": round(float(v), 2)}
-            for k, v in by_app.items() if v > 0
+            for k, v in by_app.items()
+            if v > 0
         ][:10]
 
     # ── Week-over-week anomalies ───────────────────────────────────────────────
@@ -247,8 +264,16 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
         prev_start = (today - timedelta(days=14)).strftime("%Y-%m-%d")
         curr_df = df[df["C_DATE"] >= curr_start]
         prev_df = df[(df["C_DATE"] >= prev_start) & (df["C_DATE"] < curr_start)]
-        c = curr_df.groupby("C_SERVICE")["C_COST"].sum() if not curr_df.empty else pd.Series(dtype=float)
-        p = prev_df.groupby("C_SERVICE")["C_COST"].sum() if not prev_df.empty else pd.Series(dtype=float)
+        c = (
+            curr_df.groupby("C_SERVICE")["C_COST"].sum()
+            if not curr_df.empty
+            else pd.Series(dtype=float)
+        )
+        p = (
+            prev_df.groupby("C_SERVICE")["C_COST"].sum()
+            if not prev_df.empty
+            else pd.Series(dtype=float)
+        )
         for svc in set(c.index) | set(p.index):
             cv, pv = float(c.get(svc, 0)), float(p.get(svc, 0))
             if cv == 0 and pv == 0:
@@ -257,8 +282,8 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
             entry = {
                 "service": str(svc),
                 "current_week_usd": round(cv, 2),
-                "prior_week_usd":   round(pv, 2),
-                "delta_pct":        dp,
+                "prior_week_usd": round(pv, 2),
+                "delta_pct": dp,
             }
             if dp is not None and dp > 50:
                 spikes.append(entry)
@@ -271,8 +296,10 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
 
     # ── Markdown ──────────────────────────────────────────────────────────────
     filter_parts = []
-    if rg:  filter_parts.append(f"RG: {rg}")
-    if app: filter_parts.append(f"App: {app}")
+    if rg:
+        filter_parts.append(f"RG: {rg}")
+    if app:
+        filter_parts.append(f"App: {app}")
     filter_label = " · ".join(filter_parts) if filter_parts else "all resources"
     date_str = (
         f"{date_range_start} → {data_as_of}"
@@ -292,7 +319,9 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
         md.append("## By Category")
         for c_item in categories:
             n = c_item["service_count"]
-            md.append(f"- {c_item['category']}: ${c_item['total_usd']:.2f} ({n} service{'s' if n != 1 else ''})")
+            md.append(
+                f"- {c_item['category']}: ${c_item['total_usd']:.2f} ({n} service{'s' if n != 1 else ''})"
+            )
         md.append("")
     if top_services:
         md.append("## Top Services")
@@ -312,7 +341,9 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
     if spikes or new_svcs or gone_svcs:
         md.append("## Anomalies (week-over-week)")
         for s in spikes[:3]:
-            md.append(f"⚠️  {s['service']}: +{s['delta_pct']}% (${s['prior_week_usd']:.2f} → ${s['current_week_usd']:.2f})")
+            md.append(
+                f"⚠️  {s['service']}: +{s['delta_pct']}% (${s['prior_week_usd']:.2f} → ${s['current_week_usd']:.2f})"
+            )
         for s in new_svcs[:3]:
             md.append(f"🆕 New: {s['service']} (${s['current_week_usd']:.2f})")
         for s in gone_svcs[:3]:
@@ -320,14 +351,18 @@ async def _build_snapshot(period: str, rg: str, app: str) -> dict:
         md.append("")
 
     return {
-        "period":              period,
-        "filters":             {"rg": rg, "app": app},
-        "generated_at":        str(today),
-        "summary":             {"total_usd": total, "date_range": [date_range_start, data_as_of]},
-        "by_category":         categories,
-        "top_services":        top_services,
+        "period": period,
+        "filters": {"rg": rg, "app": app},
+        "generated_at": str(today),
+        "summary": {"total_usd": total, "date_range": [date_range_start, data_as_of]},
+        "by_category": categories,
+        "top_services": top_services,
         "top_resource_groups": top_rgs,
-        "top_apps":            top_apps,
-        "anomalies":           {"spikes": spikes, "new_services": new_svcs, "vanished_services": gone_svcs},
-        "markdown":            "\n".join(md),
+        "top_apps": top_apps,
+        "anomalies": {
+            "spikes": spikes,
+            "new_services": new_svcs,
+            "vanished_services": gone_svcs,
+        },
+        "markdown": "\n".join(md),
     }

@@ -23,7 +23,9 @@ TTL_SECONDS: int = int(os.environ.get("CACHE_TTL_SECONDS", "3600"))
 COST_TAG_KEY: str = os.environ.get("COST_TAG_KEY", "project")
 LIVE_CACHE_TTL: int = int(os.environ.get("LIVE_CACHE_TTL_SECONDS", "900"))
 PROTECTED_RGS: set[str] = {
-    rg.strip().lower() for rg in os.environ.get("PROTECTED_RGS", "").split(",") if rg.strip()
+    rg.strip().lower()
+    for rg in os.environ.get("PROTECTED_RGS", "").split(",")
+    if rg.strip()
 }
 
 # ── Vertex proxy (LLM) ────────────────────────────────────────────────────────

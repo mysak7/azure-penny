@@ -28,6 +28,7 @@ _CONFIG_PATH = Path(__file__).parent / "shield_config.json"
 
 # ── Config persistence ────────────────────────────────────────────────────────
 
+
 def load_shield_config() -> dict:
     """Load config from JSON file, env vars as fallback for initial values."""
     cfg: dict = {
@@ -54,6 +55,7 @@ def save_shield_config(cfg: dict) -> None:
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
+
 async def send_telegram_message(chat_id: str, text: str) -> bool:
     """POST a message via Telegram Bot API. Returns True on success."""
     if not TELEGRAM_BOT_TOKEN or not chat_id:
@@ -68,7 +70,9 @@ async def send_telegram_message(chat_id: str, text: str) -> bool:
             )
             if resp.status_code == 200:
                 return True
-            log.error("Shield: Telegram API error %s: %s", resp.status_code, resp.text[:200])
+            log.error(
+                "Shield: Telegram API error %s: %s", resp.status_code, resp.text[:200]
+            )
     except Exception as exc:
         log.error("Shield: failed to send Telegram message: %s", exc)
     return False
@@ -81,7 +85,11 @@ def _build_alert_text(
     is_repeat: bool,
 ) -> str:
     pct_over = round((live_monthly_total - threshold) / threshold * 100, 1)
-    header = "🔴 <b>Azure Cost Alert — STILL ACTIVE</b>" if is_repeat else "🚨 <b>Azure Cost Alert</b>"
+    header = (
+        "🔴 <b>Azure Cost Alert — STILL ACTIVE</b>"
+        if is_repeat
+        else "🚨 <b>Azure Cost Alert</b>"
+    )
     lines = [
         header,
         "",
@@ -102,6 +110,7 @@ def _build_alert_text(
 
 # ── Shield check ──────────────────────────────────────────────────────────────
 
+
 async def run_shield_check(get_live_data_fn) -> dict:
     """
     One shield check cycle.
@@ -115,7 +124,12 @@ async def run_shield_check(get_live_data_fn) -> dict:
     chat_id = str(cfg.get("telegram_chat_id") or TELEGRAM_CHAT_ID or "")
 
     if threshold <= 0:
-        return {"status": "disabled", "threshold": 0, "live_monthly_total": 0, "top_resources": []}
+        return {
+            "status": "disabled",
+            "threshold": 0,
+            "live_monthly_total": 0,
+            "top_resources": [],
+        }
 
     resources = await get_live_data_fn()
     live_monthly_total = sum(r.get("monthly_cost") or 0.0 for r in resources)
@@ -153,7 +167,9 @@ async def run_shield_check(get_live_data_fn) -> dict:
         save_shield_config(cfg)
         log.warning(
             "🛡 Shield alert sent (repeat=%s): $%.2f > $%.2f",
-            is_repeat, live_monthly_total, threshold,
+            is_repeat,
+            live_monthly_total,
+            threshold,
         )
 
     return {**base, "status": "breach_alerted" if sent else "breach_alert_failed"}
@@ -161,11 +177,19 @@ async def run_shield_check(get_live_data_fn) -> dict:
 
 async def shield_check_loop(get_live_data_fn) -> None:
     """Infinite asyncio background loop. Runs a check every SHIELD_CHECK_INTERVAL seconds."""
-    log.info("🛡 Shield loop started (interval=%ds, cooldown=%ds)", SHIELD_CHECK_INTERVAL, SHIELD_ALERT_COOLDOWN)
+    log.info(
+        "🛡 Shield loop started (interval=%ds, cooldown=%ds)",
+        SHIELD_CHECK_INTERVAL,
+        SHIELD_ALERT_COOLDOWN,
+    )
     while True:
         await asyncio.sleep(SHIELD_CHECK_INTERVAL)
         try:
             result = await run_shield_check(get_live_data_fn)
-            log.debug("🛡 Shield check → %s (monthly=$%.2f)", result["status"], result["live_monthly_total"])
+            log.debug(
+                "🛡 Shield check → %s (monthly=$%.2f)",
+                result["status"],
+                result["live_monthly_total"],
+            )
         except Exception as exc:
             log.exception("Shield check loop error: %s", exc)

@@ -11,75 +11,115 @@ so the mapping works regardless of which export format Azure produces.
 # ---------------------------------------------------------------------------
 
 CAT_COMPUTE: set[str] = {
-    "Virtual Machines", "Azure Virtual Machines",
-    "App Service", "Azure App Service",
-    "Container Apps", "Azure Container Apps",
-    "Azure Functions", "Functions",
-    "Container Instances", "Azure Container Instances",
-    "Azure Kubernetes Service", "Kubernetes Service",
-    "Container Registry", "Azure Container Registry",
-    "Batch", "Azure Batch",
+    "Virtual Machines",
+    "Azure Virtual Machines",
+    "App Service",
+    "Azure App Service",
+    "Container Apps",
+    "Azure Container Apps",
+    "Azure Functions",
+    "Functions",
+    "Container Instances",
+    "Azure Container Instances",
+    "Azure Kubernetes Service",
+    "Kubernetes Service",
+    "Container Registry",
+    "Azure Container Registry",
+    "Batch",
+    "Azure Batch",
     "Cloud Services",
-    "Azure Spring Apps", "Spring Apps",
+    "Azure Spring Apps",
+    "Spring Apps",
     "Azure Red Hat OpenShift",
 }
 
 CAT_STORAGE: set[str] = {
-    "Storage", "Azure Blob Storage", "Azure Files",
-    "Azure Data Lake Storage", "Azure Data Lake Storage Gen2",
-    "Backup", "Azure Backup",
+    "Storage",
+    "Azure Blob Storage",
+    "Azure Files",
+    "Azure Data Lake Storage",
+    "Azure Data Lake Storage Gen2",
+    "Backup",
+    "Azure Backup",
     "StorSimple",
     "Azure NetApp Files",
-    "Managed Disks", "Azure Managed Disks",
+    "Managed Disks",
+    "Azure Managed Disks",
     "Azure Queue Storage",
     "Azure Table Storage",
 }
 
 CAT_NETWORK: set[str] = {
-    "Virtual Network", "Azure Virtual Network",
-    "Load Balancer", "Azure Load Balancer",
-    "Application Gateway", "Azure Application Gateway",
-    "Azure DNS", "DNS",
-    "Azure Front Door", "Front Door",
+    "Virtual Network",
+    "Azure Virtual Network",
+    "Load Balancer",
+    "Azure Load Balancer",
+    "Application Gateway",
+    "Azure Application Gateway",
+    "Azure DNS",
+    "DNS",
+    "Azure Front Door",
+    "Front Door",
     "Bandwidth",
-    "Content Delivery Network", "Azure CDN",
-    "VPN Gateway", "Azure VPN Gateway",
+    "Content Delivery Network",
+    "Azure CDN",
+    "VPN Gateway",
+    "Azure VPN Gateway",
     "Azure Bastion",
     "Azure Firewall",
-    "Network Watcher", "Azure Network Watcher",
-    "Traffic Manager", "Azure Traffic Manager",
-    "ExpressRoute", "Azure ExpressRoute",
-    "NAT Gateway", "Azure NAT Gateway",
-    "Private Link", "Azure Private Link",
+    "Network Watcher",
+    "Azure Network Watcher",
+    "Traffic Manager",
+    "Azure Traffic Manager",
+    "ExpressRoute",
+    "Azure ExpressRoute",
+    "NAT Gateway",
+    "Azure NAT Gateway",
+    "Private Link",
+    "Azure Private Link",
     "Azure DDoS Protection",
     "Azure Virtual WAN",
 }
 
 CAT_DATABASE: set[str] = {
-    "SQL Database", "Azure SQL Database",
-    "Azure Cosmos DB", "Cosmos DB",
-    "Azure Cache for Redis", "Cache for Redis",
-    "Azure Database for MySQL", "Database for MySQL",
-    "Azure Database for PostgreSQL", "Database for PostgreSQL",
-    "Azure SQL Managed Instance", "SQL Managed Instance",
-    "Azure Synapse Analytics", "Synapse Analytics",
+    "SQL Database",
+    "Azure SQL Database",
+    "Azure Cosmos DB",
+    "Cosmos DB",
+    "Azure Cache for Redis",
+    "Cache for Redis",
+    "Azure Database for MySQL",
+    "Database for MySQL",
+    "Azure Database for PostgreSQL",
+    "Database for PostgreSQL",
+    "Azure SQL Managed Instance",
+    "SQL Managed Instance",
+    "Azure Synapse Analytics",
+    "Synapse Analytics",
     "Azure Database for MariaDB",
     "Azure SQL",
 }
 
 CAT_MONITORING: set[str] = {
-    "Azure Grafana Service", "Grafana",
-    "Log Analytics", "Azure Log Analytics",
+    "Azure Grafana Service",
+    "Grafana",
+    "Log Analytics",
+    "Azure Log Analytics",
     "Azure Monitor",
-    "Application Insights", "Azure Application Insights",
+    "Application Insights",
+    "Azure Application Insights",
     "Azure Advisor",
 }
 
 CAT_SECURITY: set[str] = {
-    "Microsoft Defender for Cloud", "Azure Security Center",
-    "Key Vault", "Azure Key Vault",
-    "Microsoft Sentinel", "Azure Sentinel",
-    "Web Application Firewall", "Azure Web Application Firewall",
+    "Microsoft Defender for Cloud",
+    "Azure Security Center",
+    "Key Vault",
+    "Azure Key Vault",
+    "Microsoft Sentinel",
+    "Azure Sentinel",
+    "Web Application Firewall",
+    "Azure Web Application Firewall",
     "Microsoft Defender for Endpoint",
     "Microsoft Defender for Identity",
     "Microsoft Defender for Servers",
@@ -93,25 +133,44 @@ CAT_SECURITY: set[str] = {
 
 # Union of all explicitly mapped services — used to identify "Other" spend.
 ALL_KNOWN_SERVICES: frozenset[str] = frozenset(
-    CAT_COMPUTE | CAT_STORAGE | CAT_NETWORK | CAT_DATABASE | CAT_MONITORING | CAT_SECURITY
+    CAT_COMPUTE
+    | CAT_STORAGE
+    | CAT_NETWORK
+    | CAT_DATABASE
+    | CAT_MONITORING
+    | CAT_SECURITY
 )
 
 # Keywords that identify data-transfer rows within storage billing.
-_TRANSFER_KEYWORDS: frozenset[str] = frozenset([
-    "bandwidth", "transfer", "egress", "geo-redundant replication",
-    "data retrieval", "replication",
-])
+_TRANSFER_KEYWORDS: frozenset[str] = frozenset(
+    [
+        "bandwidth",
+        "transfer",
+        "egress",
+        "geo-redundant replication",
+        "data retrieval",
+        "replication",
+    ]
+)
 
 # Ordered display names and their corresponding category sets.
 # None sentinel → "Other" (services not in any known set).
-_ORDERED_CATS: list[str] = ["Compute", "Storage", "Network", "Database", "Monitoring", "Security", "Other"]
+_ORDERED_CATS: list[str] = [
+    "Compute",
+    "Storage",
+    "Network",
+    "Database",
+    "Monitoring",
+    "Security",
+    "Other",
+]
 
 _CAT_KEY_MAP: dict[str, set[str] | None] = {
-    "compute":    CAT_COMPUTE,
-    "storage":    CAT_STORAGE,
-    "network":    CAT_NETWORK,
-    "database":   CAT_DATABASE,
+    "compute": CAT_COMPUTE,
+    "storage": CAT_STORAGE,
+    "network": CAT_NETWORK,
+    "database": CAT_DATABASE,
     "monitoring": CAT_MONITORING,
-    "security":   CAT_SECURITY,
-    "other":      None,
+    "security": CAT_SECURITY,
+    "other": None,
 }

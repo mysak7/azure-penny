@@ -6,7 +6,6 @@ and sends the formatted answer back to the same chat.
 """
 
 import html
-import logging
 import re
 from typing import Awaitable, Callable
 
@@ -136,7 +135,9 @@ async def register_webhook(app_url: str) -> None:
     Idempotent — safe to call on every startup.
     Skips silently when TELEGRAM_BOT_TOKEN or app_url is not set.
     """
-    from config import TELEGRAM_WEBHOOK_SECRET  # imported here to keep module-level clean
+    from config import (
+        TELEGRAM_WEBHOOK_SECRET,
+    )  # imported here to keep module-level clean
 
     if not TELEGRAM_BOT_TOKEN or not app_url:
         log.warning(
@@ -189,7 +190,9 @@ async def handle_update(update: dict, run_ai_chat: _RunAiChat) -> None:
 
     # ── Whitelist ─────────────────────────────────────────────────────────────
     if TELEGRAM_CHAT_ID and str(chat_id) != str(TELEGRAM_CHAT_ID):
-        log.debug("Telegram: ignoring message from chat_id=%s (not whitelisted)", chat_id)
+        log.debug(
+            "Telegram: ignoring message from chat_id=%s (not whitelisted)", chat_id
+        )
         return
 
     # ── /start → greeting ─────────────────────────────────────────────────────
