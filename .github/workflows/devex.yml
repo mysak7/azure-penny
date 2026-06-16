@@ -1,0 +1,24 @@
+name: DevEx Platform CI
+
+# Integrates azure-penny with the central DevEx Platform:
+#   * runs the enterprise standard CI (Ruff lint + Trivy security gate + pytest)
+#   * ships per-test telemetry to the DevEx portal via GitHub OIDC (flaky detection)
+#   * run-level DORA metrics are captured separately by the DevEx GitHub App
+#     (workflow_run.completed webhook) — no token needed here.
+#
+# Pinned to @v1 so platform upgrades (@v2) never break this pipeline.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  devex-ci:
+    uses: mysak7/devex-platform/.github/workflows/python-standard-ci.yml@v1
+    permissions:
+      id-token: write   # mint the OIDC token the portal verifies
+      contents: read
+    with:
+      python-version: '3.11'
