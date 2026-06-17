@@ -6,7 +6,7 @@ name: DevEx Platform CI
 #   * run-level DORA metrics are captured separately by the DevEx GitHub App
 #     (workflow_run.completed webhook) — no token needed here.
 #
-# Pinned to @v1 so platform upgrades (@v2) never break this pipeline.
+# Pinned to @v2 — adds per-stage (build/scan/test) timing telemetry.
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
 
 jobs:
   devex-ci:
-    uses: mysak7/devex-platform/.github/workflows/python-standard-ci.yml@v1
+    uses: mysak7/devex-platform/.github/workflows/python-standard-ci.yml@v2
     permissions:
       id-token: write   # mint the OIDC token the portal verifies
       contents: read
