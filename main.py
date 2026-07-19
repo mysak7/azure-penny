@@ -14,7 +14,7 @@ from live_resources import _get_live_data
 from shield import shield_check_loop
 import telegram_bot
 
-from routers import admin, ai, costs, infra, live, pages
+from routers import admin, ai, costs, infra, live, opportunities, pages
 from routers import shield as shield_router
 
 # ---------------------------------------------------------------------------
@@ -60,6 +60,7 @@ app.include_router(pages.router)
 app.include_router(admin.router)
 app.include_router(shield_router.router)
 app.include_router(costs.router)
+app.include_router(opportunities.router)
 app.include_router(live.router)
 app.include_router(infra.router)
 app.include_router(ai.router)

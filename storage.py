@@ -74,6 +74,10 @@ COLUMN_MAP: dict[str, str] = {
     "SubCategory": "C_SUBCATEGORY",
     "Quantity": "C_QUANTITY",
     "UsageQuantity": "C_QUANTITY",
+    # Opportunity engine: commitment coverage + compute detection
+    "PricingModel": "C_PRICING",
+    "ChargeType": "C_TYPE",
+    "ServiceFamily": "C_FAMILY",
 }
 
 
@@ -516,6 +520,30 @@ def _load_dataframe() -> pd.DataFrame:
 
     log.info("DataFrame loaded: %d rows, %d columns", len(merged), len(merged.columns))
     return merged
+
+
+# ---------------------------------------------------------------------------
+# JSON blob persistence (opportunity lifecycle state)
+# ---------------------------------------------------------------------------
+
+
+def read_blob_json(blob_name: str) -> dict:
+    """Read a JSON blob from the export container; {} if missing/unreachable."""
+    try:
+        raw = _read_blob_to_bytes(STORAGE_CONTAINER_NAME, blob_name)
+        return _json.loads(raw)
+    except Exception as exc:
+        log.info("read_blob_json(%s): %s — starting empty", blob_name, exc)
+        return {}
+
+
+def write_blob_json(blob_name: str, data: dict) -> None:
+    """Write a JSON blob to the export container (requires Blob Data Contributor)."""
+    client = get_blob_service_client()
+    blob_client = client.get_blob_client(
+        container=STORAGE_CONTAINER_NAME, blob=blob_name
+    )
+    blob_client.upload_blob(_json.dumps(data, indent=2).encode("utf-8"), overwrite=True)
 
 
 # ---------------------------------------------------------------------------

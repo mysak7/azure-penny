@@ -5,9 +5,11 @@ resource "azurerm_user_assigned_identity" "this" {
   tags                = var.tags
 }
 
+# Contributor (not Reader): the app persists opportunity_state.json
+# (Savings Inbox lifecycle) back into the export container.
 resource "azurerm_role_assignment" "storage_blob_reader" {
   scope                = azurerm_storage_account.this.id
-  role_definition_name = "Storage Blob Data Reader"
+  role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_user_assigned_identity.this.principal_id
 }
 

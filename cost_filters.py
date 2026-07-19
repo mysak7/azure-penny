@@ -55,6 +55,13 @@ def _filter_app(df: pd.DataFrame, app: str) -> pd.DataFrame:
     return df[df["C_APP"].str.lower() == app.lower()]
 
 
+def _filter_account(df: pd.DataFrame, account: str) -> pd.DataFrame:
+    """Filter by subscription (C_ACCOUNT holds the subscription name/id)."""
+    if not account or "C_ACCOUNT" not in df.columns:
+        return df
+    return df[df["C_ACCOUNT"] == account]
+
+
 def _cost_by(df: pd.DataFrame, col: str) -> dict[str, float]:
     if col not in df.columns or "C_COST" not in df.columns:
         return {}
