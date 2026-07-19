@@ -11,6 +11,46 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [2.0.0] – 2026-07-19
+
+Technician revamped into an enterprise FinOps working tool — full port of the
+aws-penny Technician 3.0 opportunity engine, minus the public fixture demo
+(which stays AWS-only for now).
+
+### Added
+- **Savings Inbox** at the top of Technician — savings opportunities ranked by
+  monthly impact, with per-signal filters and KPI row (open count, estimated
+  savings, realized savings, resolved count)
+- **Opportunity engine** (`opportunities.py`) with five signals adapted to Azure:
+  - Reservation / Savings Plan coverage per subscription (from the export's
+    `pricingModel` column; Spot excluded — no commitment needed)
+  - Idle & waste — low-CPU VMs (24 h Azure Monitor average), unattached
+    managed disks (`diskState`), unattached public IPs
+  - Tag hygiene — unallocated spend per subscription (`Shared/Unattributed`
+    rows don't count against it)
+  - Off-hours — non-prod **resource groups** running nights and weekends
+  - Dev benchmark — dev resource groups compared on compute run-hours/day
+    (from the export's `quantity` column)
+- **Opportunity lifecycle** (new → in progress → resolved/dismissed) persisted
+  as `opportunity_state.json` in the export container; resolved items are
+  **verified**: spend before vs after resolution is compared and reported as
+  realized monthly savings
+- **Subscription filter** (`Sub:`) in the Technician header (`/api/accounts`),
+  wired into services, daily, resource-groups, and apps endpoints via a new
+  `account` query param
+- **`get_opportunities` AI chat tool** — the assistant (web + Telegram) can
+  answer "where can we save" and "what have we saved" from live opportunity data
+- Column map additions: `pricingModel` → `C_PRICING`, `chargeType` → `C_TYPE`,
+  `serviceFamily` → `C_FAMILY`
+- Test suite for the opportunity engine (synthetic DataFrames, no Azure access)
+
+### Changed
+- App identity storage role bumped **Storage Blob Data Reader → Contributor**
+  (the app now writes lifecycle state back to the export container) — requires
+  a `terraform apply`
+
+---
+
 ## [1.5.0] – 2026-05-27
 
 ### Changed

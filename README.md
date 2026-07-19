@@ -12,6 +12,11 @@ A serverless Azure cost management dashboard. Reads Cost Management Parquet/CSV 
 ## Features
 
 - **Cost dashboard** — daily spend by resource group and service category, current-month MTD total
+- **Savings Inbox** — opportunity engine on the Technician view with five signals
+  (reservation/savings-plan coverage, idle & unattached resources, tag hygiene,
+  off-hours non-prod RGs, dev benchmark); full lifecycle (new → in progress →
+  resolved/dismissed) with **verified realized savings** — spend before vs after
+  resolution compared from the billing data
 - **Forecast** — linear extrapolation of MTD spend to end-of-month estimate, scoped per resource group
 - **Live Resources tab** — real-time inventory of all subscription resources with cost correlation and spot-price savings hints
 - **Scale to zero** — Container App idles at 0 replicas; you pay nothing when nobody is looking at it
@@ -231,7 +236,9 @@ Authentication uses `DefaultAzureCredential`, which resolves automatically in:
 
 ## IAM / Permissions
 
-The managed identity holds **`Contributor` at subscription scope**. This is intentional:
+The managed identity holds **`Storage Blob Data Contributor` on the export storage account** — read for the cost exports, write for `opportunity_state.json` (Savings Inbox lifecycle).
+
+The managed identity also holds **`Contributor` at subscription scope**. This is intentional:
 
 - **Read** — lists all resources in the subscription for the Live Resources tab
 - **Write** — allows the optional delete action on the Live Resources tab (gated behind the `penny-admin` Entra app role)

@@ -21,7 +21,7 @@ from routers import shield as shield_router
 # App version
 # ---------------------------------------------------------------------------
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "2.0.0"
 
 # Propagate version to page router (used in template context).
 pages._APP_VERSION = APP_VERSION
