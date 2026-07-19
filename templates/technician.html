@@ -158,6 +158,26 @@
     .destroy-log { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: .85rem 1rem; font-family: monospace; font-size: 0.74rem; max-height: 260px; overflow-y: auto; color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
     .destroy-log .ok  { color: #4ade80; }
     .destroy-log .err { color: #f87171; }
+
+    /* Savings inbox */
+    .inbox-filters { display: flex; gap: .25rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+    .sig-badge { display: inline-block; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: .12rem .5rem; border-radius: 10px; white-space: nowrap; }
+    .sig-risp      { background: #0c4a6e; color: #38bdf8; }
+    .sig-idle      { background: #450a0a; color: #f87171; }
+    .sig-tags      { background: #422006; color: #fbbf24; }
+    .sig-offhours  { background: #2e1065; color: #a78bfa; }
+    .sig-benchmark { background: #052e16; color: #4ade80; }
+    .opp-title { font-weight: 600; color: #e2e8f0; }
+    .opp-detail { font-size: 0.74rem; color: #64748b; margin-top: .2rem; max-width: 640px; }
+    .opp-note { font-size: 0.72rem; color: #7dd3fc; margin-top: .2rem; font-style: italic; }
+    .opp-impact { font-family: monospace; font-weight: 700; font-size: 0.92rem; color: #e2e8f0; white-space: nowrap; }
+    .status-select { background: #0f172a; border: 1px solid #334155; color: #94a3b8; font-size: 0.72rem; padding: .2rem .4rem; border-radius: 6px; font-family: inherit; cursor: pointer; color-scheme: dark; }
+    .status-select:focus { outline: none; border-color: #38bdf8; }
+    .status-select.st-in_progress { border-color: #fbbf24; color: #fbbf24; }
+    .status-select.st-resolved { border-color: #4ade80; color: #4ade80; }
+    .status-select.st-dismissed { border-color: #64748b; color: #475569; }
+    .realized-badge { display: inline-block; font-size: 0.7rem; font-family: monospace; font-weight: 700; background: #052e16; border: 1px solid #166534; color: #4ade80; padding: .15rem .5rem; border-radius: 4px; white-space: nowrap; }
+    tr.opp-row-done td { opacity: .55; }
   </style>
 </head>
 <body>
@@ -167,7 +187,11 @@
     <h1>azure-penny <span>Technician</span><span style="font-size:0.7rem;color:#334155;font-weight:400;margin-left:.5rem;font-family:monospace;">v{{ version }}</span></h1>
   </div>
   <div class="rg-select-wrap">
-    <span class="rg-select-label">App:</span>
+    <span class="rg-select-label">Sub:</span>
+    <select id="account-select" class="rg-select" onchange="onAccountChange(this.value)">
+      <option value="">All</option>
+    </select>
+    <span class="rg-select-label" style="margin-left:.5rem">App:</span>
     <select id="app-select" class="rg-select" onchange="onAppChange(this.value)">
       <option value="">All</option>
     </select>
@@ -204,6 +228,32 @@
 </div>
 
 <div class="container">
+
+  <!-- ── SAVINGS INBOX ─────────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="card-header">
+      <h2>Savings Inbox <span class="az-badge">opportunity engine</span></h2>
+      <span id="opp-badge" class="card-badge">last 30 days</span>
+    </div>
+    <div id="opp-kpi" class="kpi-grid"><div class="loading">Loading&hellip;</div></div>
+    <div class="inbox-filters">
+      <button class="pill active" data-sig=""          onclick="setOppSignal('')">All</button>
+      <button class="pill" data-sig="risp"      onclick="setOppSignal('risp')">Reservation Coverage</button>
+      <button class="pill" data-sig="idle"      onclick="setOppSignal('idle')">Idle &amp; Waste</button>
+      <button class="pill" data-sig="tags"      onclick="setOppSignal('tags')">Tag Hygiene</button>
+      <button class="pill" data-sig="offhours"  onclick="setOppSignal('offhours')">Off-hours</button>
+      <button class="pill" data-sig="benchmark" onclick="setOppSignal('benchmark')">Dev Benchmark</button>
+      <span style="flex:1"></span>
+      <select id="opp-status-filter" class="ghost-select" onchange="renderOpportunities()">
+        <option value="open">Open</option>
+        <option value="">All statuses</option>
+        <option value="resolved">Resolved</option>
+        <option value="dismissed">Dismissed</option>
+      </select>
+    </div>
+    <div id="opp-table"><div class="loading">Loading&hellip;</div></div>
+    <div id="opp-error" class="error"></div>
+  </div>
 
   <div class="controls">
     <div class="tabs">
@@ -307,6 +357,39 @@ var loaded = {};
 var _anomaliesCache = null;
 var _anomaliesCacheRg = null;
 
+// ── Subscription (account) filter ─────────────────────────────────────────────
+function getCurrentAccount() { return localStorage.getItem('az_penny_account') || ''; }
+function acctParam() { var a = getCurrentAccount(); return a ? '&account=' + encodeURIComponent(a) : ''; }
+function onAccountChange(val) {
+  if (val) localStorage.setItem('az_penny_account', val);
+  else localStorage.removeItem('az_penny_account');
+  var sel = document.getElementById('account-select');
+  if (sel) sel.classList.toggle('filtered', !!val);
+  _anomaliesCache = null;
+  loaded = {}; loadCurrentTab(); loadGrandTotal(); loadAppList(); loadOpportunities();
+}
+function loadAccountList() {
+  fetch('/api/accounts?period=month')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var sel = document.getElementById('account-select');
+      if (!sel) return;
+      var current = getCurrentAccount();
+      var accounts = data.accounts || [];
+      if (current && !accounts.find(function(a) { return a.id === current; })) {
+        localStorage.removeItem('az_penny_account');
+        current = '';
+      }
+      sel.innerHTML = '<option value="">All (' + accounts.length + ')</option>' +
+        accounts.map(function(a) {
+          return '<option value="' + escAttr(a.id) + '"' + (a.id === current ? ' selected' : '') + '>' +
+                 escHtml(a.name) + ' (' + fmtCost(a.cost_usd) + ')</option>';
+        }).join('');
+      sel.classList.toggle('filtered', !!current);
+    })
+    .catch(function() {});
+}
+
 // ── Resource group filter ─────────────────────────────────────────────────────
 var allRgs = [];
 var ghostFilter = localStorage.getItem('az_penny_ghost') || 'all';
@@ -374,7 +457,7 @@ function onAppChange(val) {
 }
 function loadAppList() {
   // App is primary: list all apps regardless of selected RG
-  fetch('/api/apps?period=' + currentPeriod)
+  fetch('/api/apps?period=' + currentPeriod + acctParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var sel = document.getElementById('app-select');
@@ -388,6 +471,117 @@ function loadAppList() {
       sel.classList.toggle('filtered', !!current);
     })
     .catch(function() {});
+}
+
+// ── Savings inbox ─────────────────────────────────────────────────────────────
+var _oppData = null;
+var oppSignal = '';
+
+function setOppSignal(sig) {
+  oppSignal = sig;
+  document.querySelectorAll('.inbox-filters .pill').forEach(function(p) {
+    p.classList.toggle('active', p.getAttribute('data-sig') === sig);
+  });
+  renderOpportunities();
+}
+
+function loadOpportunities() {
+  document.getElementById('opp-error').textContent = '';
+  fetch('/api/opportunities' + (getCurrentAccount() ? '?account=' + encodeURIComponent(getCurrentAccount()) : ''))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      _oppData = data;
+      renderOppKpis();
+      renderOpportunities();
+    })
+    .catch(function(err) {
+      document.getElementById('opp-kpi').innerHTML = '';
+      document.getElementById('opp-table').innerHTML = '';
+      document.getElementById('opp-error').textContent = 'Error: ' + err.message;
+    });
+}
+
+function renderOppKpis() {
+  var s = (_oppData && _oppData.summary) || {};
+  document.getElementById('opp-kpi').innerHTML =
+    kpiCard('Open opportunities', s.open_count != null ? s.open_count : '—', 'blue') +
+    kpiCard('Est. savings / mo', fmtCost(s.open_monthly_usd || 0), 'yellow') +
+    kpiCard('Realized savings / mo', fmtCost(s.realized_monthly_usd || 0), 'green') +
+    kpiCard('Resolved', s.resolved_count != null ? s.resolved_count : '—', 'purple');
+}
+
+var SIG_LABELS = { risp: 'RI/SP', idle: 'Idle', tags: 'Tags', offhours: 'Off-hours', benchmark: 'Benchmark' };
+function sigBadge(sig) {
+  return '<span class="sig-badge sig-' + escAttr(sig) + '">' + escHtml(SIG_LABELS[sig] || sig) + '</span>';
+}
+
+function renderOpportunities() {
+  if (!_oppData) return;
+  var statusFilter = document.getElementById('opp-status-filter').value;
+  var opps = (_oppData.opportunities || []).filter(function(o) {
+    if (oppSignal && o.signal !== oppSignal) return false;
+    if (statusFilter === 'open') return o.status === 'new' || o.status === 'in_progress';
+    if (statusFilter) return o.status === statusFilter;
+    return true;
+  });
+
+  if (!opps.length) {
+    document.getElementById('opp-table').innerHTML =
+      '<p class="empty">No opportunities match the current filter. Nice work — or loosen the filter.</p>';
+    return;
+  }
+
+  var rows = opps.map(function(o) {
+    var realized = '';
+    if (o.realized && o.realized.realized_monthly_usd > 0) {
+      realized = '<span class="realized-badge" title="before ' + fmtCost(o.realized.before_monthly_usd) +
+                 '/mo → after ' + fmtCost(o.realized.after_monthly_usd) + '/mo">✓ ' +
+                 fmtCost(o.realized.realized_monthly_usd) + '/mo saved</span>';
+    }
+    var statusSel =
+      '<select class="status-select st-' + escAttr(o.status) + '" onchange=\'changeOppStatus(' +
+      JSON.stringify(o.id) + ', this.value)\'>' +
+      ['new', 'in_progress', 'resolved', 'dismissed'].map(function(st) {
+        var lbl = { new: 'New', in_progress: 'In progress', resolved: 'Resolved', dismissed: 'Dismissed' }[st];
+        return '<option value="' + st + '"' + (o.status === st ? ' selected' : '') + '>' + lbl + '</option>';
+      }).join('') + '</select>';
+    var done = (o.status === 'resolved' || o.status === 'dismissed');
+    return '<tr' + (done ? ' class="opp-row-done"' : '') + '>' +
+      '<td style="text-align:right"><span class="opp-impact">' + fmtCost(o.monthly_impact_usd) + '</span>' +
+      '<div style="font-size:0.62rem;color:#475569">/ month</div></td>' +
+      '<td>' + sigBadge(o.signal) + '</td>' +
+      '<td><div class="opp-title">' + escHtml(o.title) + '</div>' +
+      (o.detail ? '<div class="opp-detail">' + escHtml(o.detail) + '</div>' : '') +
+      (o.note ? '<div class="opp-note">📝 ' + escHtml(o.note) + '</div>' : '') + '</td>' +
+      '<td style="font-family:monospace;font-size:0.74rem">' + escHtml(o.account_name || o.account_id || '') + '</td>' +
+      '<td>' + statusSel + '</td>' +
+      '<td>' + realized + '</td></tr>';
+  }).join('');
+
+  document.getElementById('opp-table').innerHTML =
+    '<div class="scroll-table"><table><tr><th style="text-align:right">Impact</th><th>Signal</th>' +
+    '<th>Finding</th><th>Scope</th><th>Status</th><th>Result</th></tr>' + rows + '</table></div>';
+}
+
+function changeOppStatus(id, status) {
+  var note = '';
+  if (status === 'in_progress' || status === 'resolved') {
+    note = window.prompt('Optional note (ticket, owner, what was done):', '') || '';
+  }
+  fetch('/api/opportunities/' + encodeURIComponent(id) + '/status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: status, note: note })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+      loadOpportunities();
+    })
+    .catch(function(err) {
+      document.getElementById('opp-error').textContent = 'Update failed: ' + err.message;
+    });
 }
 
 // ── Anomalies fetch (cached per RG+App) ──────────────────────────────────────
@@ -467,7 +661,7 @@ function loadAllServices() {
   document.getElementById('svc-error').textContent = '';
 
   Promise.all([
-    fetch('/api/services?period=' + currentPeriod + rgParam() + appParam()).then(function(r) { return r.json(); }),
+    fetch('/api/services?period=' + currentPeriod + rgParam() + appParam() + acctParam()).then(function(r) { return r.json(); }),
     getAnomalies()
   ]).then(function(results) {
     var data    = results[0];
@@ -513,7 +707,7 @@ function loadAllServices() {
     document.getElementById('svc-error').textContent = 'Error: ' + err.message;
   });
 
-  fetch('/api/daily?days=30' + rgParam() + appParam())
+  fetch('/api/daily?days=30' + rgParam() + appParam() + acctParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) throw new Error(data.error);
@@ -577,7 +771,7 @@ function loadResourceGroups() {
   document.getElementById('rg-error').textContent = '';
 
   Promise.all([
-    fetch('/api/resource-groups?period=' + currentPeriod + rgParam() + appParam()).then(function(r) { return r.json(); }),
+    fetch('/api/resource-groups?period=' + currentPeriod + rgParam() + appParam() + acctParam()).then(function(r) { return r.json(); }),
     getAnomalies()
   ]).then(function(results) {
     var data    = results[0];
@@ -831,7 +1025,7 @@ function fmtNum(n) {
 function loadGrandTotal() {
   var bar = document.getElementById('st-total-val');
   if (bar) bar.textContent = 'loading…';
-  fetch('/api/services?period=' + currentPeriod + rgParam() + appParam())
+  fetch('/api/services?period=' + currentPeriod + rgParam() + appParam() + acctParam())
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (bar) bar.textContent = fmtCost(data.total_usd || 0) + ' (' + periodLabel() + ')';
@@ -978,16 +1172,18 @@ document.getElementById('rg-delete-modal').addEventListener('click', function(e)
 
 // ── Snapshot params for clipboard button ─────────────────────────────────────
 window.getSnapshotParams = function() {
-  return { period: currentPeriod || 'week', rg: getCurrentRg() || '', app: getCurrentApp() || '' };
+  return { period: currentPeriod || 'week', rg: getCurrentRg() || '', app: getCurrentApp() || '', account: getCurrentAccount() || '' };
 };
 
 // Boot
 (function() { var s = document.getElementById('ghost-filter'); if (s) s.value = ghostFilter; })();
 loadStatus();
+loadAccountList();
 loadRgList();
 loadAppList();
 loadCurrentTab();
 loadGrandTotal();
+loadOpportunities();
 </script>
 {% include '_chat.html' %}
 </body>

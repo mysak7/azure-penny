@@ -29,6 +29,7 @@ from cost_filters import (
     _build_snapshot,
     _category_api,
     _cost_by,
+    _filter_account,
     _filter_app,
     _filter_period,
     _filter_rg,
@@ -225,11 +226,13 @@ async def api_other(period: str = "week", rg: str = "", app: str = "") -> JSONRe
 
 
 @router.get("/api/apps")
-async def api_apps(period: str = "week", rg: str = "") -> JSONResponse:
+async def api_apps(
+    period: str = "week", rg: str = "", account: str = ""
+) -> JSONResponse:
     """List distinct applications (project tags) with their total cost for the given period."""
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_rg(full_df, rg)
+        df = _filter_rg(_filter_account(full_df, account), rg)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -336,11 +339,11 @@ async def refresh_cache() -> JSONResponse:
 
 @router.get("/api/services")
 async def api_services(
-    period: str = "week", rg: str = "", app: str = ""
+    period: str = "week", rg: str = "", app: str = "", account: str = ""
 ) -> JSONResponse:
     try:
         full_df = await get_cached_dataframe()
-        df = _filter_app(_filter_rg(full_df, rg), app)
+        df = _filter_app(_filter_rg(_filter_account(full_df, account), rg), app)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -444,11 +447,11 @@ async def api_cost_search(q: str) -> JSONResponse:
 
 @router.get("/api/resource-groups")
 async def api_resource_groups(
-    period: str = "week", rg: str = "", app: str = ""
+    period: str = "week", rg: str = "", app: str = "", account: str = ""
 ) -> JSONResponse:
     try:
         df = await get_cached_dataframe()
-        df = _filter_app(_filter_rg(df, rg), app)
+        df = _filter_app(_filter_rg(_filter_account(df, account), rg), app)
         days = _period_days(period)
         filtered = _filter_period(df, days)
 
@@ -842,10 +845,12 @@ async def api_breakdown(
 
 
 @router.get("/api/daily")
-async def api_daily(days: int = 30, rg: str = "", app: str = "") -> JSONResponse:
+async def api_daily(
+    days: int = 30, rg: str = "", app: str = "", account: str = ""
+) -> JSONResponse:
     try:
         df = await get_cached_dataframe()
-        df = _filter_app(_filter_rg(df, rg), app)
+        df = _filter_app(_filter_rg(_filter_account(df, account), rg), app)
         if "C_DATE" not in df.columns or "C_COST" not in df.columns:
             return JSONResponse({"days": days, "points": [], "total_usd": 0})
 
