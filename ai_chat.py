@@ -182,6 +182,39 @@ _CHAT_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_opportunities",
+            "description": (
+                "Get ranked FinOps savings opportunities: low reservation/savings-plan "
+                "coverage, idle or unattached resources, untagged spend, non-prod "
+                "resource groups running nights/weekends, and dev-RG benchmarks. "
+                "Includes lifecycle status and realized monthly savings for resolved "
+                "items. Use for questions like 'where can we save', 'what should I "
+                "work on today', or 'how much have we saved'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "account": {
+                        "type": "string",
+                        "description": "Filter by subscription name (optional)",
+                    },
+                    "signal": {
+                        "type": "string",
+                        "enum": ["risp", "idle", "tags", "offhours", "benchmark"],
+                        "description": "Filter by opportunity type (optional)",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["new", "in_progress", "resolved", "dismissed"],
+                        "description": "Filter by lifecycle status (optional)",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_page_snapshot",
             "description": (
                 "Get a comprehensive all-in-one cost snapshot: total spend, breakdown by category, "
@@ -220,6 +253,7 @@ _TOOL_LABELS: dict[str, str] = {
     "get_breakdown": "detail kategorií",
     "get_live_resources": "živé zdroje",
     "get_daily_costs": "denní data",
+    "get_opportunities": "příležitosti k úsporám",
     "get_page_snapshot": "přehled stránky",
 }
 
@@ -234,6 +268,45 @@ async def _execute_chat_tool(name: str, args: dict) -> str:
     from live_resources import _get_live_data  # noqa: PLC0415
 
     try:
+        if name == "get_opportunities":
+            import opportunities as opp_engine  # noqa: PLC0415
+
+            result = await opp_engine.get_opportunities()
+            opps = result["opportunities"]
+            if args.get("account"):
+                acct = args["account"]
+                opps = [
+                    o
+                    for o in opps
+                    if o["account_id"] == acct or o["account_name"] == acct
+                ]
+            if args.get("signal"):
+                opps = [o for o in opps if o["signal"] == args["signal"]]
+            if args.get("status"):
+                opps = [o for o in opps if o["status"] == args["status"]]
+            return json.dumps(
+                {
+                    "summary": result["summary"],
+                    "opportunities": [
+                        {
+                            k: o.get(k)
+                            for k in (
+                                "id",
+                                "signal",
+                                "title",
+                                "detail",
+                                "account_name",
+                                "monthly_impact_usd",
+                                "status",
+                                "note",
+                                "realized",
+                            )
+                        }
+                        for o in opps[:25]
+                    ],
+                }
+            )
+
         if name == "get_cost_summary":
             period = args.get("period", "week")
             rg = args.get("rg", "")
